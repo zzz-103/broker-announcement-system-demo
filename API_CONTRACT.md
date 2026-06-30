@@ -1,17 +1,35 @@
 # API_CONTRACT.md
 
-本文只定义联调接口契约，不实现代码。
+This document defines the integration contract. It does not implement code.
 
-## 架构边界
+## Service Boundary
 
-- 浏览器只访问 Next.js BFF。
-- Next.js 负责用户登录、Session、角色、CSRF 防护和浏览器可见 API。
-- 角色分为 `admin` 和 `user`。
-- Python FastAPI 是内部服务，只监听内网地址，不直接暴露给浏览器。
-- Next.js 调用 Python 时使用短期内部 JWT。
-- Python 负责读取已发布数据版本、查询公告、聚合数据、管理后台任务、调用现有爬虫和 LLM 脚本。
+- Browsers call only the Next.js BFF.
+- Next.js owns login, session, browser-facing roles, and CSRF protection.
+- Roles are `admin` and `user`.
+- Python FastAPI is an internal service and must listen on an internal address by default.
+- Next.js calls Python with a short-lived internal JWT.
+- Python reads published dataset versions, validates CSV data, exposes read-only data APIs, and later may own controlled task orchestration.
 
-## 内部 JWT
+## Canonical Internal API Paths
+
+The canonical Python API paths are:
+
+- `GET /health`
+- `GET /internal/data/meta`
+- `GET /internal/data/options`
+- `GET /internal/data/announcements`
+- `GET /internal/analytics/overview`
+- `GET /internal/admin/tasks`
+- `GET /internal/admin/tasks/{taskId}`
+- `POST /internal/admin/tasks/validate`
+
+Do not introduce or use these older paths:
+
+- `/internal/data/version`
+- `/internal/announcements`
+
+## Internal JWT
 
 Header:
 
@@ -34,94 +52,195 @@ Claims:
 }
 ```
 
-规则：
+Rules:
 
-- 有效期建议 5 分钟以内。
-- Python 必须校验 `iss`、`aud`、`exp`、`role`。
-- 管理类接口要求 `role=admin`。
-- 查询类接口允许 `role=user` 或 `role=admin`。
-- JWT 密钥只存在服务端环境变量，不得进入 `NEXT_PUBLIC_*`。
+- Token lifetime should be 60 to 300 seconds.
+- Python must validate signature, `iss`, `aud`, `exp`, and `role`.
+- Allowed roles are `user` and `admin`.
+- Read-only internal APIs allow `user` and `admin`.
+- Future admin APIs must require `admin`.
+- JWT secrets must stay in server-side environment variables and must never use `NEXT_PUBLIC_*`.
+- There is no HTTP endpoint for minting internal JWTs.
 
-## 错误响应
+## Stable `record_id`
+
+`record_id` must not use CSV array indexes, pagination indexes, or suffixes such as `/0`.
+
+For each CSV row, build a stable identity string from these fields:
+
+- `broker_folder`
+- `markdown_file`
+- `publish_date`
+- `announcement_stage`
+- `project_name`
+- `winning_supplier`
+- `winning_amount_yuan`
+
+Normalization is fixed:
+
+- `null` becomes an empty string.
+- Strings are trimmed.
+- Consecutive whitespace is collapsed.
+- Amounts are converted to a fixed decimal string.
+- Dates are converted to `YYYY-MM-DD`.
+- Fields are joined with a fixed separator that should not conflict with normal text. The current backend implementation uses ASCII unit separator `\x1f`.
+- The final `record_id` is the SHA-256 hex digest of the joined normalized string.
+
+The same row data loaded repeatedly must produce the same `record_id`. Changing supplier or amount must produce a different `record_id`.
+
+## Domain Fields
+
+The raw CSV does not contain a `domain` field.
+
+The current frontend derives domain in `frontend/src/lib/announcement-data.ts` from `project_name`, `project_subcategory`, and `procurement_category` using local keyword rules. This phase does not migrate that frontend classification logic into Python.
+
+Contract choice for this phase:
+
+- Python does not return `domain`, `domains`, `domainDistribution`, or `derivedDomain`.
+- Query and aggregation APIs use `procurementCategory` and `projectSubcategory`.
+- A later phase may add `derivedDomain` only after the transformation rules are explicitly ported and tested.
+
+## Error Response
+
+All business errors use this shape:
 
 ```json
 {
   "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Authentication required",
-    "requestId": "req_01H...",
+    "code": "DATASET_UNAVAILABLE",
+    "message": "Published dataset is unavailable",
+    "requestId": "uuid",
     "details": {}
   }
 }
 ```
 
-常用状态码：
+Status codes:
 
-- `400`: 参数错误。
-- `401`: 未登录或内部 JWT 无效。
-- `403`: 角色不足。
-- `404`: 资源不存在。
-- `409`: 任务冲突或数据版本冲突。
-- `422`: CSV 校验失败。
-- `500`: 服务端错误。
+- `400 INVALID_ARGUMENT`
+- `401 UNAUTHORIZED`
+- `403 FORBIDDEN`
+- `404 NOT_FOUND`
+- `422 DATASET_VALIDATION_FAILED`
+- `500 INTERNAL_ERROR`
+- `503 DATASET_UNAVAILABLE`
+- `503 SERVICE_UNAVAILABLE`
+- `422 INVALID_TASK_TYPE`
+- `422 INVALID_TASK_PARAMETERS`
+- `422 UNKNOWN_BROKER`
+- `403 DESTRUCTIVE_TASK_DISABLED`
+- `422 DESTRUCTIVE_CONFIRMATION_REQUIRED`
+- `404 TASK_NOT_FOUND`
+- `422 INVALID_TASK_TRANSITION`
+- `500 TASK_DATABASE_ERROR`
 
-## 数据版本
+Responses must not include Python tracebacks, absolute paths, environment variables, secrets, raw Authorization headers, or server filesystem details.
 
-Python 内部接口：
+## Data Meta
 
 ```http
-GET /internal/data/version
+GET /internal/data/meta
 ```
 
-响应：
+Response:
 
 ```json
 {
-  "version": "2026-06-29T09:36:32Z",
+  "version": "20260630T020000Z_ab12cd34",
   "csvSha256": "hex",
   "rowCount": 644,
-  "publishedAt": "2026-06-29T09:36:32Z",
-  "sourcePath": "internal://structured_announcements/announcement_table.csv"
+  "validRowCount": 644,
+  "publishedAt": "2026-06-30T02:00:00Z",
+  "dateMin": "2026-01-01",
+  "dateMax": "2026-06-29",
+  "brokerCount": 18,
+  "dataQuality": {
+    "invalidRowCount": 0,
+    "missingRequiredColumns": [],
+    "missingValueCounts": {
+      "publish_date": 89
+    },
+    "duplicateRecordIdCount": 0,
+    "warnings": []
+  }
 }
 ```
 
-说明：
+The meta response must not return absolute paths, relative paths, or `internal://` paths.
 
-- 对外不得返回服务器真实绝对路径。
-- 发布版本必须指向校验完成的稳定文件，避免读取半成品。
-
-## 公告查询
-
-Next.js BFF:
+## Filter Options
 
 ```http
-GET /api/announcements?broker=...&stage=...&domain=...&q=...&from=2026-01-01&to=2026-06-30&page=1&pageSize=20&sort=publish_date_desc
+GET /internal/data/options
 ```
 
-Python 内部：
-
-```http
-GET /internal/announcements
-```
-
-响应：
+Response:
 
 ```json
 {
-  "version": "2026-06-29T09:36:32Z",
+  "version": "20260630T020000Z_ab12cd34",
+  "brokers": [
+    {"value": "caitong_securities", "label": "财通证券", "count": 33}
+  ],
+  "stages": [
+    {"value": "结果公示", "label": "结果公示", "count": 271}
+  ],
+  "procurementCategories": [],
+  "projectSubcategories": [],
+  "procurementMethods": [],
+  "missingCount": {
+    "brokers": 0,
+    "stages": 5,
+    "procurementCategories": 5,
+    "projectSubcategories": 5,
+    "procurementMethods": 194
+  }
+}
+```
+
+Empty strings must not be returned as normal filter options.
+
+## Announcements Query
+
+```http
+GET /internal/data/announcements?page=1&pageSize=20&brokerFolder=caitong_securities&stage=结果公示&keyword=系统&sortBy=publishDate&sortOrder=desc
+```
+
+Supported query parameters:
+
+- `page`
+- `pageSize`, default `20`, max `100`
+- `brokerFolder`
+- `brokerName`
+- `stage`
+- `procurementCategory`
+- `projectSubcategory`
+- `procurementMethod`
+- `keyword`, searching `project_name` and `winning_supplier`
+- `dateFrom`
+- `dateTo`
+- `sortBy`, whitelist only
+- `sortOrder`, `asc` or `desc`
+
+Response:
+
+```json
+{
+  "version": "20260630T020000Z_ab12cd34",
   "page": 1,
   "pageSize": 20,
   "total": 644,
   "items": [
     {
-      "id": "caitong_securities/063f439230bc970e85fc7213.md/0",
-      "brokerName": "财通证券",
+      "recordId": "sha256hex",
       "brokerFolder": "caitong_securities",
-      "projectName": "项目名称",
+      "brokerName": "财通证券",
+      "markdownFile": "063f439230bc970e85fc7213.md",
       "publishDate": "2026-06-20",
       "announcementStage": "结果公示",
       "procurementCategory": "IT软硬件",
       "projectSubcategory": "数据平台",
+      "projectName": "项目名称",
       "procurementMethod": "公开招标",
       "winningSupplier": "供应商名称",
       "winningAmountYuan": 123456.78
@@ -130,182 +249,208 @@ GET /internal/announcements
 }
 ```
 
-普通用户不得获得的内部字段：
+Do not return:
 
 - `document_sha1`
 - `raw_json_path`
 - `processed_at`
-- 后端真实绝对文件路径
-- LLM 请求配置
-- shell 命令和任务执行环境
+- real filesystem paths
 
-## 筛选选项
+Rows are not deduplicated by `markdown_file`.
+
+## Analytics Overview
 
 ```http
-GET /api/filter-options
+GET /internal/analytics/overview
 ```
 
-响应：
+Response:
 
 ```json
 {
-  "version": "2026-06-29T09:36:32Z",
-  "brokers": [{"value": "caitong_securities", "label": "财通证券", "count": 33}],
-  "stages": [{"value": "结果公示", "count": 271}],
-  "procurementMethods": [{"value": "公开招标", "count": 120}],
-  "domains": [{"value": "AI与智能化", "count": 45}]
+  "version": "20260630T020000Z_ab12cd34",
+  "totalRecords": 644,
+  "brokerCount": 18,
+  "stageDistribution": [{"value": "结果公示", "count": 271}],
+  "procurementCategoryDistribution": [],
+  "projectSubcategoryDistribution": [],
+  "procurementMethodDistribution": [],
+  "monthlyTrend": [{"month": "2026-06", "count": 120}],
+  "disclosedWinningAmount": {
+    "recordCount": 56,
+    "totalYuan": 12345678.9,
+    "averageYuan": 220458.55
+  },
+  "amountSampleCount": 56,
+  "amountCoverageRate": 0.0869,
+  "missingDateRate": 0.1382,
+  "missingMethodRate": 0.3012
 }
 ```
 
-## 数据聚合
+Amount statistics are only for records with disclosed valid amounts.
+
+## Future AI Summary
+
+`/api/ai-analysis` remains a Next.js BFF path for browser compatibility. In a later phase, CSV reading, aggregation, prompt construction, LLM calls, and result persistence should move to Python. This phase does not implement AI summary migration.
+
+## Admin Task Metadata
+
+Phase B1 does not execute tasks. It only validates task requests, persists task metadata for internal service use, exposes admin read-only task inspection, and defines the state machine for B2.
+
+Task types:
+
+- `crawl`
+- `extract`
+- `pipeline`
+
+Task statuses:
+
+- `pending`
+- `running`
+- `succeeded`
+- `failed`
+- `interrupted`
+- `cancelled`
+
+Task phases:
+
+- `validation`
+- `crawler`
+- `extraction`
+- `publishing`
+- `completed`
+
+Allowed transitions:
+
+- `pending -> running`
+- `pending -> cancelled`
+- `running -> succeeded`
+- `running -> failed`
+- `running -> interrupted`
+- `running -> cancelled`
+
+All other transitions are rejected with `INVALID_TASK_TRANSITION`.
+
+### List Tasks
 
 ```http
-GET /api/analytics/summary?broker=...&stage=...&from=...&to=...
+GET /internal/admin/tasks?page=1&pageSize=20&status=pending&taskType=crawl&requestedBy=user_123
 ```
 
-响应：
+Admin only.
+
+Response:
 
 ```json
 {
-  "version": "2026-06-29T09:36:32Z",
-  "metrics": {
-    "recordCount": 644,
-    "uniqueProjectCount": 600,
-    "recentProjectCount": 50,
-    "resultProjectCount": 271,
-    "supplierProjectCount": 120,
-    "priceSampleCount": 56
-  },
-  "trend": [{"date": "2026-06-01", "count": 8}],
-  "domainDistribution": [{"domain": "AI与智能化", "count": 45}],
-  "stageDistribution": [{"stage": "结果公示", "count": 271}]
+  "total": 1,
+  "page": 1,
+  "pageSize": 20,
+  "items": [
+    {
+      "taskId": "task_uuid",
+      "taskType": "crawl",
+      "status": "pending",
+      "phase": "validation",
+      "requestedBy": "user_123",
+      "requestedRole": "admin",
+      "createdAt": "2026-06-30T03:00:00Z",
+      "startedAt": null,
+      "finishedAt": null,
+      "exitCode": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "datasetVersionBefore": "20260630T023711Z_5a74ed0a",
+      "datasetVersionAfter": null,
+      "cancelRequested": false,
+      "updatedAt": "2026-06-30T03:00:00Z"
+    }
+  ]
 }
 ```
 
-## 后台任务创建
+The response must not include `pid`, real `log_path`, absolute paths, secrets, or executable internal command arrays.
 
-仅 `admin`。
+### Task Detail
 
 ```http
-POST /api/admin/tasks
-Content-Type: application/json
+GET /internal/admin/tasks/{taskId}
 ```
 
-请求：
+Admin only. Returns the safe task summary plus filtered audit events. Event metadata is whitelist-filtered and must not contain secrets, Authorization headers, JWTs, raw environment variables, or absolute paths.
+
+### Validate Task Request
+
+```http
+POST /internal/admin/tasks/validate
+```
+
+Admin only. This endpoint validates parameters and returns a logical command preview. It does not create a task and does not execute anything.
+
+Request:
 
 ```json
 {
-  "type": "crawl_then_llm",
-  "brokers": ["ctsec"],
-  "crawler": {
-    "maxPagesPerBroker": 1,
-    "maxLinksPerBroker": 5,
-    "force": false
-  },
-  "llm": {
-    "maxFiles": 5,
-    "overwrite": false,
-    "fullRefresh": false
+  "taskType": "pipeline",
+  "parameters": {
+    "brokers": ["ctsec"],
+    "crawler": {
+      "maxPagesPerBroker": 1,
+      "maxLinksPerBroker": 10
+    },
+    "llm": {
+      "llmWorkers": 2,
+      "llmTimeoutSeconds": 120
+    }
   }
 }
 ```
 
-响应：
+Response:
 
 ```json
 {
-  "taskId": "task_20260630_001",
-  "status": "queued",
-  "createdAt": "2026-06-30T10:00:00Z"
+  "valid": true,
+  "taskType": "pipeline",
+  "normalizedParameters": {},
+  "destructive": false,
+  "logicalCommandPreview": [
+    "python",
+    "modules/run_crawler_then_llm.py",
+    "--brokers",
+    "ctsec"
+  ]
 }
 ```
 
-约束：
+`logicalCommandPreview` must not include server absolute paths, secrets, environment variables, or shell strings.
 
-- `type`、`brokers` 和所有数值参数必须白名单校验。
-- 默认禁止全量爬虫和 full refresh。
-- 任务执行不得接受任意 shell 字符串。
+Dangerous parameters are disabled unless `ALLOW_DESTRUCTIVE_TASKS=true`. Dangerous parameters include:
 
-## 后台任务状态
+- `force`
+- `overwrite`
+- `fullRefresh`
+- `llmFullRefresh`
+- `forceCrawl`
 
-```http
-GET /api/admin/tasks/{taskId}
-```
+Even when destructive tasks are enabled, requests must include `destructiveOperationConfirmed=true`.
 
-响应：
+## CSV Field Mapping
 
-```json
-{
-  "taskId": "task_20260630_001",
-  "type": "crawl_then_llm",
-  "status": "running",
-  "phase": "llm",
-  "createdAt": "2026-06-30T10:00:00Z",
-  "startedAt": "2026-06-30T10:00:05Z",
-  "finishedAt": null,
-  "exitCode": null,
-  "progress": {
-    "processedFiles": 3,
-    "failedFiles": 0
-  },
-  "message": "LLM incremental extraction running"
-}
-```
-
-## AI 总结
-
-读取：
-
-```http
-GET /api/ai-analysis
-```
-
-响应保持兼容：
-
-```json
-{
-  "content": "Markdown summary",
-  "updatedAt": "2026-06-30T10:00:00Z",
-  "version": "2026-06-29T09:36:32Z"
-}
-```
-
-生成：
-
-```http
-POST /api/ai-analysis
-```
-
-建议继续返回 SSE，以减少前端改动：
-
-```text
-data: {"content":"partial text"}
-
-data: {"done":true,"updatedAt":"2026-06-30T10:00:00Z","version":"2026-06-29T09:36:32Z"}
-```
-
-分工：
-
-- Next.js 继续保留 `/api/ai-analysis` 作为 BFF，负责 Session、角色和 SSE 转发。
-- Python 负责读取稳定数据版本、聚合近 30 天数据、调用 LLM、保存总结结果。
-- LLM API Key 只存在 Python 服务端环境变量或后端专用配置，不进入浏览器和 Next.js public 环境。
-
-## CSV 字段映射
-
-| 后端 CSV 字段 | 前端字段 | 对普通用户 |
+| CSV field | API field | Returned to normal users |
 | --- | --- | --- |
-| `broker_folder` | `brokerFolder` | 可返回，作为稳定筛选值 |
-| `broker_name` | `brokerName` | 可返回 |
-| `markdown_file` | `sourceFileId` 或内部 id 组成部分 | 默认不直接展示 |
-| `document_sha1` | 无 | 不返回 |
-| `processed_at` | 无 | 不返回 |
-| `raw_json_path` | 无 | 不返回 |
-| `publish_date` | `publishDate` | 可返回 |
-| `announcement_stage` | `announcementStage` | 可返回 |
-| `procurement_category` | `procurementCategory` | 可返回 |
-| `project_subcategory` | `projectSubcategory` | 可返回 |
-| `project_name` | `projectName` | 可返回 |
-| `procurement_method` | `procurementMethod` | 可返回 |
-| `winning_supplier` | `winningSupplier` | 可返回 |
-| `winning_amount_yuan` | `winningAmountYuan` | 可返回 |
-
+| `broker_folder` | `brokerFolder` | Yes |
+| `broker_name` | `brokerName` | Yes |
+| `markdown_file` | `markdownFile` | Yes as source identifier, not as unique record ID |
+| `document_sha1` | none | No |
+| `processed_at` | none | No |
+| `raw_json_path` | none | No |
+| `publish_date` | `publishDate` | Yes, nullable |
+| `announcement_stage` | `announcementStage` | Yes |
+| `procurement_category` | `procurementCategory` | Yes |
+| `project_subcategory` | `projectSubcategory` | Yes |
+| `project_name` | `projectName` | Yes |
+| `procurement_method` | `procurementMethod` | Yes |
+| `winning_supplier` | `winningSupplier` | Yes |
+| `winning_amount_yuan` | `winningAmountYuan` | Yes, nullable |
