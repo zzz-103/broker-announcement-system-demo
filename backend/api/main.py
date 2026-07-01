@@ -84,31 +84,36 @@ def get_job(job_id: str) -> dict[str, object]:
 @app.get("/api/jobs/{job_id}/events", dependencies=[Depends(require_token)])
 async def job_events(job_id: str) -> StreamingResponse:
     try:
-        existing_events, _ = job_manager.snapshot_events(job_id)
+        existing_events, _, _ = job_manager.snapshot_events(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found") from exc
 
     async def event_stream():
-        sent = 0
+        sent_sequence = 0
         for event in existing_events:
-            sent += 1
+            sent_sequence = int(event.get("_seq", sent_sequence))
             yield format_sse(event)
             if event.get("type") == "done":
                 return
 
         while True:
             try:
-                count = await asyncio.to_thread(job_manager.wait_for_event_count, job_id, sent, 10.0)
-                events, _ = job_manager.snapshot_events(job_id)
+                sequence = await asyncio.to_thread(
+                    job_manager.wait_for_event_sequence, job_id, sent_sequence, 10.0
+                )
+                events, _, _ = job_manager.snapshot_events(job_id)
             except JobNotFoundError:
                 return
 
-            if count <= sent:
+            if sequence <= sent_sequence:
                 yield ": ping\n\n"
                 continue
 
-            for event in events[sent:]:
-                sent += 1
+            for event in events:
+                event_sequence = int(event.get("_seq", 0))
+                if event_sequence <= sent_sequence:
+                    continue
+                sent_sequence = event_sequence
                 yield format_sse(event)
                 if event.get("type") == "done":
                     return
