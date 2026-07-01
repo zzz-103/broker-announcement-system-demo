@@ -1,7 +1,15 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth-store";
+import {
+  BackendApiError,
+  getJob,
+  JobStatus,
+  JobType,
+  startJob,
+  streamJobEvents,
+} from "@/lib/api/backend-client";
 import {
   Bot,
   Database,
@@ -18,152 +26,207 @@ import {
 
 interface DashboardProps {
   onBack: () => void;
+  onDataRefresh?: () => void;
 }
 
-export function AdminDashboard({ onBack }: DashboardProps) {
-  const { username, logout } = useAuthStore();
+type TaskId = "crawler" | "llm" | "ai";
 
-  // Crawler state
-  const [crawlerStatus, setCrawlerStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+const MAX_LOG_LINES = 300;
+
+function trimLog(lines: string[]) {
+  return lines.slice(-MAX_LOG_LINES).join("\n");
+}
+
+function backendErrorMessage(error: BackendApiError) {
+  if (error.status === 0) return "无法连接 FastAPI 后端，请确认 http://localhost:8000 已启动";
+  if (error.status === 409) return error.message || "已有任务正在运行，请等待当前任务结束";
+  return error.message;
+}
+
+export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
+  const { username, token, logout, clearAuth } = useAuthStore();
+
+  const [crawlerStatus, setCrawlerStatus] = useState<JobStatus>("idle");
   const [crawlerMsg, setCrawlerMsg] = useState("");
-
-  // Data processing state
-  const [processStatus, setProcessStatus] = useState<"idle" | "running" | "done" | "error">("idle");
-  const [processMsg, setProcessMsg] = useState("");
-
-  // AI analysis state
-  const [aiStatus, setAiStatus] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [llmStatus, setLlmStatus] = useState<JobStatus>("idle");
+  const [llmMsg, setLlmMsg] = useState("");
+  const [aiStatus, setAiStatus] = useState<JobStatus>("idle");
   const [aiMsg, setAiMsg] = useState("");
-  const aiAbortRef = useRef<AbortController | null>(null);
 
-  const handleCrawler = useCallback(async () => {
-    setCrawlerStatus("running");
-    setCrawlerMsg("正在启动爬虫任务...");
-    // Placeholder - simulate running
-    await new Promise((r) => setTimeout(r, 2000));
-    setCrawlerStatus("done");
-    setCrawlerMsg("爬虫任务已完成（功能待接入）");
+  const abortRefs = useRef<Record<"scraper" | "llm", AbortController | null>>({
+    scraper: null,
+    llm: null,
+  });
+  const logRefs = useRef<Record<TaskId, HTMLDivElement | null>>({
+    crawler: null,
+    llm: null,
+    ai: null,
+  });
+  const mountedRef = useRef(true);
+
+  const appendLog = useCallback((task: "scraper" | "llm", line: string) => {
+    const setter = task === "scraper" ? setCrawlerMsg : setLlmMsg;
+    setter((prev) => trimLog([...prev.split("\n").filter(Boolean), line]));
   }, []);
 
-  const handleProcess = useCallback(async () => {
-    setProcessStatus("running");
-    setProcessMsg("正在调用 LLM 处理原始数据...");
-    // Placeholder - simulate running
-    await new Promise((r) => setTimeout(r, 2000));
-    setProcessStatus("done");
-    setProcessMsg("数据处理已完成（功能待接入）");
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      abortRefs.current.scraper?.abort();
+      abortRefs.current.llm?.abort();
+    };
   }, []);
 
-  const handleAiAnalysis = useCallback(async () => {
-    setAiStatus("running");
-    setAiMsg("正在调用 LLM 生成情报分析...");
-    aiAbortRef.current = new AbortController();
+  useEffect(() => {
+    logRefs.current.crawler?.scrollTo(0, logRefs.current.crawler.scrollHeight);
+  }, [crawlerMsg]);
 
-    try {
-      const token = btoa(`${username}:admin2026`);
-      const res = await fetch("/api/ai-analysis", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Basic ${token}`,
-        },
-        signal: aiAbortRef.current.signal,
-      });
+  useEffect(() => {
+    logRefs.current.llm?.scrollTo(0, logRefs.current.llm.scrollHeight);
+  }, [llmMsg]);
 
-      if (!res.ok) {
-        throw new Error("分析失败");
+  const runJob = useCallback(
+    async (jobType: JobType) => {
+      const isScraper = jobType === "scraper";
+      const status = isScraper ? crawlerStatus : llmStatus;
+      const setStatus = isScraper ? setCrawlerStatus : setLlmStatus;
+      const setMessage = isScraper ? setCrawlerMsg : setLlmMsg;
+      const taskLabel = isScraper ? "爬虫" : "LLM";
+
+      if (status === "running") return;
+      if (!token) {
+        setStatus("failed");
+        setMessage("请先以管理员身份登录");
+        return;
       }
 
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = "";
+      const controller = new AbortController();
+      abortRefs.current[jobType]?.abort();
+      abortRefs.current[jobType] = controller;
+      setStatus("running");
+      setMessage(`正在连接 FastAPI 后端并启动${taskLabel}任务...`);
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.content) {
-                  fullContent += data.content;
-                }
-                if (data.error) {
-                  throw new Error(data.error);
-                }
-              } catch {
-                // skip parse errors
-              }
+      let jobId = "";
+      let doneReceived = false;
+
+      try {
+        const started = await startJob(jobType, token);
+        jobId = started.job_id;
+        appendLog(jobType, `${taskLabel}任务已启动，job_id=${jobId}`);
+
+        await streamJobEvents(
+          jobId,
+          token,
+          (event) => {
+            if (!mountedRef.current) return;
+            if (event.type === "start") {
+              appendLog(jobType, event.message || "任务开始");
+              return;
             }
-          }
-        }
-      }
+            if (event.type === "log") {
+              appendLog(jobType, `[${event.stream}] ${event.message}`);
+              return;
+            }
+            if (event.type === "done") {
+              doneReceived = true;
+              const succeeded = event.status === "succeeded";
+              setStatus(succeeded ? "succeeded" : "failed");
+              appendLog(
+                jobType,
+                succeeded
+                  ? `${taskLabel}任务成功结束，exit_code=${event.exit_code}`
+                  : `${taskLabel}任务失败，exit_code=${event.exit_code}${event.error ? `，${event.error}` : ""}`,
+              );
+              if (succeeded && jobType === "llm") onDataRefresh?.();
+            }
+          },
+          controller.signal,
+        );
 
-      setAiStatus("done");
-      setAiMsg(`AI 情报分析已完成，共生成 ${fullContent.length} 字分析报告`);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") {
-        setAiStatus("idle");
-        setAiMsg("");
-      } else {
-        setAiStatus("error");
-        setAiMsg("AI 分析失败，请重试");
+        if (!doneReceived && jobId && !controller.signal.aborted) {
+          const job = await getJob(jobId, token);
+          if (!mountedRef.current) return;
+          const succeeded = job.status === "succeeded";
+          setStatus(succeeded ? "succeeded" : "failed");
+          appendLog(jobType, `SSE 已断开，最终任务状态：${job.status}`);
+          if (succeeded && jobType === "llm") onDataRefresh?.();
+        }
+      } catch (error) {
+        if (controller.signal.aborted || !mountedRef.current) return;
+
+        if (error instanceof BackendApiError && error.status === 401) {
+          clearAuth("登录已失效，请重新登录");
+          return;
+        }
+
+        setStatus("failed");
+        setMessage(
+          error instanceof BackendApiError
+            ? backendErrorMessage(error)
+            : error instanceof Error
+              ? error.message
+              : `${taskLabel}任务运行失败`,
+        );
+      } finally {
+        if (abortRefs.current[jobType] === controller) abortRefs.current[jobType] = null;
       }
-    }
-  }, [username]);
+    },
+    [appendLog, clearAuth, crawlerStatus, llmStatus, onDataRefresh, token],
+  );
 
   const handleLogout = useCallback(() => {
+    abortRefs.current.scraper?.abort();
+    abortRefs.current.llm?.abort();
     logout();
   }, [logout]);
 
   const cards = [
     {
-      id: "crawler",
+      id: "crawler" as const,
       icon: Globe,
       iconBg: "from-emerald-500 to-teal-600",
       title: "一键更新爬虫",
-      desc: "启动爬虫任务，自动抓取最新公开招采公告数据",
+      desc: "启动 FastAPI 后端爬虫任务，实时查看 stdout/stderr 日志",
       status: crawlerStatus,
       message: crawlerMsg,
-      action: handleCrawler,
+      action: () => runJob("scraper"),
       actionLabel: "启动爬虫",
       runningLabel: "爬虫运行中...",
-      tag: "待接入",
+      tag: "已接入",
     },
     {
-      id: "process",
+      id: "llm" as const,
       icon: Database,
       iconBg: "from-blue-500 to-indigo-600",
       title: "LLM 数据处理",
-      desc: "调用 LLM 对原始表数据进行清洗、标准化和分类处理",
-      status: processStatus,
-      message: processMsg,
-      action: handleProcess,
-      actionLabel: "开始处理",
-      runningLabel: "数据处理中...",
-      tag: "待接入",
+      desc: "调用 LLM 结构化处理 Markdown 公告并生成 backend/data 数据",
+      status: llmStatus,
+      message: llmMsg,
+      action: () => runJob("llm"),
+      actionLabel: "运行 LLM",
+      runningLabel: "LLM 运行中...",
+      tag: "已接入",
     },
     {
-      id: "ai",
+      id: "ai" as const,
       icon: Brain,
       iconBg: "from-purple-500 to-pink-600",
       title: "AI 情报分析",
-      desc: "调用 LLM 对近30天招采数据进行深度分析，生成情报报告",
+      desc: "对近 30 天招采数据进行深度分析，生成情报报告",
       status: aiStatus,
       message: aiMsg,
-      action: handleAiAnalysis,
+      action: () => {
+        setAiStatus("failed");
+        setAiMsg("AI 情报分析不在本阶段接入范围内");
+      },
       actionLabel: "生成分析",
       runningLabel: "AI 分析中...",
-      tag: "已上线",
+      tag: "非本阶段",
     },
   ];
 
   return (
     <div className="min-h-screen bg-[#F5F7FA]">
-      {/* Header */}
       <header className="sticky top-0 z-40 bg-[#162B49] text-white">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -181,9 +244,7 @@ export function AdminDashboard({ onBack }: DashboardProps) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-white/60">
-              {username}
-            </span>
+            <span className="text-xs text-white/60">{username}</span>
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 text-xs text-white/60 hover:text-white transition-colors px-2 py-1 rounded hover:bg-white/10"
@@ -195,9 +256,7 @@ export function AdminDashboard({ onBack }: DashboardProps) {
         </div>
       </header>
 
-      {/* Content */}
       <main className="max-w-[1200px] mx-auto px-4 sm:px-8 py-8">
-        {/* Title */}
         <div className="mb-8">
           <h1 className="text-xl font-bold text-[#172033]">管理控制台</h1>
           <p className="text-sm text-[#667085] mt-1">
@@ -205,14 +264,12 @@ export function AdminDashboard({ onBack }: DashboardProps) {
           </p>
         </div>
 
-        {/* Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {cards.map((card) => (
             <div
               key={card.id}
               className="bg-white rounded-xl border border-[#E4E9F0] shadow-sm overflow-hidden hover:shadow-md transition-shadow"
             >
-              {/* Card Header */}
               <div className="p-5 pb-4">
                 <div className="flex items-start justify-between mb-3">
                   <div
@@ -222,7 +279,7 @@ export function AdminDashboard({ onBack }: DashboardProps) {
                   </div>
                   <span
                     className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                      card.tag === "已上线"
+                      card.tag === "已接入"
                         ? "bg-emerald-50 text-emerald-600"
                         : "bg-amber-50 text-amber-600"
                     }`}
@@ -238,31 +295,34 @@ export function AdminDashboard({ onBack }: DashboardProps) {
                 </p>
               </div>
 
-              {/* Status */}
               {card.status !== "idle" && (
                 <div className="px-5 pb-3">
                   <div
-                    className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg ${
+                    ref={(node) => {
+                      logRefs.current[card.id] = node;
+                    }}
+                    className={`flex items-start gap-2 text-xs px-3 py-2 rounded-lg whitespace-pre-wrap break-words ${
+                      card.id === "crawler" || card.id === "llm" ? "max-h-56 overflow-y-auto" : ""
+                    } ${
                       card.status === "running"
                         ? "bg-blue-50 text-blue-600"
-                        : card.status === "done"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : "bg-red-50 text-red-600"
+                        : card.status === "succeeded"
+                          ? "bg-emerald-50 text-emerald-600"
+                          : "bg-red-50 text-red-600"
                     }`}
                   >
                     {card.status === "running" ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : card.status === "done" ? (
-                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0 mt-0.5" />
+                    ) : card.status === "succeeded" ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     ) : (
-                      <AlertCircle className="w-3.5 h-3.5" />
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                     )}
-                    {card.message}
+                    <span>{card.message}</span>
                   </div>
                 </div>
               )}
 
-              {/* Action */}
               <div className="px-5 pb-5 pt-1">
                 <button
                   onClick={card.action}
@@ -290,20 +350,17 @@ export function AdminDashboard({ onBack }: DashboardProps) {
           ))}
         </div>
 
-        {/* Info */}
         <div className="mt-8 bg-white rounded-xl border border-[#E4E9F0] p-5">
           <div className="flex items-start gap-3">
             <FileText className="w-4 h-4 text-[#667085] mt-0.5 shrink-0" />
             <div className="text-xs text-[#667085] leading-relaxed space-y-1">
               <p>
                 <span className="font-medium text-[#172033]">操作说明：</span>
-                所有任务执行完成后，情报总览页面的数据将自动更新。AI
-                情报分析报告将保存至服务端，所有用户均可查看。
+                当前阶段已接入 FastAPI 管理员登录、爬虫启动、LLM 结构化处理和 SSE 实时日志。
               </p>
               <p>
                 <span className="font-medium text-[#172033]">注意事项：</span>
-                爬虫和数据处理的执行时间取决于数据量，请耐心等待任务完成。AI
-                分析通常需要 15-30 秒。
+                离开页面只会停止前端日志读取，不会取消后端任务；LLM 成功后会刷新看板数据。
               </p>
             </div>
           </div>

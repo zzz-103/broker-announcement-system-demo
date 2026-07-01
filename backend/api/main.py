@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import os
 import secrets
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -50,6 +53,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def resolve_project_path(value: str | None, default: Path) -> Path:
+    project_root = Path(__file__).resolve().parents[2]
+    path = Path(value) if value else default
+    if not path.is_absolute():
+        path = project_root / path
+    return path.resolve()
+
+
 @app.post("/api/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
     expected_username = os.getenv("ADMIN_USERNAME", "admin")
@@ -71,6 +82,54 @@ def start_scraper() -> dict[str, str]:
     except JobConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
+@app.post("/api/jobs/llm", dependencies=[Depends(require_token)])
+def start_llm() -> dict[str, str]:
+    try:
+        job = job_manager.start_llm()
+    except JobConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
+@app.get("/api/data/announcements", dependencies=[Depends(require_token)])
+def get_announcements() -> dict[str, object]:
+    project_root = Path(__file__).resolve().parents[2]
+    csv_path = resolve_project_path(
+        os.getenv("ANNOUNCEMENT_CSV_PATH"),
+        project_root / "backend" / "data" / "announcement_table.csv",
+    )
+
+    if not csv_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="announcement data has not been generated; run scraper and LLM first",
+        )
+
+    try:
+        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            records = list(reader)
+    except csv.Error as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"failed to parse announcement CSV: {exc}",
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to read announcement data",
+        ) from exc
+
+    updated_at = datetime.fromtimestamp(csv_path.stat().st_mtime, timezone.utc).isoformat()
+    return {
+        "records": records,
+        "meta": {
+            "count": len(records),
+            "updated_at": updated_at,
+        },
+    }
 
 
 @app.get("/api/jobs/{job_id}", dependencies=[Depends(require_token)])

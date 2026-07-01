@@ -11,6 +11,7 @@ export function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((s) => s.login);
+  const authError = useAuthStore((s) => s.error);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,21 +20,19 @@ export function LoginPage() {
 
     const success = await login(username, password);
     if (!success) {
-      setError("用户名或密码错误");
+      setError(useAuthStore.getState().error || authError || "登录失败，请检查后端服务和账号密码");
     }
     setLoading(false);
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F5F7FA]">
-      {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-100 rounded-full opacity-30 blur-3xl" />
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-indigo-100 rounded-full opacity-30 blur-3xl" />
       </div>
 
       <div className="relative w-full max-w-md mx-4">
-        {/* Logo / Title */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#162B49] to-[#2563EB] shadow-lg mb-4">
             <Lock className="w-8 h-8 text-white" />
@@ -46,10 +45,8 @@ export function LoginPage() {
           </p>
         </div>
 
-        {/* Login Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-[#E4E9F0] p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Username */}
             <div>
               <label className="block text-sm font-medium text-[#172033] mb-1.5">
                 用户名
@@ -67,7 +64,6 @@ export function LoginPage() {
               </div>
             </div>
 
-            {/* Password */}
             <div>
               <label className="block text-sm font-medium text-[#172033] mb-1.5">
                 密码
@@ -96,14 +92,12 @@ export function LoginPage() {
               </div>
             </div>
 
-            {/* Error */}
             {error && (
               <div className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">
                 {error}
               </div>
             )}
 
-            {/* Submit */}
             <button
               type="submit"
               disabled={loading}
@@ -120,10 +114,9 @@ export function LoginPage() {
             </button>
           </form>
 
-          {/* Hint */}
           <div className="mt-6 pt-5 border-t border-[#E4E9F0]">
             <p className="text-xs text-[#98A2B3] text-center">
-              管理员账号可获得完整功能，普通用户仅可查看数据
+              管理员账号可进入控制台并运行后端任务
             </p>
           </div>
         </div>

@@ -3,8 +3,7 @@
 **/failures.jsonl
 **/checkpoint.json
 backend/config/llm_api_config.json
-backend/config/llm_api_config.json
-
+backend/data/raw_json
 # Python virtual environment and cache
 .venv/
 venv/

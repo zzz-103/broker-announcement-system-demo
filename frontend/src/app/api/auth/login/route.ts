@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const ADMIN_USER = process.env.ADMIN_USERNAME || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASSWORD || "admin2026";
+const ADMIN_PASS = process.env.ADMIN_PASSWORD;
 const USER_PASS = process.env.USER_PASSWORD || "user2026";
 
 export async function POST(request: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Admin login
-    if (username === ADMIN_USER && password === ADMIN_PASS) {
+    if (ADMIN_PASS && username === ADMIN_USER && password === ADMIN_PASS) {
       return NextResponse.json({
         success: true,
         username: ADMIN_USER,

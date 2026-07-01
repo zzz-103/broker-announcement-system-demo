@@ -203,7 +203,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
     initialState: { pagination: { pageSize } },
   });
 
-  const pageCount = table.getPageCount();
+  const pageCount = Math.max(1, table.getPageCount());
   const currentPage = table.getState().pagination.pageIndex + 1;
 
   return (
@@ -308,7 +308,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                   colSpan={columns.length}
                   className="px-4 py-12 text-center text-[13px] text-[#98A2B3]"
                 >
-                  暂无匹配数据，请调整筛选条件
+                  暂无数据
                 </td>
               </tr>
             ) : (

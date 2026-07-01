@@ -31,6 +31,14 @@ interface ChartsProps {
   allData: ProcessedRecord[];
 }
 
+function EmptyChartState() {
+  return (
+    <div className="absolute inset-0 flex items-center justify-center text-[13px] text-[#98A2B3] pointer-events-none">
+      暂无数据
+    </div>
+  );
+}
+
 export function ProcurementTrendChart({ data, allData }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
@@ -145,7 +153,10 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
           趋势受历史采集覆盖范围影响
         </span>
       </div>
-      <div ref={chartRef} className="h-[220px]" />
+      <div className="relative h-[220px]">
+        <div ref={chartRef} className="h-full" />
+        {data.length === 0 && <EmptyChartState />}
+      </div>
     </div>
   );
 }
@@ -229,7 +240,10 @@ export function DomainDistributionChart({ data }: ChartsProps) {
       <h3 className="text-[14px] font-semibold text-[#172033] mb-2">
         金融科技方向
       </h3>
-      <div ref={chartRef} className="h-[220px]" />
+      <div className="relative h-[220px]">
+        <div ref={chartRef} className="h-full" />
+        {data.length === 0 && <EmptyChartState />}
+      </div>
     </div>
   );
 }
@@ -294,7 +308,10 @@ export function StageDistributionChart({ data }: ChartsProps) {
       <h3 className="text-[14px] font-semibold text-[#172033] mb-2">
         公告阶段
       </h3>
-      <div ref={chartRef} className="h-[220px]" />
+      <div className="relative h-[220px]">
+        <div ref={chartRef} className="h-full" />
+        {data.length === 0 && <EmptyChartState />}
+      </div>
     </div>
   );
 }

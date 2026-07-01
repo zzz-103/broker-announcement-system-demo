@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
 import dynamic from "next/dynamic";
 import {
+  DataNotGeneratedError,
   loadAndProcessData,
   getDataBaseline,
   formatDate,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/announcement-data";
 import { useFilterStore, type TimeRange } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
+import { BackendApiError } from "@/lib/api/backend-client";
 import { LoginPage } from "@/components/login-page";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
@@ -91,15 +93,22 @@ const DOMAIN_OPTIONS = [
 export default function Dashboard() {
   const [allData, setAllData] = useState<ProcessedRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
+  const [dataMessage, setDataMessage] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] =
     useState<ProcessedRecord | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<"ai" | "overview" | "table">("overview");
   const [showDashboard, setShowDashboard] = useState(false);
+  const [dataVersion, setDataVersion] = useState(0);
 
   // Auth state
-  const { isLoggedIn, isAdmin, username, logout } = useAuthStore();
+  const { isLoggedIn, isAdmin, username, logout, token, clearAuth } = useAuthStore();
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
 
   // Header height measurement for sticky tab bar positioning
   const headerRef = useRef<HTMLElement>(null);
@@ -138,19 +147,44 @@ export default function Dashboard() {
     resetAll,
   } = useFilterStore();
 
-  // Only load CSV data after login
+  const refreshData = useCallback(() => {
+    setDataVersion((version) => version + 1);
+  }, []);
+
+  // Only load data after login
   useEffect(() => {
-    if (!isLoggedIn) return;
-    loadAndProcessData()
+    if (!isLoggedIn || !token) return;
+    setIsLoading(true);
+    setDataStatus("loading");
+    setDataMessage(null);
+    loadAndProcessData(token)
       .then((records) => {
         setAllData(records);
+        setDataStatus(records.length === 0 ? "empty" : "ready");
+        setDataMessage(
+          records.length === 0
+            ? "尚未生成看板数据，请先运行爬虫和 LLM。"
+            : null
+        );
         setIsLoading(false);
       })
-      .catch((err: Error) => {
-        setParseError(err.message);
+      .catch((err: unknown) => {
+        if (err instanceof BackendApiError && err.status === 401) {
+          clearAuth("登录已失效，请重新登录");
+          return;
+        }
+        if (err instanceof DataNotGeneratedError) {
+          setAllData([]);
+          setDataStatus("empty");
+          setDataMessage(err.message);
+        } else {
+          setAllData([]);
+          setDataStatus("error");
+          setDataMessage(err instanceof Error ? err.message : "数据加载失败");
+        }
         setIsLoading(false);
       });
-  }, [isLoggedIn]);
+  }, [clearAuth, dataVersion, isLoggedIn, token]);
 
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
 
@@ -322,24 +356,11 @@ export default function Dashboard() {
 
   // Show admin dashboard if admin requested it
   if (showDashboard && isAdmin) {
-    return <AdminDashboard onBack={() => setShowDashboard(false)} />;
-  }
-
-  if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#F5F7FA] flex items-center justify-center">
-        <div className="text-[13px] text-[#667085]">正在加载数据...</div>
-      </div>
-    );
-  }
-
-  if (parseError) {
-    return (
-      <div className="min-h-screen bg-[#F5F7FA] flex items-center justify-center">
-        <div className="text-[13px] text-[#D64545]">
-          CSV解析失败: {parseError}
-        </div>
-      </div>
+      <AdminDashboard
+        onBack={() => setShowDashboard(false)}
+        onDataRefresh={refreshData}
+      />
     );
   }
 
@@ -407,6 +428,20 @@ export default function Dashboard() {
 
       {/* ─── Main Content ─── */}
       <main className="max-w-[1600px] mx-auto px-3 sm:px-8 py-4 sm:py-5 space-y-3 sm:space-y-4">
+        {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
+          <div
+            className={`rounded-[10px] border px-4 py-3 text-[13px] ${
+              dataStatus === "error"
+                ? "border-red-100 bg-red-50 text-red-600"
+                : "border-amber-100 bg-amber-50 text-amber-700"
+            }`}
+          >
+            {isLoading
+              ? "正在加载看板数据..."
+              : dataMessage || "尚未生成看板数据，请先运行爬虫和 LLM。"}
+          </div>
+        )}
+
         {/* Global Filter Bar */}
         <div className="bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 sm:px-5 py-3">
           <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
