@@ -1,4 +1,7 @@
-import Papa from "papaparse";
+import {
+  BackendApiError,
+  fetchAnnouncements,
+} from "@/lib/api/backend-client";
 
 // ─── Raw CSV row ───
 interface RawCsvRow {
@@ -16,6 +19,13 @@ interface RawCsvRow {
   procurement_method?: string;
   winning_supplier?: string;
   winning_amount_yuan?: string;
+}
+
+export class DataNotGeneratedError extends Error {
+  constructor() {
+    super("尚未生成看板数据，请先运行爬虫和 LLM。");
+    this.name = "DataNotGeneratedError";
+  }
 }
 
 // ─── Processed record ───
@@ -300,27 +310,20 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
   });
 }
 
-export async function loadAndProcessData(): Promise<ProcessedRecord[]> {
-  const response = await fetch("/data/announcement_table.csv", {
-    cache: "no-store",
-  });
-  let csvText = await response.text();
-
-  // Strip BOM
-  if (csvText.charCodeAt(0) === 0xfeff) {
-    csvText = csvText.slice(1);
+export async function loadAndProcessData(token: string): Promise<ProcessedRecord[]> {
+  try {
+    const data = await fetchAnnouncements(token);
+    if (data.records.length === 0) return [];
+    return processRecords(data.records as RawCsvRow[]);
+  } catch (error) {
+    if (error instanceof BackendApiError && error.status === 404) {
+      throw new DataNotGeneratedError();
+    }
+    if (error instanceof BackendApiError && error.status === 0) {
+      throw new Error("无法连接 FastAPI 后端，请确认服务已启动");
+    }
+    throw error;
   }
-
-  return new Promise((resolve, reject) => {
-    Papa.parse<RawCsvRow>(csvText, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        resolve(processRecords(results.data));
-      },
-      error: (error: Error) => reject(error),
-    });
-  });
 }
 
 // ─── Derived analytics helpers ───

@@ -1,9 +1,12 @@
 import { NextRequest } from "next/server";
-import { LLMClient, Config, HeaderUtils, type Message } from "coze-coding-dev-sdk";
 import { processRecords, type ProcessedRecord } from "@/lib/announcement-data";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import Papa from "papaparse";
+import type { Message } from "coze-coding-dev-sdk";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 interface RawCsvRow {
   broker_folder?: string;
@@ -24,7 +27,7 @@ interface RawCsvRow {
 
 const ANALYSIS_FILE = join(process.cwd(), "public", "data", "ai-analysis.json");
 const ADMIN_USER = process.env.ADMIN_USERNAME || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASSWORD || "admin2026";
+const ADMIN_PASS = process.env.ADMIN_PASSWORD;
 
 function loadCsvServerSide(): ProcessedRecord[] {
   const csvPath = join(process.cwd(), "public", "data", "announcement_table.csv");
@@ -86,13 +89,14 @@ export async function POST(request: NextRequest) {
     const credentials = Buffer.from(base64Credentials, "base64").toString("utf-8");
     const [username, password] = credentials.split(":");
 
-    if (username !== ADMIN_USER || password !== ADMIN_PASS) {
+    if (!ADMIN_PASS || username !== ADMIN_USER || password !== ADMIN_PASS) {
       return new Response(JSON.stringify({ error: "用户名或密码错误" }), {
         status: 401,
         headers: { "Content-Type": "application/json" },
       });
     }
 
+    const { LLMClient, Config, HeaderUtils } = await import("coze-coding-dev-sdk");
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
     const config = new Config();
     const client = new LLMClient(config, customHeaders);
