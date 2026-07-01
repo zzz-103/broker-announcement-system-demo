@@ -9,7 +9,7 @@
 本系统是一个结合了 **Python 自动化数据流** 与 **Next.js 全栈 BI 看板** 的智能招采分析系统。
 
 ```
-d:/broker-announcement-system-demo/
+./
 ├── frontend/                     # 前端 Next.js 16 + shadcn/ui 全栈应用
 │   ├── public/data/              # BI 看板数据源目录 (核心纽带)
 │   │   ├── announcement_table.csv # LLM 结构化提取出的 CSV 汇总表
@@ -50,28 +50,28 @@ graph TD
 ```
 
 ### 1. 爬虫抓取阶段
-- **执行脚本**：[cfcpn_scraper.py](file:///d:/broker-announcement-system-demo/backend/python-http-www-cfcpn-com-jcw/cfcpn_scraper.py)
+- **执行脚本**：[cfcpn_scraper.py](backend/python-http-www-cfcpn-com-jcw/cfcpn_scraper.py)
 - **核心逻辑**：基于断点续爬机制，增量抓取包含“证券”关键字的公告，将其转化为带有 Front Matter 元数据头的 Markdown 文件，并保存在 `backend/python-http-www-cfcpn-com-jcw/output/notices/` 下。
 
 ### 2. LLM 结构化阶段
-- **执行脚本**：[llm_markdown_table_builder.py](file:///d:/broker-announcement-system-demo/backend/llm_table/llm_markdown_table_builder.py)
+- **执行脚本**：[llm_markdown_table_builder.py](backend/llm_table/llm_markdown_table_builder.py)
 - **核心逻辑**：并发读取 notices 下的 `.md`，调用 `llm_api_config.json` 指定的大模型接口进行结构化处理。
-- **输出至前端**：将提取出的数据规范化清洗后（包括把金额换算为元、期限换算为月/天，识别 `procurement_action` 采购主要动作），**直接输出/更新**至前端的 [frontend/public/data/announcement_table.csv](file:///d:/broker-announcement-system-demo/frontend/public/data/announcement_table.csv)。
+- **输出至前端**：将提取出的数据规范化清洗后（包括把金额换算为元、期限换算为月/天，识别 `procurement_action` 采购主要动作），**直接输出/更新**至前端的 [frontend/public/data/announcement_table.csv](frontend/public/data/announcement_table.csv)。
 
 ### 3. 前端看板渲染阶段
-- 当管理员或用户登录系统后，前端页面 [page.tsx](file:///d:/broker-announcement-system-demo/frontend/src/app/page.tsx) 自动通过 HTTP 请求加载 `public/data/announcement_table.csv`，由前端库 PapaParse 进行解析清洗，驱动 BI 仪表盘、漏斗、雷达图和表格的实时渲染。
+- 当管理员或用户登录系统后，前端页面 [page.tsx](frontend/src/app/page.tsx) 自动通过 HTTP 请求加载 `public/data/announcement_table.csv`，由前端库 PapaParse 进行解析清洗，驱动 BI 仪表盘、漏斗、雷达图和表格的实时渲染。
 
 ---
 
 ## 三、 前后端联调实现方案 (API 接入指南)
 
-为了在前端管理控制台 [admin-dashboard.tsx](file:///d:/broker-announcement-system-demo/frontend/src/components/admin-dashboard.tsx) 中真实运行爬虫和 LLM 处理程序，我们需要在 Next.js 服务端编写两个 API 路由，通过 Node.js 的 `child_process` 异步调用 Python 虚拟环境。
+为了在前端管理控制台 [admin-dashboard.tsx](frontend/src/components/admin-dashboard.tsx) 中真实运行爬虫和 LLM 处理程序，我们需要在 Next.js 服务端编写两个 API 路由，通过 Node.js 的 `child_process` 异步调用 Python 虚拟环境。
 
 以下是联调所需的详细开发步骤和代码模板：
 
 ### 1. 编写“一键更新爬虫” API 路由
 
-在前端目录新建 [frontend/src/app/api/run-scraper/route.ts](file:///d:/broker-announcement-system-demo/frontend/src/app/api/run-scraper/route.ts)：
+在前端目录新建 [frontend/src/app/api/run-scraper/route.ts](frontend/src/app/api/run-scraper/route.ts)：
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
@@ -82,7 +82,7 @@ const ADMIN_USER = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || "admin2026";
 
 export async function POST(request: NextRequest) {
-  // 1. 校验管理员权限
+  / 1. 校验管理员权限
   const authHeader = request.headers.get("authorization");
   if (!authHeader || !authHeader.startsWith("Basic ")) {
     return NextResponse.json({ error: "需要管理员认证" }, { status: 401 });
@@ -93,12 +93,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "权限不足" }, { status: 403 });
   }
 
-  // 2. 配置 Python 路径与工作目录
+  / 2. 配置 Python 路径与工作目录
   const projectRoot = join(process.cwd(), "..");
   const pythonExec = join(projectRoot, "backend", "python-http-www-cfcpn-com-jcw", ".venv", "Scripts", "python.exe");
   const scriptPath = join(projectRoot, "backend", "python-http-www-cfcpn-com-jcw", "cfcpn_scraper.py");
 
-  // 默认命令参数 (与前几次优化保持一致)
+  / 默认命令参数 (与前几次优化保持一致)
   const args = [
     scriptPath,
     "--keyword", "证券",
@@ -112,17 +112,17 @@ export async function POST(request: NextRequest) {
     "--batch-rest-min", "100",
     "--batch-rest-max", "200",
     "--max-consecutive-403", "2",
-    "--resume" // 支持从已有.md断点续爬
+    "--resume" / 支持从已有.md断点续爬
   ];
 
-  // 3. 异步启动子进程
+  / 3. 异步启动子进程
   console.log(`[Scraper] Starting: ${pythonExec} ${args.join(" ")}`);
   const child = spawn(pythonExec, args, {
     cwd: join(projectRoot, "backend", "python-http-www-cfcpn-com-jcw"),
     env: { ...process.env, PYTHONIOENCODING: "utf-8" },
   });
 
-  // 使用 Server-Sent Events (SSE) 或分块传输流实时将日志返回给前端
+  / 使用 Server-Sent Events (SSE) 或分块传输流实时将日志返回给前端
   const responseStream = new TransformStream();
   const writer = responseStream.writable.getWriter();
   const encoder = new TextEncoder();
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
 
 ### 2. 编写“一键运行 LLM 提取” API 路由
 
-在前端目录新建 [frontend/src/app/api/run-llm/route.ts](file:///d:/broker-announcement-system-demo/frontend/src/app/api/run-llm/route.ts)：
+在前端目录新建 [frontend/src/app/api/run-llm/route.ts](frontend/src/app/api/run-llm/route.ts)：
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
@@ -165,7 +165,7 @@ const ADMIN_USER = process.env.ADMIN_USERNAME || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || "admin2026";
 
 export async function POST(request: NextRequest) {
-  // 1. 权限校验
+  / 1. 权限校验
   const authHeader = request.headers.get("authorization");
   if (!authHeader || !authHeader.startsWith("Basic ")) {
     return NextResponse.json({ error: "需要管理员认证" }, { status: 401 });
@@ -176,12 +176,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "权限不足" }, { status: 403 });
   }
 
-  // 2. 配置路径 (LLM 提取后需直接写入前端 public/data/ 供看板读取)
+  / 2. 配置路径 (LLM 提取后需直接写入前端 public/data/ 供看板读取)
   const projectRoot = join(process.cwd(), "..");
-  const pythonExec = join(projectRoot, ".venv", "Scripts", "python.exe"); // 根目录的 venv 安装了 openai/pandas
+  const pythonExec = join(projectRoot, ".venv", "Scripts", "python.exe"); / 根目录的 venv 安装了 openai/pandas
   const scriptPath = join(projectRoot, "backend", "llm_table", "llm_markdown_table_builder.py");
   const inputDir = join(projectRoot, "backend", "python-http-www-cfcpn-com-jcw", "output", "notices");
-  const outputDir = join(process.cwd(), "public", "data"); // 直接输出到前端公用数据文件夹
+  const outputDir = join(process.cwd(), "public", "data"); / 直接输出到前端公用数据文件夹
   const configPath = join(projectRoot, "backend", "config", "llm_api_config.json");
 
   const args = [
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
     "--output-dir", outputDir,
     "--llm-config", configPath,
     "--workers", "4",
-    // "--full-refresh" // 根据需要选择是增量提取还是全量覆盖
+    / "--full-refresh" / 根据需要选择是增量提取还是全量覆盖
   ];
 
   console.log(`[LLM Builder] Starting: ${pythonExec} ${args.join(" ")}`);
@@ -228,10 +228,10 @@ export async function POST(request: NextRequest) {
 
 ### 3. 修改前端控制台 UI 组件进行联调
 
-修改 [frontend/src/components/admin-dashboard.tsx](file:///d:/broker-announcement-system-demo/frontend/src/components/admin-dashboard.tsx) 里的异步请求方法以支持 SSE 实时日志解析展示：
+修改 [frontend/src/components/admin-dashboard.tsx](frontend/src/components/admin-dashboard.tsx) 里的异步请求方法以支持 SSE 实时日志解析展示：
 
 ```typescript
-// ─── 修改 handleCrawler 方法 ───
+/ ─── 修改 handleCrawler 方法 ───
 const handleCrawler = useCallback(async () => {
   setCrawlerStatus("running");
   setCrawlerMsg("正在连接服务器并启动金采网爬虫...");
@@ -260,7 +260,7 @@ const handleCrawler = useCallback(async () => {
           if (line.startsWith("data: ")) {
             const data = JSON.parse(line.slice(6));
             if (data.log) {
-              // 实时更新控制台打印的日志行数
+              / 实时更新控制台打印的日志行数
               setCrawlerMsg((prev) => prev + "\n" + data.log.trim());
             }
             if (data.done) {
@@ -277,7 +277,7 @@ const handleCrawler = useCallback(async () => {
   }
 }, [username]);
 
-// ─── 修改 handleProcess 方法 ───
+/ ─── 修改 handleProcess 方法 ───
 const handleProcess = useCallback(async () => {
   setProcessStatus("running");
   setProcessMsg("开始读取增量 Markdown 公告并调用 LLM 进行表格化解析...");
@@ -341,14 +341,14 @@ coze dev
 ```
 
 ### 2. 后端环境检查
-- 爬虫依赖位于子目录 [python-http-www-cfcpn-com-jcw/.venv](file:///d:/broker-announcement-system-demo/backend/python-http-www-cfcpn-com-jcw/.venv) 内。
-- LLM 表格处理器依赖（包含 `openai`, `pandas`, `openpyxl` 等）位于项目根目录下的全局虚拟环境 [.venv](file:///d:/broker-announcement-system-demo/.venv) 中。
+- 爬虫依赖位于子目录 [python-http-www-cfcpn-com-jcw/.venv](backend/python-http-www-cfcpn-com-jcw/.venv) 内。
+- LLM 表格处理器依赖（包含 `openai`, `pandas`, `openpyxl` 等）位于项目根目录下的全局虚拟环境 [.venv](.venv) 中。
 
 在手动测试后端时，可执行以下命令：
 ```powershell
 # 手动运行爬虫 (断点续爬模式)
-d:\broker-announcement-system-demo\backend\python-http-www-cfcpn-com-jcw\.venv\Scripts\python.exe backend\python-http-www-cfcpn-com-jcw\cfcpn_scraper.py --keyword "证券" --resume
+backend/python-http-www-cfcpn-com-jcw/.venv/Scripts/python.exe backend/python-http-www-cfcpn-com-jcw/cfcpn_scraper.py --keyword "证券" --resume
 
 # 手动运行 LLM 结构化提取 (直接向前端数据目录输出 CSV 结果)
-d:\broker-announcement-system-demo\.venv\Scripts\python.exe backend\llm_table\llm_markdown_table_builder.py --input-dir backend\python-http-www-cfcpn-com-jcw\output\notices --output-dir frontend\public\data --llm-config backend\config\llm_api_config.json --workers 4
+.venv/Scripts/python.exe backend/llm_table/llm_markdown_table_builder.py --input-dir backend/python-http-www-cfcpn-com-jcw/output/notices --output-dir frontend/public/data --llm-config backend/config/llm_api_config.json --workers 4
 ```

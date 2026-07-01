@@ -1,8 +1,8 @@
 {
-  "input_dir": "D:\\broker-announcement-system-demo\\backend\\python-http-www-cfcpn-com-jcw\\output\\notices",
-  "output_dir": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output",
-  "broker_output_root": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers",
-  "llm_config_path": "D:\\broker-announcement-system-demo\\backend\\config\\llm_api_config.json",
+  "input_dir": "backend/python-http-www-cfcpn-com-jcw/output/notices",
+  "output_dir": "backend/llm_table/test_output",
+  "broker_output_root": "backend/llm_table/test_output/brokers",
+  "llm_config_path": "backend/config/llm_api_config.json",
   "model": "DeepSeek-V4-Flash",
   "api_base_url": "https://cscocrm.csco.com.cn:11443/v1",
   "incremental": false,
@@ -14,25 +14,25 @@
   "success_files": 10,
   "failed_files": 0,
   "output_rows": 12,
-  "failed_files_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\failed_files.jsonl",
+  "failed_files_path": "backend/llm_table/test_output/failed_files.jsonl",
   "finished_at": "2026-07-01T05:59:46.589846+00:00",
   "broker_summaries": {
     "notices": {
       "broker_folder": "notices",
-      "output_dir": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices",
+      "output_dir": "backend/llm_table/test_output/brokers/notices",
       "processed_files": 10,
       "failed_files": 0,
       "success_files": 10,
       "output_rows": 12,
       "finished_at": "2026-07-01T05:59:45.020075+00:00",
-      "csv_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\announcement_table.csv",
-      "jsonl_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\announcement_table.jsonl",
-      "xlsx_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\announcement_table.xlsx",
-      "summary_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\run_summary.json"
+      "csv_path": "backend/llm_table/test_output/brokers/notices/announcement_table.csv",
+      "jsonl_path": "backend/llm_table/test_output/brokers/notices/announcement_table.jsonl",
+      "xlsx_path": "backend/llm_table/test_output/brokers/notices/announcement_table.xlsx",
+      "summary_path": "backend/llm_table/test_output/brokers/notices/run_summary.json"
     }
   },
-  "csv_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\announcement_table.csv",
-  "jsonl_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\announcement_table.jsonl",
-  "xlsx_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\announcement_table.xlsx",
-  "summary_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\run_summary.json"
+  "csv_path": "backend/llm_table/test_output/announcement_table.csv",
+  "jsonl_path": "backend/llm_table/test_output/announcement_table.jsonl",
+  "xlsx_path": "backend/llm_table/test_output/announcement_table.xlsx",
+  "summary_path": "backend/llm_table/test_output/run_summary.json"
 }

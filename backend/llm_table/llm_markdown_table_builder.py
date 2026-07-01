@@ -24,6 +24,7 @@ except ImportError:  # pragma: no cover - runtime dependency guard
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = ROOT_DIR.parent
 DEFAULT_INPUT_DIR = ROOT_DIR / "documents" / "markdown"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "documents" / "structured_announcements"
 DEFAULT_LLM_CONFIG_PATH = ROOT_DIR / "config" / "llm_api_config.json"
@@ -675,7 +676,7 @@ def normalize_candidate_suppliers(value: Any) -> str:
 def flatten_payload(
     payload: Any,
     metadata: dict[str, str],
-    raw_json_path: Path,
+    raw_json_path: str,
     processed_at: str,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
@@ -736,12 +737,20 @@ def flatten_payload(
             "service_period_months": record.get("service_period_months"),
             "delivery_period_days": record.get("delivery_period_days"),
             "winning_supplier": record.get("winning_supplier") or "",
-            "raw_json_path": str(raw_json_path),
+            "raw_json_path": raw_json_path,
             "processed_at": processed_at,
         }
         rows.append(normalize_row_fields(row))
 
     return rows
+
+
+def portable_path(path: Path, base: Path = PROJECT_ROOT) -> str:
+    """Return a repo-relative path when possible so generated artifacts are portable."""
+    try:
+        return path.resolve().relative_to(base.resolve()).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def normalize_scalar(value: Any) -> str:
@@ -896,11 +905,12 @@ def process_markdown_file(
         "relative_path": str(relative_path),
         "document_sha1": sha1_text(markdown),
     }
+    raw_json_reference = portable_path(raw_json_path)
     processed_at = datetime.now(timezone.utc).isoformat()
 
     if raw_json_path.exists() and not force_refresh:
         cached_payload = json.loads(raw_json_path.read_text(encoding="utf-8"))
-        rows = flatten_payload(cached_payload, metadata, raw_json_path, processed_at)
+        rows = flatten_payload(cached_payload, metadata, raw_json_reference, processed_at)
         return FileExtractionResult(rows=rows, raw_payload=cached_payload)
 
     with request_semaphore:
@@ -1007,7 +1017,7 @@ def process_markdown_file(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    rows = flatten_payload(payload, metadata, raw_json_path, processed_at)
+    rows = flatten_payload(payload, metadata, raw_json_reference, processed_at)
     return FileExtractionResult(rows=rows, raw_payload=payload)
 
 
@@ -1123,10 +1133,10 @@ def write_output_bundle(
         encoding="utf-8",
     )
     return {
-        "csv_path": str(csv_path),
-        "jsonl_path": str(jsonl_path),
-        "xlsx_path": xlsx_exported,
-        "summary_path": str(summary_path),
+        "csv_path": portable_path(csv_path),
+        "jsonl_path": portable_path(jsonl_path),
+        "xlsx_path": portable_path(Path(xlsx_exported)) if xlsx_exported else None,
+        "summary_path": portable_path(summary_path),
     }
 
 
@@ -1241,10 +1251,10 @@ def main() -> int:
 
     if not plans and args.incremental:
         summary = {
-            "input_dir": str(input_dir),
-            "output_dir": str(output_dir),
-            "broker_output_root": str(output_dir / "brokers"),
-            "llm_config_path": str(llm_config_path),
+            "input_dir": portable_path(input_dir),
+            "output_dir": portable_path(output_dir),
+            "broker_output_root": portable_path(output_dir / "brokers"),
+            "llm_config_path": portable_path(llm_config_path),
             "model": llm_config.model,
             "api_base_url": llm_config.base_url,
             "incremental": True,
@@ -1312,7 +1322,7 @@ def main() -> int:
             try:
                 result = future.result()
                 if result.error:
-                    failures.append({"file": str(path), "error": result.error})
+                    failures.append({"file": portable_path(path), "error": result.error})
                     print(f"[{index}/{len(plans)}] FAILED {path}: {result.error}")
                     continue
                 all_rows.extend(result.rows)
@@ -1322,10 +1332,10 @@ def main() -> int:
                     f"({plan.reason})"
                 )
             except (TimeoutError, ValueError, json.JSONDecodeError) as exc:
-                failures.append({"file": str(path), "error": repr(exc)})
+                failures.append({"file": portable_path(path), "error": repr(exc)})
                 print(f"[{index}/{len(plans)}] FAILED {path}: {exc}")
             except Exception as exc:
-                failures.append({"file": str(path), "error": repr(exc)})
+                failures.append({"file": portable_path(path), "error": repr(exc)})
                 print(f"[{index}/{len(plans)}] FAILED {path}: {exc}")
 
     failure_path = output_dir / "failed_files.jsonl"
@@ -1348,7 +1358,7 @@ def main() -> int:
         broker_output_dir = broker_output_root / broker_folder
         broker_summary = {
             "broker_folder": broker_folder,
-            "output_dir": str(broker_output_dir),
+            "output_dir": portable_path(broker_output_dir),
             "processed_files": files_by_broker.get(broker_folder, 0),
             "failed_files": failures_by_broker.get(broker_folder, 0),
             "success_files": files_by_broker.get(broker_folder, 0) - failures_by_broker.get(broker_folder, 0),
@@ -1369,10 +1379,10 @@ def main() -> int:
         broker_summaries[broker_folder] = broker_summary
 
     summary = {
-        "input_dir": str(input_dir),
-        "output_dir": str(output_dir),
-        "broker_output_root": str(broker_output_root),
-        "llm_config_path": str(llm_config_path),
+        "input_dir": portable_path(input_dir),
+        "output_dir": portable_path(output_dir),
+        "broker_output_root": portable_path(broker_output_root),
+        "llm_config_path": portable_path(llm_config_path),
         "model": llm_config.model,
         "api_base_url": llm_config.base_url,
         "incremental": args.incremental,
@@ -1384,7 +1394,7 @@ def main() -> int:
         "success_files": len(plans) - len(failures),
         "failed_files": len(failures),
         "output_rows": len(output_rows),
-        "failed_files_path": str(failure_path),
+        "failed_files_path": portable_path(failure_path),
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "broker_summaries": broker_summaries,
     }
