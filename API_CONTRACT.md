@@ -23,6 +23,9 @@ The canonical Python API paths are:
 - `GET /internal/admin/tasks`
 - `GET /internal/admin/tasks/{taskId}`
 - `POST /internal/admin/tasks/validate`
+- `POST /internal/admin/tasks`
+- `POST /internal/admin/tasks/{taskId}/cancel`
+- `GET /internal/admin/tasks/{taskId}/logs`
 
 Do not introduce or use these older paths:
 
@@ -133,6 +136,15 @@ Status codes:
 - `404 TASK_NOT_FOUND`
 - `422 INVALID_TASK_TRANSITION`
 - `500 TASK_DATABASE_ERROR`
+- `503 TASK_EXECUTION_DISABLED`
+- `503 TASK_WORKER_DISABLED`
+- `503 TASK_EXECUTION_MODE_UNSUPPORTED`
+- `409 TASK_ALREADY_RUNNING`
+- `409 TASK_ALREADY_FINISHED`
+- `400 INVALID_IDEMPOTENCY_KEY`
+- `503 TASK_LOG_UNAVAILABLE`
+
+Task records may also store internal `errorCode` values such as `TASK_CANCEL_REQUESTED` and `WORKER_RESTARTED`; these are task audit/status fields, not public HTTP response codes.
 
 Responses must not include Python tracebacks, absolute paths, environment variables, secrets, raw Authorization headers, or server filesystem details.
 
@@ -296,7 +308,15 @@ Amount statistics are only for records with disclosed valid amounts.
 
 ## Admin Task Metadata
 
-Phase B1 does not execute tasks. It only validates task requests, persists task metadata for internal service use, exposes admin read-only task inspection, and defines the state machine for B2.
+Phase B2A adds formal task creation with a single dry-run worker. It still does not execute crawler scripts, extraction scripts, shell commands, or LLM calls.
+
+Execution modes:
+
+- `disabled`: task creation returns `503 TASK_EXECUTION_DISABLED` and no task record is created.
+- `dry_run`: task creation is allowed and a single in-process dry-run worker advances task metadata and logs.
+- `live`: executes a server-built argv with a controlled subprocess runner. It requires both `TASK_EXECUTION_MODE=live` and `TASK_LIVE_EXECUTION_ENABLED=true`; otherwise creation returns `503 LIVE_EXECUTION_DISABLED`.
+
+`TASK_WORKER_ENABLED=false` disables the worker and task creation returns `503 TASK_WORKER_DISABLED` so tasks cannot remain pending forever.
 
 Task types:
 
@@ -435,6 +455,133 @@ Dangerous parameters are disabled unless `ALLOW_DESTRUCTIVE_TASKS=true`. Dangero
 - `forceCrawl`
 
 Even when destructive tasks are enabled, requests must include `destructiveOperationConfirmed=true`.
+
+### Create Task
+
+```http
+POST /internal/admin/tasks
+Idempotency-Key: user-action-uuid
+```
+
+Admin only. In B2A this creates metadata for one dry-run task and notifies the single worker. It returns `202` for a new task.
+
+Request:
+
+```json
+{
+  "taskType": "pipeline",
+  "parameters": {
+    "brokers": ["ctsec"]
+  },
+  "destructiveOperationConfirmed": false
+}
+```
+
+Response:
+
+```json
+{
+  "task": {
+    "taskId": "task_uuid",
+    "taskType": "pipeline",
+    "status": "pending",
+    "phase": "validation",
+    "isActive": true,
+    "logicalCommandPreview": ["python", "modules/run_crawler_then_llm.py", "--brokers", "ctsec"],
+    "datasetVersionBefore": "20260630T023711Z_5a74ed0a",
+    "datasetVersionAfter": null,
+    "cancelRequested": false
+  },
+  "idempotent": false
+}
+```
+
+`Idempotency-Key` is optional but recommended. It must be at most 128 characters and contain only letters, digits, `.`, `_`, `:`, or `-`. The same `requested_by + Idempotency-Key` returns the original task with `200` and does not create a duplicate, even if the original task is still pending or running. Different users may use the same key independently.
+
+Only one pending or running task is allowed. A second non-idempotent create request returns `409 TASK_ALREADY_RUNNING`.
+
+The API must not return real script paths, environment variables, internal argv arrays, `pid`, or `log_path`.
+
+### Cancel Task
+
+```http
+POST /internal/admin/tasks/{taskId}/cancel
+```
+
+Admin only.
+
+- Pending tasks are marked `cancel_requested=true`, transition to `cancelled`, set `finished_at`, and write a cancel event.
+- Running tasks are marked `cancel_requested=true`; the dry-run worker later transitions them to `cancelled` at a check point.
+- Repeated cancellation of a running task is idempotent and does not flood events.
+- Terminal tasks return `409 TASK_ALREADY_FINISHED`.
+
+### Task Logs
+
+```http
+GET /internal/admin/tasks/{taskId}/logs?tailLines=200
+```
+
+Admin only. Logs are addressed only by `taskId`; no file path is accepted from clients. `tailLines` is capped by `TASK_LOG_TAIL_MAX_LINES`.
+
+Response:
+
+```json
+{
+  "taskId": "task_uuid",
+  "lines": ["Dry-run phase completed: validation"],
+  "truncated": false
+}
+```
+
+Logs must be sanitized on write and again on read. They must not expose Authorization headers, bearer tokens, JWTs, API keys, passwords, secrets, database credentials, absolute paths, `log_path`, or environment variables.
+
+### Dry-Run And Live Worker Semantics
+
+The FastAPI lifespan starts at most one dry-run worker loop. The worker atomically claims one pending task by transitioning `pending -> running` in the database, then advances phases:
+
+- `crawl`: `validation`, `crawler`, `completed`
+- `extract`: `validation`, `extraction`, `completed`
+- `pipeline`: `validation`, `crawler`, `extraction`, `publishing`, `completed`
+
+Each phase updates the task phase, writes an event, writes a safe log line, waits `TASK_DRY_RUN_STEP_SECONDS`, and checks `cancel_requested`.
+
+Successful dry-runs transition `running -> succeeded`, set `exit_code=0`, keep `pid=null`, and set `datasetVersionAfter` equal to `datasetVersionBefore`. They must not modify the source CSV, `current.json`, or create a new published version.
+
+Live mode uses the same single worker and atomic claim rule, but it does not simulate internal crawler/extraction phases. It runs one controlled child process:
+
+- `crawl`: execution phase uses `crawler`, then `completed`; success does not publish a structured dataset version.
+- `extract`: execution phase uses `extraction`; exit code `0` enters `publishing`, validates the structured CSV, then `completed`.
+- `pipeline`: execution phase uses `execution`; exit code `0` enters `publishing`, validates the structured CSV, then `completed`.
+
+Live command construction rules:
+
+- Commands are argv arrays only; shell strings are forbidden.
+- The Python executable is server configured by `TASK_ALLOWED_PYTHON_EXECUTABLE` or falls back to the current Python executable.
+- Script paths are fixed by task type and resolved under the backend root.
+- `cwd` is fixed to the backend root.
+- Environment variables are built from a server-side allowlist and never from HTTP input.
+- HTTP requests cannot provide script paths, cwd, argv, Python executable, output paths, or environment variables.
+- Public API responses must not expose pid, process create time, absolute argv paths, cwd, env, log path, or secrets.
+
+Live exit handling:
+
+- Exit code `0` on `crawl`: task succeeds and `datasetVersionAfter` equals `datasetVersionBefore`.
+- Exit code `0` on `extract` or `pipeline`: validate and publish the structured CSV if its SHA-256 changed.
+- Non-zero exit: task fails with `PROCESS_EXIT_NONZERO`; no dataset publish occurs.
+- Start failure: task fails with `PROCESS_START_FAILED`; absolute paths and raw exceptions are not returned to API clients.
+- Cancellation: no dataset publish occurs; the worker terminates the process tree before marking the task `cancelled`.
+
+Dataset publishing after successful `extract` or `pipeline`:
+
+- The existing CSV validator and published dataset repository are reused.
+- If validation fails, the task fails with `DATASET_VALIDATION_FAILED` and `current.json` remains unchanged.
+- If the CSV SHA-256 is unchanged, no duplicate version directory is created and the task still succeeds.
+- If the CSV SHA-256 changed, a new version directory and metadata are created and `current.json` is atomically updated.
+- Incomplete temporary publish directories are cleaned up on publish failure.
+
+On service startup, before claiming new tasks, existing `running` tasks are marked `interrupted` with `WORKER_RESTARTED`; existing `pending` tasks are marked `cancelled` with `WORKER_RESTARTED`. Old pending tasks are not automatically resumed.
+
+Run B2A with a single process and a single worker only. Do not use multiple uvicorn workers. Avoid `--reload` while a dry-run task is active because reload intentionally restarts the worker and recovery will interrupt/cancel in-flight tasks.
 
 ## CSV Field Mapping
 

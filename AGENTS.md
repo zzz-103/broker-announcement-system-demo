@@ -55,3 +55,9 @@
   - `backend/modules/run_crawler_then_llm.py`
 - 后端真实结构化总表：`backend/documents/structured_announcements/announcement_table.csv`。
 
+## Generated Artifact Ignore Rules
+
+- Do not remove the generated artifact ignore block in `backend/.gitignore`.
+- Do not add `backend/documents/markdown/` or `backend/documents/structured_announcements/` to Git.
+- Do not use `git add -f` to force-add generated crawler or LLM artifact directories.
+- Do not replace `backend/.gitignore` with a shorter template; preserve existing rules and append narrowly scoped new rules.
