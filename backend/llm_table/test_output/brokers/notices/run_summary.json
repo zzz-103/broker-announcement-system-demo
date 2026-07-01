@@ -1,0 +1,13 @@
+{
+  "broker_folder": "notices",
+  "output_dir": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices",
+  "processed_files": 10,
+  "failed_files": 0,
+  "success_files": 10,
+  "output_rows": 12,
+  "finished_at": "2026-07-01T05:59:45.020075+00:00",
+  "csv_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\announcement_table.csv",
+  "jsonl_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\announcement_table.jsonl",
+  "xlsx_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\announcement_table.xlsx",
+  "summary_path": "D:\\broker-announcement-system-demo\\backend\\llm_table\\test_output\\brokers\\notices\\run_summary.json"
+}

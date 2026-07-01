@@ -1,0 +1,21 @@
+[
+  {
+    "broker_name": "中信建投证券",
+    "publish_date": "2026-05-21",
+    "announcement_stage": "采购招标",
+    "procurement_category": "IT软硬件",
+    "project_subcategory": "基础算力与云存储",
+    "project_name": "中信建投证券存储磁盘扩容采购项目",
+    "procurement_method": "竞争性谈判",
+    "procurement_action": "扩容",
+    "procurement_scope_summary": "采购存储磁盘扩容，用于增加存储容量。",
+    "budget_amount_yuan": null,
+    "ceiling_price_yuan": null,
+    "winning_amount_yuan": null,
+    "bid_deadline_at": "2026-06-02 09:30",
+    "service_period_months": null,
+    "delivery_period_days": null,
+    "winning_supplier": null,
+    "source_file": "2026-05-21_68e28c4c_中信建投证券存储磁盘扩容采购项目谈判公告.md"
+  }
+]

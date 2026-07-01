@@ -1,0 +1,21 @@
+[
+  {
+    "broker_name": "光大证券",
+    "publish_date": "2026-05-20",
+    "announcement_stage": "采购招标",
+    "procurement_category": "IT软硬件",
+    "project_subcategory": "业务系统与软件",
+    "project_name": "光大证券股份有限公司网络运维管理平台信创2025新建项目",
+    "procurement_method": "公开招标",
+    "procurement_action": "新购",
+    "procurement_scope_summary": "新建一套信创网络运维管理平台，实现网络数据采集、告警管理、性能分析及可视化展示的一体化与智能化。",
+    "budget_amount_yuan": null,
+    "ceiling_price_yuan": 2480000,
+    "winning_amount_yuan": null,
+    "bid_deadline_at": "2026-06-11 09:30",
+    "service_period_months": null,
+    "delivery_period_days": null,
+    "winning_supplier": null,
+    "source_file": "2026-05-20_302855aa_光大证券股份有限公司网络运维管理平台信创2025新建项目的招标公告.md"
+  }
+]

@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import asyncio
+import os
+import secrets
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+from .job_manager import JobConflictError, JobManager, JobNotFoundError, format_sse
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+
+
+job_manager = JobManager()
+session_tokens: set[str] = set()
+
+app = FastAPI(title="Broker Announcement API")
+
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[frontend_origin],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+def require_token(authorization: Annotated[str | None, Header()] = None) -> None:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
+    token = authorization.removeprefix("Bearer ").strip()
+    if token not in session_tokens:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
+
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/api/login", response_model=LoginResponse)
+def login(payload: LoginRequest) -> LoginResponse:
+    expected_username = os.getenv("ADMIN_USERNAME", "admin")
+    expected_password = os.getenv("ADMIN_PASSWORD", "change-me")
+    username_ok = secrets.compare_digest(payload.username, expected_username)
+    password_ok = secrets.compare_digest(payload.password, expected_password)
+    if not (username_ok and password_ok):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid credentials")
+
+    token = secrets.token_urlsafe(32)
+    session_tokens.add(token)
+    return LoginResponse(token=token)
+
+
+@app.post("/api/jobs/scraper", dependencies=[Depends(require_token)])
+def start_scraper() -> dict[str, str]:
+    try:
+        job = job_manager.start_scraper()
+    except JobConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
+@app.get("/api/jobs/{job_id}", dependencies=[Depends(require_token)])
+def get_job(job_id: str) -> dict[str, object]:
+    try:
+        return job_manager.get_job(job_id).to_dict()
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found") from exc
+
+
+@app.get("/api/jobs/{job_id}/events", dependencies=[Depends(require_token)])
+async def job_events(job_id: str) -> StreamingResponse:
+    try:
+        existing_events, _ = job_manager.snapshot_events(job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found") from exc
+
+    async def event_stream():
+        sent = 0
+        for event in existing_events:
+            sent += 1
+            yield format_sse(event)
+            if event.get("type") == "done":
+                return
+
+        while True:
+            try:
+                count = await asyncio.to_thread(job_manager.wait_for_event_count, job_id, sent, 10.0)
+                events, _ = job_manager.snapshot_events(job_id)
+            except JobNotFoundError:
+                return
+
+            if count <= sent:
+                yield ": ping\n\n"
+                continue
+
+            for event in events[sent:]:
+                sent += 1
+                yield format_sse(event)
+                if event.get("type") == "done":
+                    return
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

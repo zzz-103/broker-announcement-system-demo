@@ -1,0 +1,20 @@
+[
+  {
+    "broker_name": "中信建投证券",
+    "publish_date": "2026-05-21",
+    "announcement_stage": "采购招标",
+    "procurement_category": "IT软硬件",
+    "project_subcategory": "基础算力与云存储",
+    "project_name": "中信建投证券新一代核心交易系统数据库采购项目（第二次）",
+    "procurement_method": "竞争性磋商",
+    "procurement_scope_summary": "采购新一代核心交易系统信创数据库，用于核心交易系统，具体要求详见技术规范书。",
+    "budget_amount_yuan": null,
+    "ceiling_price_yuan": null,
+    "winning_amount_yuan": null,
+    "bid_deadline_at": "2026-05-28 17:00",
+    "service_period_months": null,
+    "delivery_period_days": null,
+    "winning_supplier": null,
+    "source_file": "2026-05-21_73b4a12c_中信建投证券新一代核心交易系统数据库采购项目（第二次）竞争性磋商公告.md"
+  }
+]

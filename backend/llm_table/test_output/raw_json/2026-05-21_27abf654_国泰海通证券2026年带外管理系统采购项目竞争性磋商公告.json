@@ -1,0 +1,21 @@
+[
+  {
+    "broker_name": "国泰海通证券",
+    "publish_date": "2026-05-21",
+    "announcement_stage": "采购招标",
+    "procurement_category": "IT软硬件",
+    "project_subcategory": "业务系统与软件",
+    "project_name": "国泰海通证券2026年带外管理系统采购项目",
+    "procurement_method": "公开招标",
+    "procurement_action": "升级改造",
+    "procurement_scope_summary": "采购1家供应商提供带外管理系统信创升级和整合实施服务，实施地点为上海",
+    "budget_amount_yuan": null,
+    "ceiling_price_yuan": null,
+    "winning_amount_yuan": null,
+    "bid_deadline_at": "2026-06-03 13:30",
+    "service_period_months": null,
+    "delivery_period_days": null,
+    "winning_supplier": null,
+    "source_file": "2026-05-21_27abf654_国泰海通证券2026年带外管理系统采购项目竞争性磋商公告.md"
+  }
+]

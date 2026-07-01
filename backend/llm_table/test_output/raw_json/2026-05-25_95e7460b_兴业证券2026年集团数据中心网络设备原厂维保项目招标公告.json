@@ -1,0 +1,20 @@
+[
+  {
+    "broker_name": "兴业证券",
+    "publish_date": "2026-05-25",
+    "announcement_stage": "采购招标",
+    "procurement_category": "IT软硬件",
+    "project_subcategory": "IT运维与外包",
+    "project_name": "兴业证券2026年集团数据中心网络设备原厂维保项目",
+    "procurement_method": "公开招标",
+    "procurement_scope_summary": "采购思科、华为、深信服等8个品牌共299台网络设备原厂维保服务，服务期至2027年6月30日。",
+    "budget_amount_yuan": null,
+    "ceiling_price_yuan": 4290000,
+    "winning_amount_yuan": null,
+    "bid_deadline_at": "2026-06-15 13:30",
+    "service_period_months": 13,
+    "delivery_period_days": null,
+    "winning_supplier": null,
+    "source_file": "2026-05-25_95e7460b_兴业证券2026年集团数据中心网络设备原厂维保项目招标公告.md"
+  }
+]

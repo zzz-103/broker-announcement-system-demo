@@ -1,0 +1,21 @@
+[
+  {
+    "broker_name": "国泰海通证券",
+    "publish_date": "2026-05-20",
+    "announcement_stage": "采购招标",
+    "procurement_category": "IT软硬件",
+    "project_subcategory": "基础算力与云存储",
+    "project_name": "国泰海通证券金融科技园南区节能改造UPS扩容升级采购项目",
+    "procurement_method": "公开招标",
+    "procurement_action": "扩容",
+    "procurement_scope_summary": "对金融科技园南区8台伊顿UPS进行节能改造，扩容4台UPS及电池、电池架等配套设施，含安装调试及二年原厂维保。",
+    "budget_amount_yuan": 4980000,
+    "ceiling_price_yuan": 4980000,
+    "winning_amount_yuan": null,
+    "bid_deadline_at": "2026-06-10 10:30",
+    "service_period_months": 24,
+    "delivery_period_days": null,
+    "winning_supplier": null,
+    "source_file": "2026-05-20_55d6a03f_国泰海通证券金融科技园南区节能改造UPS扩容升级采购项目招标公告.md"
+  }
+]

@@ -1,2 +1,10 @@
-frontend/
-backend/
+# Crawl outputs
+**/output/
+**/failures.jsonl
+**/checkpoint.json
+
+# Python virtual environment and cache
+.venv/
+venv/
+__pycache__/
+*.pyc
