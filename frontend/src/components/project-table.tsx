@@ -5,6 +5,7 @@ import {
   useReactTable,
   getCoreRowModel,
   getPaginationRowModel,
+  getSortedRowModel,
   flexRender,
   type ColumnDef,
   type SortingState,
@@ -26,9 +27,18 @@ interface ProjectTableProps {
 }
 
 const STAGE_STYLES: Record<string, string> = {
-  采购招标: "bg-blue-50 text-blue-700",
-  结果公示: "bg-emerald-50 text-emerald-700",
-  流标废标: "bg-orange-50 text-orange-700",
+  采购招标: "bg-blue-50 border-blue-100 text-blue-700",
+  结果公示: "bg-emerald-50 border-emerald-100 text-emerald-700",
+  流标废标: "bg-orange-50 border-orange-100 text-orange-700",
+  待确认: "bg-slate-50 border-slate-100 text-slate-600",
+};
+
+const getTagStyle = (tag: string) => {
+  if (tag.includes("交易") || tag.includes("核心")) return "bg-red-50 border-red-100 text-red-600";
+  if (tag.includes("云") || tag.includes("算力") || tag.includes("架构")) return "bg-purple-50 border-purple-100 text-purple-600";
+  if (tag.includes("软件") || tag.includes("采购")) return "bg-slate-100 border-slate-200 text-[#475467]";
+  if (tag.includes("服务") || tag.includes("运维")) return "bg-amber-50 border-amber-100 text-amber-600";
+  return "bg-slate-50 border-slate-100 text-slate-600";
 };
 
 export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
@@ -60,7 +70,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         header: "主体",
         size: 100,
         cell: ({ getValue }) => (
-          <span className="text-[13px] text-[#172033] font-medium">
+          <span className="text-[13px] text-[#172033] font-semibold">
             {getValue<string>()}
           </span>
         ),
@@ -71,7 +81,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         size: 260,
         cell: ({ getValue }) => (
           <span
-            className="text-[13px] text-[#172033] line-clamp-2 leading-relaxed"
+            className="text-[13px] text-[#172033] font-bold line-clamp-2 leading-relaxed"
             title={getValue<string>()}
           >
             {getValue<string>()}
@@ -84,7 +94,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         size: 130,
         meta: { hideOnMobile: true },
         cell: ({ getValue }) => (
-          <span className="text-[12px] text-[#667085]">{getValue<string>()}</span>
+          <span className="text-[12px] text-[#475467] font-medium">{getValue<string>()}</span>
         ),
       },
       {
@@ -94,11 +104,11 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         meta: { hideOnMobile: true },
         accessorFn: (r) => r.topicTags.join(", "),
         cell: ({ row }) => (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {row.original.topicTags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-[#F0F2F5] text-[#667085]"
+                className={`text-[10px] px-1.5 py-0.5 rounded-[4px] border font-bold leading-none flex items-center h-[18px] ${getTagStyle(tag)}`}
               >
                 {tag}
               </span>
@@ -112,10 +122,10 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         size: 90,
         cell: ({ getValue }) => {
           const stage = getValue<string>() || "待确认";
-          const style = STAGE_STYLES[stage] || "bg-gray-100 text-gray-600";
+          const style = STAGE_STYLES[stage] || "bg-slate-50 border-slate-100 text-slate-600";
           return (
             <span
-              className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${style}`}
+              className={`inline-flex items-center px-2 py-0.5 rounded-[4px] border text-[11px] font-bold leading-none h-[18px] ${style}`}
             >
               {stage}
             </span>
@@ -128,7 +138,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         size: 90,
         meta: { hideOnMobile: true },
         cell: ({ getValue }) => (
-          <span className="text-[12px] text-[#667085]">
+          <span className="text-[12px] text-[#667085] font-medium">
             {getValue<string>() || "方式未识别"}
           </span>
         ),
@@ -140,7 +150,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         cell: ({ getValue }) => {
           const v = getValue<string>();
           return (
-            <span className="text-[12px] text-[#667085] truncate block">
+            <span className="text-[12px] text-[#475467] font-semibold truncate block" title={v || "未披露"}>
               {v || "未披露"}
             </span>
           );
@@ -155,8 +165,8 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           const v = getValue<number | null>();
           return (
             <span
-              className={`text-[13px] font-medium text-right block tabular-nums ${
-                v !== null ? "text-[#0F9F8F]" : "text-[#98A2B3]"
+              className={`text-[13px] font-bold text-right block tabular-nums ${
+                v !== null ? "text-[#0F9F8F]" : "text-[#98A2B3] font-medium"
               }`}
             >
               {v !== null ? formatAmount(v) : "未披露"}
@@ -171,7 +181,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         accessorFn: (r) => r.validPublishDate?.getTime() || 0,
         enableSorting: true,
         cell: ({ row }) => (
-          <span className="text-[12px] text-[#98A2B3] tabular-nums">
+          <span className="text-[12px] text-[#98A2B3] font-medium tabular-nums">
             {formatDate(row.original.validPublishDate)}
           </span>
         ),
@@ -183,9 +193,11 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         cell: ({ row }) => (
           <button
             onClick={() => onSelectProject(row.original)}
-            className="p-1 rounded hover:bg-gray-100 transition-colors"
+            aria-label="查看项目详情"
+            title="查看项目详情"
+            className="p-1.5 rounded-lg hover:bg-blue-50 text-[#667085] hover:text-[#2563EB] transition-colors"
           >
-            <Eye className="w-3.5 h-3.5 text-[#667085]" />
+            <Eye className="w-4 h-4" />
           </button>
         ),
       },
@@ -199,6 +211,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
     state: { sorting },
     onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     initialState: { pagination: { pageSize } },
   });
@@ -207,17 +220,22 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
   const currentPage = table.getState().pagination.pageIndex + 1;
 
   return (
-    <div className="bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[#E4E9F0]">
-        <h3 className="text-[16px] font-semibold text-[#172033]">
-          项目情报明细
-        </h3>
+    <div className="bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-5 py-4 border-b border-[#E4EAF2] gap-3">
+        <div>
+          <h3 className="text-[15px] font-bold text-[#172033]">
+            项目明细
+          </h3>
+          <p className="text-[11px] text-[#98A2B3] mt-0.5 font-medium">
+            共 {sortedData.length} 条符合当前筛选条件
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           {/* Sort Mode Selector with Sliding Indicator */}
-          <div className="relative inline-flex bg-[#F0F2F5] rounded-lg p-1">
+          <div className="relative inline-flex bg-[#F0F2F5] rounded-lg p-1 h-[36px] items-center">
             {/* Sliding Indicator */}
             <div
-              className="absolute top-1 bottom-1 rounded-md bg-[#2563EB] shadow-sm transition-all duration-300 ease-[cubic-bezier(0.25,1,0.3,1)]"
+              className="absolute top-1 bottom-1 rounded-md bg-[#102847] shadow-sm transition-all duration-300 ease-[cubic-bezier(0.25,1,0.3,1)]"
               style={{
                 left: sortMode === "date" ? "4px" : "50%",
                 width: "calc(50% - 4px)",
@@ -225,9 +243,9 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
             />
             <button
               onClick={() => setSortMode("date")}
-              className={`relative z-10 min-w-[72px] px-3 py-1.5 text-[12px] rounded-md text-center whitespace-nowrap transition-colors duration-200 ${
+              className={`relative z-10 min-w-[72px] h-[28px] px-3 text-[12px] font-bold rounded-md text-center whitespace-nowrap transition-colors duration-200 ${
                 sortMode === "date"
-                  ? "text-white font-semibold"
+                  ? "text-white"
                   : "text-[#667085] hover:text-[#172033]"
               }`}
             >
@@ -235,9 +253,9 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
             </button>
             <button
               onClick={() => setSortMode("amount")}
-              className={`relative z-10 min-w-[72px] px-3 py-1.5 text-[12px] rounded-md text-center whitespace-nowrap transition-colors duration-200 ${
+              className={`relative z-10 min-w-[72px] h-[28px] px-3 text-[12px] font-bold rounded-md text-center whitespace-nowrap transition-colors duration-200 ${
                 sortMode === "amount"
-                  ? "text-white font-semibold"
+                  ? "text-white"
                   : "text-[#667085] hover:text-[#172033]"
               }`}
             >
@@ -250,7 +268,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               setPageSize(Number(e.target.value));
               table.setPageSize(Number(e.target.value));
             }}
-            className="text-[12px] border border-[#E4E9F0] rounded px-2 py-1 text-[#667085]"
+            className="text-[12px] h-[36px] border border-[#E4EAF2] rounded-lg px-2.5 text-[#475467] bg-[#F8FAFC] focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold"
           >
             <option value={20}>20条/页</option>
             <option value={50}>50条/页</option>
@@ -259,54 +277,56 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
+      <div className="overflow-x-auto relative">
+        <table className="w-full border-collapse">
+          <thead className="sticky top-0 z-10 bg-[#F4F7FB] border-b border-[#E4EAF2]">
             {table.getHeaderGroups().map((hg) => (
-              <tr key={hg.id} className="border-b border-[#F0F2F5]">
+              <tr key={hg.id}>
                 {hg.headers.map((header) => {
                   const hideOnMobile = (header.column.columnDef.meta as { hideOnMobile?: boolean })?.hideOnMobile;
                   return (
-                  <th
-                    key={header.id}
-                    className={`px-3 py-2.5 text-left text-[11px] font-medium text-[#667085] uppercase tracking-wider whitespace-nowrap ${hideOnMobile ? "hidden md:table-cell" : ""}`}
-                    style={{ width: header.getSize() }}
-                  >
-                    {header.column.getCanSort() ? (
-                      <button
-                        onClick={header.column.getToggleSortingHandler()}
-                        className="inline-flex items-center gap-1 hover:text-[#172033] transition-colors"
-                      >
-                        {flexRender(
+                    <th
+                      key={header.id}
+                      className={`px-4 py-3 text-left text-[11px] font-bold text-[#475467] uppercase tracking-wider whitespace-nowrap bg-[#F4F7FB] ${hideOnMobile ? "hidden md:table-cell" : ""}`}
+                      style={{ width: header.getSize() }}
+                    >
+                      {header.column.getCanSort() ? (
+                        <button
+                          onClick={header.column.getToggleSortingHandler()}
+                          className="inline-flex items-center gap-1 hover:text-[#172033] transition-colors group"
+                        >
+                          <span>
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext()
+                            )}
+                          </span>
+                          {header.column.getIsSorted() === "asc" ? (
+                            <ChevronUp className="w-3 h-3 text-[#2563EB]" />
+                          ) : header.column.getIsSorted() === "desc" ? (
+                            <ChevronDown className="w-3 h-3 text-[#2563EB]" />
+                          ) : (
+                            <ChevronsUpDown className="w-3 h-3 text-[#CBD5E1] group-hover:text-[#98A2B3] transition-colors" />
+                          )}
+                        </button>
+                      ) : (
+                        flexRender(
                           header.column.columnDef.header,
                           header.getContext()
-                        )}
-                        {header.column.getIsSorted() === "asc" ? (
-                          <ChevronUp className="w-3 h-3" />
-                        ) : header.column.getIsSorted() === "desc" ? (
-                          <ChevronDown className="w-3 h-3" />
-                        ) : (
-                          <ChevronsUpDown className="w-3 h-3 text-[#CBD5E1]" />
-                        )}
-                      </button>
-                    ) : (
-                      flexRender(
-                        header.column.columnDef.header,
-                        header.getContext()
-                      )
-                    )}
-                  </th>
+                        )
+                      )}
+                    </th>
                   );
                 })}
               </tr>
             ))}
           </thead>
-          <tbody className="divide-y divide-[#F0F2F5]">
+          <tbody className="divide-y divide-[#F0F2F5] bg-white">
             {table.getRowModel().rows.length === 0 ? (
               <tr>
                 <td
                   colSpan={columns.length}
-                  className="px-4 py-12 text-center text-[13px] text-[#98A2B3]"
+                  className="px-4 py-12 text-center text-[13px] text-[#98A2B3] font-medium"
                 >
                   暂无数据
                 </td>
@@ -315,17 +335,20 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
-                  className="hover:bg-[#F8FAFC] transition-colors duration-150"
+                  className="hover:bg-blue-50/20 transition-colors duration-150 group/row"
                 >
                   {row.getVisibleCells().map((cell) => {
                     const hideOnMobile = (cell.column.columnDef.meta as { hideOnMobile?: boolean })?.hideOnMobile;
                     return (
-                    <td key={cell.id} className={`px-3 py-2.5 align-top ${hideOnMobile ? "hidden md:table-cell" : ""}`}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </td>
+                      <td
+                        key={cell.id}
+                        className={`px-4 py-3.5 align-middle ${hideOnMobile ? "hidden md:table-cell" : ""}`}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </td>
                     );
                   })}
                 </tr>
@@ -336,15 +359,16 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between px-5 py-3 border-t border-[#F0F2F5]">
-        <span className="text-[12px] text-[#98A2B3]">
+      <div className="flex items-center justify-between px-5 py-4 border-t border-[#F0F2F5] bg-white">
+        <span className="text-[12px] text-[#98A2B3] font-semibold">
           共 {sortedData.length} 条，第 {currentPage}/{pageCount} 页
         </span>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           <button
             onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
-            className="p-1.5 rounded text-[#98A2B3] hover:text-[#172033] hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label="上一页"
+            className="p-1.5 rounded-lg text-[#98A2B3] hover:text-[#102847] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -360,10 +384,10 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               <button
                 key={pageIndex}
                 onClick={() => table.setPageIndex(pageIndex)}
-                className={`min-w-[28px] h-7 rounded text-[12px] font-medium transition-colors ${
+                className={`min-w-[28px] h-7 rounded-lg text-[12px] font-bold transition-all ${
                   pageIndex === currentPage - 1
-                    ? "bg-[#162B49] text-white"
-                    : "text-[#667085] hover:bg-gray-100"
+                    ? "bg-[#102847] text-white shadow-sm"
+                    : "text-[#667085] hover:bg-blue-50 hover:text-blue-600"
                 }`}
               >
                 {pageIndex + 1}
@@ -372,7 +396,8 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           <button
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
-            className="p-1.5 rounded text-[#98A2B3] hover:text-[#172033] hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            aria-label="下一页"
+            className="p-1.5 rounded-lg text-[#98A2B3] hover:text-[#102847] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

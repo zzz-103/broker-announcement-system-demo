@@ -14,16 +14,12 @@ import {
 import { useFilterStore, type TimeRange } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
 import { BackendApiError } from "@/lib/api/backend-client";
+import { DashboardHeader } from "@/components/dashboard-header";
+import { DashboardFilters } from "@/components/dashboard-filters";
+import { DashboardTabs } from "@/components/dashboard-tabs";
 import { LoginPage } from "@/components/login-page";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
-import {
-  Search,
-  RotateCcw,
-  Download,
-  Settings,
-  LogOut,
-} from "lucide-react";
 import { HoverSelect } from "@/components/hover-select";
 import { MultiHoverSelect } from "@/components/multi-hover-select";
 
@@ -303,7 +299,7 @@ export default function Dashboard() {
     const measure = () => {
       const containerWidth = container.offsetWidth;
       // Estimate tag width: ~12px per char + 20px padding + 6px gap
-      const avgTagWidth = 80; // average tag width in px
+      const avgTagWidth = 110; // average tag width in px
       const gap = 6;
       const tagsPerRow = Math.max(1, Math.floor((containerWidth + gap) / (avgTagWidth + gap)));
       setVisibleBrokerCount(showAllBrokers ? sortedBrokers.length : tagsPerRow * 2);
@@ -365,69 +361,23 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F7FA]">
+    <div className="min-h-screen bg-[#F4F7FB]">
       {/* ─── Top Navigation ─── */}
-      <header ref={headerRef} className="bg-[#162B49] flex flex-col sm:flex-row sm:h-[72px] sm:items-center px-4 sm:px-8 py-3 sm:py-0 sticky top-0 z-40 gap-2 sm:gap-0">
-        <div className="flex-1 min-w-0">
-          <h1 className="text-[16px] sm:text-[18px] font-semibold text-white leading-tight truncate">
-            券商金融科技招采情报平台
-          </h1>
-          <p className="text-[11px] sm:text-[12px] text-white/60 truncate">
-            同行建设方向、公开招采动态、供应商与价格信息
-          </p>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-5 text-[11px] sm:text-[12px] text-white/70 flex-wrap">
-          <span className="whitespace-nowrap">
-            数据最新:{" "}
-            <span className="text-white font-medium">
-              {formatDate(baseline)}
-            </span>
-          </span>
-          <span className="whitespace-nowrap">
-            覆盖主体:{" "}
-            <span className="text-white font-medium">{totalBrokers}</span>
-          </span>
-          <button
-            onClick={() => setShowModal(true)}
-            className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded border border-white/20 text-white/80 hover:bg-white/10 transition-colors"
-          >
-            数据口径
-          </button>
-          <button
-            onClick={() => exportCsv(filteredData)}
-            className="group relative inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white text-[12px] sm:text-[13px] font-medium shadow-[0_2px_8px_rgba(37,99,235,0.35)] hover:shadow-[0_4px_16px_rgba(37,99,235,0.45)] hover:from-[#3B82F6] hover:to-[#2563EB] active:scale-[0.97] transition-all duration-200"
-          >
-            <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 transition-transform group-hover:-translate-y-0.5" />
-            <span>导出当前数据</span>
-            <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-normal ml-0.5">
-              {filteredData.length}
-            </span>
-          </button>
-          {/* Admin Dashboard Button */}
-          {isAdmin && (
-            <button
-              onClick={() => setShowDashboard(true)}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded border border-amber-400/40 text-amber-300 hover:bg-amber-400/10 transition-colors"
-            >
-              <Settings className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">管理控制台</span>
-            </button>
-          )}
-          {/* User Info & Logout */}
-          <div className="flex items-center gap-2">
-            <span className="text-white/60 hidden sm:inline">{username}</span>
-            <button
-              onClick={logout}
-              className="flex items-center gap-1 px-2 py-1 rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </header>
+      <DashboardHeader
+        username={username}
+        totalBrokers={totalBrokers}
+        baseline={baseline}
+        filteredData={filteredData}
+        isAdmin={isAdmin}
+        showDashboard={showDashboard}
+        onShowModal={() => setShowModal(true)}
+        onExport={() => exportCsv(filteredData)}
+        onShowDashboard={setShowDashboard}
+        onLogout={logout}
+      />
 
       {/* ─── Main Content ─── */}
-      <main className="max-w-[1600px] mx-auto px-3 sm:px-8 py-4 sm:py-5 space-y-3 sm:space-y-4">
+      <main className="max-w-[1600px] mx-auto px-3 sm:px-8 py-4 sm:py-5 space-y-4">
         {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
           <div
             className={`rounded-[10px] border px-4 py-3 text-[13px] ${
@@ -443,206 +393,45 @@ export default function Dashboard() {
         )}
 
         {/* Global Filter Bar */}
-        <div className="bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 sm:px-5 py-3">
-          <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-            {/* Search */}
-            <div className="relative w-full sm:w-[30%] sm:min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#98A2B3]" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="搜索项目、券商、供应商或采购方式..."
-                className="w-full pl-9 pr-3 py-2 text-[13px] border border-[#E4E9F0] rounded-md bg-[#F8FAFC] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:ring-1 focus:ring-[#2563EB]/30 focus:border-[#2563EB]/30 transition-colors"
-              />
-            </div>
-
-            {/* Time Range */}
-            <HoverSelect
-              value={timeRange}
-              onChange={(v) => setTimeRange(v as TimeRange)}
-              options={[
-                { value: "30d", label: "近30日" },
-                { value: "90d", label: "近90日" },
-                { value: "year", label: "本年度" },
-                { value: "all", label: "全部时间" },
-              ]}
-              placeholder="时间范围"
-            />
-
-            {/* Broker - Multi Select */}
-            <MultiHoverSelect
-              values={brokerNames}
-              onChange={setBrokerNames}
-              onToggle={toggleBrokerName}
-              options={brokerOptions.map((b) => ({ value: b, label: b }))}
-              placeholder="全部券商"
-              maxHeight={240}
-            />
-
-            {/* Domain */}
-            <HoverSelect
-              value={primaryDomain}
-              onChange={setPrimaryDomain}
-              options={[
-                { value: "", label: "全部方向" },
-                ...DOMAIN_OPTIONS.map((d) => ({ value: d, label: d })),
-              ]}
-              placeholder="全部方向"
-              maxHeight={280}
-            />
-
-            {/* Stage */}
-            <HoverSelect
-              value={announcementStage}
-              onChange={setAnnouncementStage}
-              options={[
-                { value: "", label: "全部阶段" },
-                { value: "采购招标", label: "采购招标" },
-                { value: "结果公示", label: "结果公示" },
-                { value: "流标废标", label: "流标废标" },
-              ]}
-              placeholder="全部阶段"
-            />
-
-            {/* Method */}
-            <HoverSelect
-              value={procurementMethod}
-              onChange={setProcurementMethod}
-              options={[
-                { value: "", label: "全部方式" },
-                ...methodOptions.map((m) => ({ value: m, label: m })),
-              ]}
-              placeholder="全部方式"
-              maxHeight={240}
-            />
-
-            {/* FinTech Toggle */}
-            <label className="flex items-center gap-2 text-[12px] text-[#667085] cursor-pointer select-none whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={finTechOnly}
-                onChange={(e) => setFinTechOnly(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-[#E4E9F0] text-[#2563EB] focus:ring-[#2563EB]/30"
-              />
-              仅看金融科技
-            </label>
-
-            {/* Reset */}
-            {hasFilters && (
-              <button
-                onClick={resetAll}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-[12px] text-[#667085] hover:text-[#172033] hover:bg-gray-100 rounded-md transition-colors"
-              >
-                <RotateCcw className="w-3 h-3" />
-                重置
-              </button>
-            )}
-          </div>
-
-          {/* All Broker Tags - max 2 rows */}
-          <div className="flex items-start gap-2 mt-2.5 pt-2.5 border-t border-[#F0F2F5]">
-            <span className="text-[11px] text-[#98A2B3] shrink-0 mt-1">券商</span>
-            {brokerNames.length > 0 && (
-              <button
-                onClick={() => setBrokerNames([])}
-                className="px-2 py-0.5 text-[11px] text-[#667085] hover:text-[#D64545] transition-colors mt-0.5"
-              >
-                清除
-              </button>
-            )}
-            <div ref={brokerTagsRef} className="flex items-center gap-1.5 flex-wrap overflow-hidden" style={{ maxHeight: showAllBrokers ? "none" : "56px" }}>
-              {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {
-                const isSelected = brokerNames.includes(broker);
-                return (
-                  <button
-                    key={broker}
-                    onClick={() => toggleBrokerName(broker)}
-                    className={`
-                      px-2.5 py-1 text-[12px] rounded-md transition-all duration-150 whitespace-nowrap
-                      ${isSelected
-                        ? "bg-[#2563EB] text-white shadow-sm"
-                        : "bg-[#F5F7FA] text-[#475467] hover:bg-[#EBF0F7] hover:text-[#172033]"
-                      }
-                    `}
-                  >
-                    {broker}
-                  </button>
-                );
-              })}
-              {visibleBrokerCount < sortedBrokers.length && (
-                <button
-                  onClick={() => setShowAllBrokers(true)}
-                  className="px-2.5 py-1 text-[12px] rounded-md bg-[#EBF0F7] text-[#2563EB] hover:bg-[#DBEAFE] transition-colors whitespace-nowrap"
-                >
-                  +{sortedBrokers.length - visibleBrokerCount} 更多
-                </button>
-              )}
-              {showAllBrokers && visibleBrokerCount >= sortedBrokers.length && (
-                <button
-                  onClick={() => setShowAllBrokers(false)}
-                  className="px-2.5 py-1 text-[12px] rounded-md bg-[#EBF0F7] text-[#667085] hover:bg-gray-200 transition-colors whitespace-nowrap"
-                >
-                  收起
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <DashboardFilters
+          search={search}
+          setSearch={setSearch}
+          timeRange={timeRange}
+          setTimeRange={setTimeRange}
+          brokerNames={brokerNames}
+          setBrokerNames={setBrokerNames}
+          toggleBrokerName={toggleBrokerName}
+          primaryDomain={primaryDomain}
+          setPrimaryDomain={setPrimaryDomain}
+          announcementStage={announcementStage}
+          setAnnouncementStage={setAnnouncementStage}
+          procurementMethod={procurementMethod}
+          setProcurementMethod={setProcurementMethod}
+          finTechOnly={finTechOnly}
+          setFinTechOnly={setFinTechOnly}
+          hasFilters={hasFilters}
+          resetAll={resetAll}
+          brokerOptions={brokerOptions}
+          methodOptions={methodOptions}
+          sortedBrokers={sortedBrokers}
+          visibleBrokerCount={visibleBrokerCount}
+          showAllBrokers={showAllBrokers}
+          setShowAllBrokers={setShowAllBrokers}
+          brokerTagsRef={brokerTagsRef}
+        />
 
         {/* Tab Bar - Sticky below header */}
-        <div className="sticky z-30 bg-[#F5F7FA] -mx-3 sm:-mx-8 px-3 sm:px-8 py-2.5 sm:py-3 border-b border-[#E4E9F0]" style={{ top: `${headerHeight}px` }}>
-          <div className="relative flex items-center gap-1" ref={tabContainerRef}>
-            {/* Liquid Glass Indicator */}
-            <div
-              className="absolute top-1/2 -translate-y-1/2 pointer-events-none"
-              style={{
-                left: indicatorPos.left,
-                width: indicatorPos.width,
-                height: "38px",
-                transition: "left 0.4s cubic-bezier(0.25, 1, 0.3, 1), width 0.35s cubic-bezier(0.25, 1, 0.3, 1)",
-              }}
-            >
-              <div className="absolute inset-0 rounded-lg bg-[#162B49] shadow-[0_2px_16px_rgba(22,43,73,0.3)]" />
-              <div className="absolute inset-0 rounded-lg bg-gradient-to-b from-white/[0.18] via-white/[0.05] to-transparent" />
-              <div className="absolute inset-[1px] rounded-[7px] bg-gradient-to-b from-white/[0.08] to-transparent" />
-            </div>
-
-            <button
-              ref={aiTabRef}
-              onClick={() => setActiveTab("ai")}
-              className={`
-                relative z-10 px-5 py-2 text-[14px] font-medium rounded-lg transition-colors duration-300
-                ${activeTab === "ai" ? "text-white" : "text-[#667085] hover:text-[#172033]"}
-              `}
-            >
-              AI 分析
-            </button>
-            <button
-              ref={overviewTabRef}
-              onClick={() => setActiveTab("overview")}
-              className={`
-                relative z-10 px-5 py-2 text-[14px] font-medium rounded-lg transition-colors duration-300
-                ${activeTab === "overview" ? "text-white" : "text-[#667085] hover:text-[#172033]"}
-              `}
-            >
-              情报总览
-            </button>
-            <button
-              ref={tableTabRef}
-              onClick={() => setActiveTab("table")}
-              className={`
-                relative z-10 px-5 py-2 text-[14px] font-medium rounded-lg transition-colors duration-300
-                ${activeTab === "table" ? "text-white" : "text-[#667085] hover:text-[#172033]"}
-              `}
-            >
-              项目明细
-              <span className={`ml-1.5 text-[11px] transition-opacity duration-300 ${activeTab === "table" ? "opacity-70" : "opacity-50"}`}>
-                ({filteredData.length})
-              </span>
-            </button>
-          </div>
-        </div>
+        <DashboardTabs
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          filteredCount={filteredData.length}
+          headerHeight={headerHeight}
+          tabContainerRef={tabContainerRef}
+          aiTabRef={aiTabRef}
+          overviewTabRef={overviewTabRef}
+          tableTabRef={tableTabRef}
+          indicatorPos={indicatorPos}
+        />
 
         {/* Tab Content */}
         {activeTab === "ai" ? (

@@ -17,13 +17,14 @@ function CoverageBar({
   value: number;
   color: string;
 }) {
+  const displayColor = value < 30 ? "#F59E0B" : color;
   return (
     <div>
       <div className="flex justify-between items-center mb-1">
         <span className="text-[12px] text-[#667085]">{label}</span>
         <span
           className="text-[13px] font-semibold tabular-nums"
-          style={{ color }}
+          style={{ color: displayColor }}
         >
           {value.toFixed(1)}%
         </span>
@@ -33,7 +34,7 @@ function CoverageBar({
           className="h-full rounded-full transition-all duration-700 ease-out"
           style={{
             width: `${Math.min(value, 100)}%`,
-            backgroundColor: color,
+            backgroundColor: displayColor,
           }}
         />
       </div>
@@ -147,92 +148,114 @@ export function ExecutiveSummary({ data, allData }: ExecutiveSummaryProps) {
   }, [allData]);
 
   return (
-    <div className="grid grid-cols-12 gap-4">
+    <div className="grid grid-cols-12 gap-4 md:gap-5">
       {/* Left: Intelligence Summary */}
-      <div className="col-span-12 lg:col-span-8 bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-4 sm:p-5">
-        <h3 className="text-[16px] font-semibold text-[#172033] mb-4">
-          本期情报摘要
-        </h3>
-        <div className="space-y-3 text-[13px] text-[#172033] leading-relaxed">
-          {summary.topDomains.length > 0 && (
-            <p>
-              当前公开项目线索主要集中在
-              <span className="font-medium text-[#2563EB]">
-                {summary.topDomains.join("、")}
-              </span>
-              。
+      <div className="col-span-12 lg:col-span-8 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between min-h-[220px]">
+        {data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center text-center py-8 h-full">
+            <p className="text-[13px] text-[#475467] font-semibold mb-1">
+              当前筛选条件下暂无公开招采项目数据
             </p>
-          )}
-          {summary.topBrokers.length > 0 && (
-            <p>
-              <span className="font-medium">{summary.topBrokers.join("、")}</span>
-              近期公开招采线索相对较多。
+            <p className="text-[11px] text-[#98A2B3] max-w-sm">
+              无法生成本期情报摘要。请尝试调整时间范围、取消“仅看金融科技”勾选或选择其他券商主体。
             </p>
-          )}
-          {summary.topSuppliers.length > 0 && (
-            <p>
-              结果公示中披露项目次数较多的供应商包括
-              <span className="font-medium">{summary.topSuppliers.join("、")}</span>
-              。
-            </p>
-          )}
-          <p>
-            当前有效公开价格样本
-            <span className="font-medium text-[#0F9F8F]">
-              {summary.priceSamples}
-            </span>
-            条，价格披露率{summary.priceRate}%。
-          </p>
-        </div>
-        <p className="text-[11px] text-[#98A2B3] mt-4">
-          公开项目数量同时受到各主体信息披露程度和采集覆盖范围影响。
-        </p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <h3 className="text-[15px] font-bold text-[#172033] mb-3">
+                本期情报摘要
+              </h3>
+              
+              {/* 1. 顶部核心结论 */}
+              {summary.topDomains.length > 0 && (
+                <div className="bg-blue-50/50 rounded-xl p-3.5 border border-blue-100/40 text-[13px] leading-relaxed mb-4 text-[#102847] font-semibold">
+                  📌 核心发现：公开项目线索高度聚焦于金融科技的 <span className="text-[#2563EB] font-bold underline decoration-blue-300 decoration-2 underline-offset-2">{summary.topDomains.join("、")}</span> 建设方向。
+                </div>
+              )}
+
+              {/* 2. 中部关键发现 (分块展示) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3.5">
+                  <div className="text-[11px] text-[#718096] font-bold mb-1">方向热点</div>
+                  <div className="text-[13px] text-[#172033] leading-relaxed">
+                    当前科技采购主要集中于 <span className="font-semibold text-purple-600">{summary.topDomains.slice(0, 2).join("与")}</span> 等核心方向。
+                  </div>
+                </div>
+                <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3.5">
+                  <div className="text-[11px] text-[#718096] font-bold mb-1">活跃机构</div>
+                  <div className="text-[13px] text-[#172033] leading-relaxed">
+                    近期 <span className="font-semibold text-blue-600">{summary.topBrokers.join("、") || "各大券商"}</span> 在公开渠道披露的建设动态较多。
+                  </div>
+                </div>
+                <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3.5">
+                  <div className="text-[11px] text-[#718096] font-bold mb-1">活跃供应商</div>
+                  <div className="text-[13px] text-[#172033] leading-relaxed">
+                    项目中标结果中频繁出现 <span className="font-semibold text-teal-600">{summary.topSuppliers.slice(0, 2).join("与")}</span> 等行业供应商。
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. 底部辅助说明 */}
+            <div className="border-t border-[#F0F2F5] pt-3 mt-3 flex items-center justify-between text-[12px] text-[#667085] flex-wrap gap-2">
+              <div>
+                当前拥有有效公开价格样本 <span className="font-bold text-[#0F9F8F] text-[13px]">{summary.priceSamples}</span> 条，价格披露率为 <span className="font-bold text-blue-600 text-[13px]">{summary.priceRate}%</span>。
+              </div>
+              <div className="text-[11px] text-[#98A2B3]">
+                ℹ️ 数据受到各主体信息披露程度及采集覆盖范围影响。
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Right: Coverage & Quality */}
-      <div className="col-span-12 lg:col-span-4 bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-4 sm:p-5">
-        <h3 className="text-[16px] font-semibold text-[#172033] mb-4">
-          数据覆盖与可信度
-        </h3>
+      <div className="col-span-12 lg:col-span-4 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between">
+        <div>
+          <h3 className="text-[15px] font-bold text-[#172033] mb-3">
+            数据覆盖与可信度
+          </h3>
 
-        {/* Top stats row */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <div className="bg-[#F8FAFC] rounded-lg p-3 text-center">
-            <p className="text-[11px] text-[#98A2B3] mb-1">数据最新日期</p>
-            <p className="text-[14px] font-semibold text-[#172033]">
-              {coverage.latestDate}
-            </p>
+          {/* Top stats row */}
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3 text-center">
+              <p className="text-[11px] text-[#98A2B3] mb-0.5">数据最新日期</p>
+              <p className="text-[13px] font-bold text-[#172033] tracking-wide">
+                {coverage.latestDate}
+              </p>
+            </div>
+            <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3 text-center">
+              <p className="text-[11px] text-[#98A2B3] mb-0.5">覆盖主体数</p>
+              <p className="text-[18px] font-bold text-[#2563EB] tabular-nums leading-none mt-0.5">
+                {coverage.totalBrokers}
+              </p>
+            </div>
           </div>
-          <div className="bg-[#F8FAFC] rounded-lg p-3 text-center">
-            <p className="text-[11px] text-[#98A2B3] mb-1">覆盖主体数</p>
-            <p className="text-[20px] font-bold text-[#2563EB] tabular-nums">
-              {coverage.totalBrokers}
-            </p>
-          </div>
-        </div>
 
-        {/* Progress bars */}
-        <div className="space-y-3">
-          <CoverageBar
-            label="有效日期覆盖率"
-            value={parseFloat(coverage.dateRate)}
-            color="#2563EB"
-          />
-          <CoverageBar
-            label="供应商字段完整率"
-            value={parseFloat(coverage.supplierRate)}
-            color="#0F9F8F"
-          />
-          <CoverageBar
-            label="价格字段完整率"
-            value={parseFloat(coverage.priceRate)}
-            color="#F59E0B"
-          />
+          {/* Progress bars */}
+          <div className="space-y-3.5">
+            <CoverageBar
+              label="有效日期覆盖率"
+              value={parseFloat(coverage.dateRate)}
+              color="#2563EB"
+            />
+            <CoverageBar
+              label="供应商字段完整率"
+              value={parseFloat(coverage.supplierRate)}
+              color="#0F9F8F"
+            />
+            <CoverageBar
+              label="价格字段完整率"
+              value={parseFloat(coverage.priceRate)}
+              color="#F59E0B"
+            />
+          </div>
         </div>
 
         {/* Duplicate warning */}
         {coverage.dupCount > 0 && (
-          <div className="mt-3 flex items-center gap-2 text-[12px] text-[#F59E0B] bg-[#FFFBEB] rounded-lg px-3 py-2">
+          <div className="mt-4 flex items-center gap-2 text-[12px] text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-3 py-2">
             <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] shrink-0" />
             疑似重复源文件 {coverage.dupCount} 组
           </div>

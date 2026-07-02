@@ -88,18 +88,28 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
     }
     const chart = chartInstance.current;
     chart.setOption({
-      tooltip: { trigger: "axis" },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: "#ffffff",
+        borderColor: "#E4EAF2",
+        borderWidth: 1,
+        textStyle: { color: "#172033", fontSize: 12 },
+        extraCssText: "box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px;",
+      },
       legend: {
         data: ["项目线索", "结果公示", "价格样本"],
-        bottom: 0,
-        textStyle: { fontSize: 11, color: "#667085" },
+        right: 0,
+        top: 0,
+        icon: "circle",
+        itemGap: 12,
+        textStyle: { fontSize: 11, color: "#667085", fontWeight: 500 },
       },
-      grid: { top: 10, right: 16, bottom: 36, left: 40 },
+      grid: { top: 32, right: 16, bottom: 20, left: 40 },
       xAxis: {
         type: "category",
         data: chartData.months,
         axisLabel: { fontSize: 10, color: "#98A2B3" },
-        axisLine: { lineStyle: { color: "#E4E9F0" } },
+        axisLine: { lineStyle: { color: "#E4EAF2" } },
       },
       yAxis: {
         type: "value",
@@ -121,7 +131,7 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
           lineStyle: { color: "#0F9F8F", width: 2 },
           itemStyle: { color: "#0F9F8F" },
           symbol: "circle",
-          symbolSize: 5,
+          symbolSize: 6,
         },
         {
           name: "价格样本",
@@ -130,7 +140,7 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
           lineStyle: { color: "#F59E0B", width: 2 },
           itemStyle: { color: "#F59E0B" },
           symbol: "circle",
-          symbolSize: 5,
+          symbolSize: 6,
         },
       ],
     });
@@ -144,9 +154,9 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 md:col-span-6 lg:col-span-6 bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3 sm:p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-[14px] font-semibold text-[#172033]">
+    <div className="col-span-1 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[14px] font-bold text-[#172033]">
           公开招采趋势
         </h3>
         <span className="text-[10px] text-[#98A2B3]">
@@ -193,7 +203,15 @@ export function DomainDistributionChart({ data }: ChartsProps) {
       chartInstance.current = echarts.init(chartRef.current);
     }
     chartInstance.current.setOption({
-      tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "shadow" },
+        backgroundColor: "#ffffff",
+        borderColor: "#E4EAF2",
+        borderWidth: 1,
+        textStyle: { color: "#172033", fontSize: 12 },
+        extraCssText: "box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px;",
+      },
       grid: { top: 8, right: 80, bottom: 8, left: 120, containLabel: false },
       xAxis: {
         type: "value",
@@ -212,7 +230,15 @@ export function DomainDistributionChart({ data }: ChartsProps) {
         {
           type: "bar",
           data: [...chartData.counts].reverse(),
-          itemStyle: { color: "#2563EB", borderRadius: [0, 3, 3, 0] },
+          itemStyle: {
+            color: (params: any) => {
+              const valIndex = params.dataIndex; // bottom is 0 (smallest), top is N (largest)
+              const total = chartData.counts.length || 8;
+              const opacity = 0.35 + (valIndex / (total - 1)) * 0.65;
+              return `rgba(37, 99, 235, ${Math.min(1, Math.max(0.35, opacity))})`;
+            },
+            borderRadius: [0, 4, 4, 0],
+          },
           barMaxWidth: 16,
           label: {
             show: true,
@@ -223,6 +249,7 @@ export function DomainDistributionChart({ data }: ChartsProps) {
             },
             fontSize: 10,
             color: "#667085",
+            fontWeight: 500,
           },
         },
       ],
@@ -236,8 +263,8 @@ export function DomainDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3 sm:p-4">
-      <h3 className="text-[14px] font-semibold text-[#172033] mb-2">
+    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+      <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         金融科技方向
       </h3>
       <div className="relative h-[220px]">
@@ -276,18 +303,39 @@ export function StageDistributionChart({ data }: ChartsProps) {
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current);
     }
+    
+    const totalSum = chartData.reduce((acc, curr) => acc + curr.value, 0);
+
     chartInstance.current.setOption({
-      tooltip: { trigger: "item" },
+      title: {
+        text: totalSum.toLocaleString(),
+        subtext: "全部公告",
+        left: "34%",
+        top: "40%",
+        textAlign: "center",
+        textStyle: { fontSize: 20, fontWeight: "bold", color: "#172033" },
+        subtextStyle: { fontSize: 11, color: "#98A2B3" },
+      },
+      tooltip: {
+        trigger: "item",
+        backgroundColor: "#ffffff",
+        borderColor: "#E4EAF2",
+        borderWidth: 1,
+        textStyle: { color: "#172033", fontSize: 12 },
+        extraCssText: "box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px;",
+      },
       legend: {
         orient: "vertical",
         right: 8,
         top: "center",
-        textStyle: { fontSize: 11, color: "#667085" },
+        icon: "circle",
+        itemGap: 8,
+        textStyle: { fontSize: 11, color: "#667085", fontWeight: 500 },
       },
       series: [
         {
           type: "pie",
-          radius: ["45%", "70%"],
+          radius: ["50%", "72%"],
           center: ["35%", "50%"],
           avoidLabelOverlap: false,
           label: { show: false },
@@ -304,8 +352,8 @@ export function StageDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3 sm:p-4">
-      <h3 className="text-[14px] font-semibold text-[#172033] mb-2">
+    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+      <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         公告阶段
       </h3>
       <div className="relative h-[220px]">

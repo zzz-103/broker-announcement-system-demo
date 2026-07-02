@@ -55,58 +55,71 @@ export function KeyProjectRadar({
       .slice(0, 6);
   }, [data, baseline]);
 
+  const getAccentColor = (stage: string, domain: string) => {
+    if (domain === "交易、柜台与核心系统") return "#D64545"; // Red
+    if (stage === "采购招标") return "#2563EB"; // Blue
+    if (stage === "结果公示") return "#16A36A"; // Green
+    return "#CBD5E1"; // Gray default
+  };
+
   return (
-    <div className="bg-white rounded-[10px] border border-[#E4E9F0] shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-5">
-      <h3 className="text-[16px] font-semibold text-[#172033] mb-4">
+    <div className="bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-5">
+      <h3 className="text-[15px] font-bold text-[#172033] mb-4">
         重点项目雷达
       </h3>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {projects.map(({ record: r, reason }) => (
           <button
             key={r.projectKey}
             onClick={() => onSelectProject(r)}
-            className="text-left border border-[#E4E9F0] rounded-[10px] p-4 hover:border-[#2563EB]/30 hover:shadow-[0_2px_8px_rgba(37,99,235,0.08)] transition-all cursor-pointer"
+            className="relative overflow-hidden text-left border border-[#E4EAF2] rounded-xl pl-5 pr-4 py-4 hover:border-blue-500/35 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)] transition-all duration-200 motion-reduce:transition-none motion-reduce:transform-none cursor-pointer bg-white"
           >
+            {/* Left accent strip */}
+            <div 
+              className="absolute left-0 top-0 bottom-0 w-[4px]"
+              style={{ backgroundColor: getAccentColor(r.announcement_stage, r.primaryDomain) }}
+            />
+
             <div className="flex items-center gap-2 mb-2">
               <span
-                className="w-2 h-2 rounded-full shrink-0"
+                className="w-1.5 h-1.5 rounded-full shrink-0"
                 style={{
                   backgroundColor:
                     DOMAIN_COLORS[r.primaryDomain] || "#98A2B3",
                 }}
               />
-              <span className="text-[11px] text-[#667085] truncate">
+              <span className="text-[11px] text-[#667085] truncate font-medium">
                 {r.primaryDomain}
               </span>
             </div>
-            <div className="text-[13px] text-[#172033] font-medium line-clamp-2 leading-relaxed mb-2">
+            <div className="text-[13px] text-[#172033] font-bold line-clamp-2 leading-relaxed mb-2">
               {r.normalizedProjectName}
             </div>
-            <div className="flex flex-wrap gap-1 mb-2">
+            <div className="flex flex-wrap gap-1 mb-3">
               {r.topicTags.slice(0, 3).map((tag) => (
                 <span
                   key={tag}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-[#F0F2F5] text-[#667085]"
+                  className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#F0F2F5] text-[#667085]"
                 >
                   {tag}
                 </span>
               ))}
             </div>
             <div className="flex items-center justify-between text-[11px] text-[#98A2B3]">
-              <span>{r.validBrokerName}</span>
-              <span>{formatDate(r.validPublishDate)}</span>
+              <span className="font-medium text-[#718096]">{r.validBrokerName}</span>
+              <span className="tabular-nums">{formatDate(r.validPublishDate)}</span>
             </div>
             {r.normalizedSupplier && (
-              <div className="text-[11px] text-[#667085] mt-1 truncate">
-                {r.normalizedSupplier}
+              <div className="text-[11px] text-[#667085] mt-1.5 truncate font-medium">
+                供应商: <span className="text-[#172033]">{r.normalizedSupplier}</span>
               </div>
             )}
             {r.winning_amount_yuan !== null && (
-              <div className="text-[12px] text-[#0F9F8F] font-medium mt-1 tabular-nums">
+              <div className="text-[12px] text-[#0F9F8F] font-bold mt-1.5 tabular-nums">
                 {formatAmount(r.winning_amount_yuan)}
               </div>
             )}
-            <div className="text-[10px] text-[#F59E0B] mt-2">{reason}</div>
+            <div className="text-[10px] text-[#F59E0B] mt-2.5 font-medium">{reason}</div>
           </button>
         ))}
       </div>

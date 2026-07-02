@@ -60,39 +60,42 @@ def main(argv: list[str] | None = None) -> int:
     notices_dir.mkdir(parents=True, exist_ok=True)
     if args.resume:
         checkpoint = load_checkpoint(checkpoint_path)
-        last_page_from_json = 1
-        if checkpoint:
-            if checkpoint.get("keyword") and checkpoint.get("keyword") != args.keyword:
-                LOGGER.warning(
-                    "checkpoint keyword %r differs from current keyword %r",
-                    checkpoint.get("keyword"),
-                    args.keyword,
+        if checkpoint and checkpoint.get("completed", False):
+            LOGGER.info("上一次任务已成功完成，不进行断点恢复，从第一页重新开始")
+        else:
+            last_page_from_json = 1
+            if checkpoint:
+                if checkpoint.get("keyword") and checkpoint.get("keyword") != args.keyword:
+                    LOGGER.warning(
+                        "checkpoint keyword %r differs from current keyword %r",
+                        checkpoint.get("keyword"),
+                        args.keyword,
+                    )
+                last_page_from_json = int(checkpoint.get("last_completed_page") or 1)
+
+            last_page_from_md = 1
+            matching_count = 0
+            if notices_dir.exists():
+                for path in notices_dir.glob("*.md"):
+                    fm = read_front_matter(path)
+                    if fm.get("keyword") == args.keyword:
+                        pub_time_str = fm.get("publish_time")
+                        pub_date = parse_publish_date(pub_time_str)
+                        if pub_date and pub_date >= args.since_date:
+                            matching_count += 1
+                if args.page_size > 0:
+                    last_page_from_md = math.ceil(matching_count / args.page_size)
+
+            last_page = max(last_page_from_json, last_page_from_md)
+            if last_page > 1:
+                args.start_page = max(1, last_page - 1)
+                LOGGER.info(
+                    "从 checkpoint 和已爬取文件恢复 (json 页码: %s, md 文件数: %s, 推算页码: %s)，回退到第 %s 页重新检查",
+                    last_page_from_json if checkpoint else "无",
+                    matching_count,
+                    last_page_from_md,
+                    args.start_page,
                 )
-            last_page_from_json = int(checkpoint.get("last_completed_page") or 1)
-
-        last_page_from_md = 1
-        matching_count = 0
-        if notices_dir.exists():
-            for path in notices_dir.glob("*.md"):
-                fm = read_front_matter(path)
-                if fm.get("keyword") == args.keyword:
-                    pub_time_str = fm.get("publish_time")
-                    pub_date = parse_publish_date(pub_time_str)
-                    if pub_date and pub_date >= args.since_date:
-                        matching_count += 1
-            if args.page_size > 0:
-                last_page_from_md = math.ceil(matching_count / args.page_size)
-
-        last_page = max(last_page_from_json, last_page_from_md)
-        if last_page > 1:
-            args.start_page = max(1, last_page - 1)
-            LOGGER.info(
-                "从 checkpoint 和已爬取文件恢复 (json 页码: %s, md 文件数: %s, 推算页码: %s)，回退到第 %s 页重新检查",
-                last_page_from_json if checkpoint else "无",
-                matching_count,
-                last_page_from_md,
-                args.start_page,
-            )
 
     existing_paths = scan_existing_notice_paths(notices_dir)
     processed_ids: set[str] = set()
