@@ -401,12 +401,22 @@ def parse_json_text(text: str) -> Any:
     raise ValueError(f"Unable to parse JSON from model output: {text[:500]}")
 
 
-def emit_progress(stage: str, progress: int, message: str) -> None:
+def emit_progress(
+    stage: str,
+    progress: int,
+    message: str,
+    *,
+    current: int | None = None,
+    total: int | None = None,
+) -> None:
     payload = {
         "stage": stage,
         "progress": max(0, min(100, int(progress))),
         "message": message,
     }
+    if current is not None and total is not None:
+        payload["current"] = max(0, int(current))
+        payload["total"] = max(0, int(total))
     print(f"::progress::{json.dumps(payload, ensure_ascii=False)}", flush=True)
 
 
@@ -1250,6 +1260,7 @@ def main() -> int:
     plans = selection.plans
 
     if not plans and args.incremental:
+        emit_progress("completed", 100, "没有新增或变更文件，沿用现有候选结果。")
         summary = {
             "input_dir": portable_path(input_dir),
             "output_dir": portable_path(output_dir),
@@ -1297,6 +1308,7 @@ def main() -> int:
     print(f"最大并发请求数: {max_concurrent_requests}")
     print(f"请求最小启动间隔秒数: {max(0.0, args.min_interval_seconds)}")
     print(f"请求执行中日志间隔秒数: {max(0.0, args.request_log_interval_seconds)}")
+    emit_progress("preparing", 5, "正在准备 LLM 候选数据...")
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
         future_map = {
@@ -1324,6 +1336,13 @@ def main() -> int:
                 if result.error:
                     failures.append({"file": portable_path(path), "error": result.error})
                     print(f"[{index}/{len(plans)}] FAILED {path}: {result.error}")
+                    emit_progress(
+                        "processing",
+                        int(index * 90 / max(1, len(plans))),
+                        f"正在处理公告 {index} / {len(plans)}",
+                        current=index,
+                        total=len(plans),
+                    )
                     continue
                 all_rows.extend(result.rows)
                 successful_file_keys.add(path_file_key(path))
@@ -1331,15 +1350,37 @@ def main() -> int:
                     f"[{index}/{len(plans)}] OK {path} -> {len(result.rows)} rows "
                     f"({plan.reason})"
                 )
+                emit_progress(
+                    "processing",
+                    int(index * 90 / max(1, len(plans))),
+                    f"正在处理公告 {index} / {len(plans)}",
+                    current=index,
+                    total=len(plans),
+                )
             except (TimeoutError, ValueError, json.JSONDecodeError) as exc:
                 failures.append({"file": portable_path(path), "error": repr(exc)})
                 print(f"[{index}/{len(plans)}] FAILED {path}: {exc}")
+                emit_progress(
+                    "processing",
+                    int(index * 90 / max(1, len(plans))),
+                    f"正在处理公告 {index} / {len(plans)}",
+                    current=index,
+                    total=len(plans),
+                )
             except Exception as exc:
                 failures.append({"file": portable_path(path), "error": repr(exc)})
                 print(f"[{index}/{len(plans)}] FAILED {path}: {exc}")
+                emit_progress(
+                    "processing",
+                    int(index * 90 / max(1, len(plans))),
+                    f"正在处理公告 {index} / {len(plans)}",
+                    current=index,
+                    total=len(plans),
+                )
 
     failure_path = output_dir / "failed_files.jsonl"
     write_failures_jsonl(failures, failure_path)
+    emit_progress("writing", 95, "正在写入候选 CSV...")
 
     output_rows = (
         merge_rows_by_file(existing_rows, all_rows, successful_file_keys)
@@ -1413,6 +1454,13 @@ def main() -> int:
     print("")
     print("处理完成")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    emit_progress(
+        "completed",
+        100,
+        "LLM 候选数据已生成。" if not failures else f"LLM 处理完成，但有 {len(failures)} 个文件失败。",
+        current=len(plans),
+        total=len(plans),
+    )
     return 0 if not failures else 2
 
 

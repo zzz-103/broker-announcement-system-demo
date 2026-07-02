@@ -32,7 +32,7 @@ export function DataDefinitionModal({
           <div className="px-6 py-5 space-y-4 text-[13px] text-[#172033] leading-relaxed">
             <p>
               <strong>公告记录不等于独立项目。</strong>
-              同一项目可能在不同阶段发布多条公告。"去重项目线索"按主体名称和标准化项目名去重计算。
+              同一项目可能在不同阶段发布多条公告。“去重项目线索”按主体名称和标准化项目名去重计算。
             </p>
             <p>
               <strong>活跃度受公开信息披露程度影响。</strong>
@@ -40,7 +40,7 @@ export function DataDefinitionModal({
             </p>
             <p>
               <strong>供应商信息来自结果公告。</strong>
-              当前数据未进一步区分中标、候选或入围角色，统称为"结果公告披露供应商"。
+              当前数据未进一步区分中标、候选或入围角色，统称为“结果公告披露供应商”。
             </p>
             <p>
               <strong>价格仅为公开披露样本。</strong>

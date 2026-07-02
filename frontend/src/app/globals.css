@@ -141,3 +141,16 @@ body {
 body {
   @apply font-sans;
 }
+
+@keyframes admin-progress-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.admin-progress-indeterminate {
+  animation: admin-progress-slide 1.6s ease-in-out infinite;
+}

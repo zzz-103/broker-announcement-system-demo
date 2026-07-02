@@ -55,6 +55,8 @@ class JobManager:
         self._events: dict[str, Deque[dict[str, Any]]] = {}
         self._event_sequences: dict[str, int] = {}
         self._running_job_id: str | None = None
+        self._active_operation: str | None = None
+        self._processes: dict[str, subprocess.Popen[str]] = {}
 
     def start_scraper(self) -> Job:
         return self._start_job("scraper", self._build_scraper_command)
@@ -62,11 +64,22 @@ class JobManager:
     def start_llm(self) -> Job:
         return self._start_job("llm", self._build_llm_command)
 
+    def acquire_operation(self, operation_type: str) -> None:
+        with self._condition:
+            if self._active_operation:
+                raise JobConflictError(self._conflict_message(self._active_operation))
+            self._active_operation = operation_type
+
+    def release_operation(self, operation_type: str) -> None:
+        with self._condition:
+            if self._active_operation == operation_type:
+                self._active_operation = None
+            self._condition.notify_all()
+
     def _start_job(self, job_type: str, command_builder: Any) -> Job:
         with self._condition:
-            if self._running_job_id:
-                running_job = self._jobs[self._running_job_id]
-                raise JobConflictError(f"{running_job.job_type} job is already running")
+            if self._active_operation:
+                raise JobConflictError(self._conflict_message(self._active_operation))
 
             job = Job(
                 job_id=str(uuid.uuid4()),
@@ -79,6 +92,7 @@ class JobManager:
             self._events[job.job_id] = deque(maxlen=MAX_LOG_LINES)
             self._event_sequences[job.job_id] = 0
             self._running_job_id = job.job_id
+            self._active_operation = job_type
 
         thread = threading.Thread(target=self._run_job, args=(job.job_id, command_builder), daemon=True)
         thread.start()
@@ -111,6 +125,22 @@ class JobManager:
             )
             return self._event_sequences.get(job_id, 0)
 
+    def cancel_job(self, job_id: str) -> None:
+        """Request cancellation of a running job by terminating its subprocess."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                raise JobNotFoundError(job_id)
+            if job.status not in {"running", "pending"}:
+                return  # already finished, nothing to do
+            process = self._processes.get(job_id)
+
+        if process and process.poll() is None:
+            try:
+                process.terminate()
+            except OSError:
+                pass
+
     def _run_job(self, job_id: str, command_builder: Any) -> None:
         process: subprocess.Popen[str] | None = None
         try:
@@ -139,6 +169,9 @@ class JobManager:
                 bufsize=1,
             )
 
+            with self._lock:
+                self._processes[job_id] = process
+
             readers = [
                 threading.Thread(
                     target=self._read_stream,
@@ -162,8 +195,15 @@ class JobManager:
             self._finish_job(job_id, status=status, exit_code=exit_code, error=None)
         except Exception as exc:
             if process and process.poll() is None:
-                process.wait(timeout=5)
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except OSError:
+                    pass
             self._finish_job(job_id, status="failed", exit_code=None, error=str(exc))
+        finally:
+            with self._lock:
+                self._processes.pop(job_id, None)
 
     def _build_scraper_command(self) -> tuple[list[str], Path, dict[str, str]]:
         project_root = Path(__file__).resolve().parents[2]
@@ -197,7 +237,7 @@ class JobManager:
         project_root = Path(__file__).resolve().parents[2]
         default_script = project_root / "backend" / "llm_table" / "llm_markdown_table_builder.py"
         default_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "notices"
-        default_output_dir = project_root / "backend" / "data"
+        default_output_dir = project_root / "backend" / "data" / "staging"
         default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
         default_working_dir = project_root / "backend" / "llm_table"
 
@@ -252,13 +292,16 @@ class JobManager:
         if stream is None:
             return
         for line in iter(stream.readline, ""):
+            message = line.rstrip("\r\n")
+            if stream_name == "stdout" and self._maybe_append_progress_event(job_id, message):
+                continue
             self._append_event(
                 job_id,
                 {
                     "type": "log",
                     "job_id": job_id,
                     "stream": stream_name,
-                    "message": line.rstrip("\r\n"),
+                    "message": message,
                     "timestamp": utc_now(),
                 },
             )
@@ -280,6 +323,8 @@ class JobManager:
             job.error = error
             if self._running_job_id == job_id:
                 self._running_job_id = None
+            if self._active_operation == job.job_type:
+                self._active_operation = None
             event: dict[str, Any] = {
                 "type": "done",
                 "job_id": job_id,
@@ -302,6 +347,48 @@ class JobManager:
         stored_event = dict(event)
         stored_event["_seq"] = self._event_sequences[job_id]
         self._events[job_id].append(stored_event)
+
+    def _maybe_append_progress_event(self, job_id: str, message: str) -> bool:
+        prefix = "::progress::"
+        if not message.startswith(prefix):
+            return False
+
+        try:
+            payload = json.loads(message[len(prefix) :])
+        except json.JSONDecodeError:
+            return False
+
+        event: dict[str, Any] = {
+            "type": "progress",
+            "job_id": job_id,
+            "job_type": self._jobs[job_id].job_type,
+            "stage": str(payload.get("stage") or "processing"),
+            "message": str(payload.get("message") or "正在处理中"),
+            "timestamp": utc_now(),
+        }
+        current = payload.get("current")
+        total = payload.get("total")
+        progress = payload.get("progress")
+        if isinstance(current, int) and isinstance(total, int):
+            event["current"] = current
+            event["total"] = total
+        if isinstance(progress, int):
+            event["progress"] = max(0, min(100, progress))
+        self._append_event(job_id, event)
+        return True
+
+    @staticmethod
+    def _operation_label(operation_type: str) -> str:
+        labels = {
+            "scraper": "一键更新爬虫",
+            "llm": "LLM 数据处理",
+            "publish": "推送",
+            "ai_analysis": "AI 情报分析",
+        }
+        return labels.get(operation_type, operation_type)
+
+    def _conflict_message(self, operation_type: str) -> str:
+        return f"当前正在运行{self._operation_label(operation_type)}，请等待任务完成。"
 
 
 def format_sse(event: dict[str, Any]) -> str:

@@ -18,7 +18,7 @@ uv pip install requests beautifulsoup4 urllib3
 首次全量抓取：
 
 ```bash
-python3 cfcpn_scraper.py \
+uv run python cfcpn_scraper.py \
   --keyword "证券" \
   --start-page 1 \
   --output-dir output \

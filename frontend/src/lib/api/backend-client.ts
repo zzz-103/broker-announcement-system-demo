@@ -7,6 +7,10 @@ export type JobType = "scraper" | "llm";
 
 export interface LoginResponse {
   token: string;
+  username: string;
+  name: string;
+  role: "admin" | "user";
+  is_admin: boolean;
 }
 
 export interface StartJobResponse {
@@ -42,6 +46,17 @@ export type JobEvent =
       timestamp: string;
     }
   | {
+      type: "progress";
+      job_id: string;
+      job_type?: JobType;
+      stage: string;
+      message: string;
+      current?: number;
+      total?: number;
+      progress?: number;
+      timestamp: string;
+    }
+  | {
       type: "done";
       job_id: string;
       status: "succeeded" | "failed";
@@ -56,6 +71,54 @@ export interface AnnouncementsResponse {
     count: number;
     updated_at: string | null;
   };
+}
+
+export interface AiAnalysisResponse {
+  content: string | null;
+  updatedAt: string | null;
+  analysis?: {
+    content?: string;
+    [key: string]: unknown;
+  };
+  meta?: {
+    generated_at: string;
+    source_count: number;
+    window_days: number;
+    cached: boolean;
+  };
+}
+
+export interface PublishAnnouncementsResponse {
+  message: string;
+  meta: {
+    count: number;
+    published_at: string;
+    updated_at: string;
+  };
+}
+
+export interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  department: string;
+  username: string;
+  created_at: string;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUser[];
+}
+
+export interface CreateAdminUserInput {
+  name: string;
+  email: string;
+  department: string;
+}
+
+export interface CreateAdminUserResponse {
+  user: AdminUser;
+  initial_password: string;
 }
 
 export class BackendApiError extends Error {
@@ -131,8 +194,63 @@ export function getJob(jobId: string, token: string): Promise<JobResponse> {
   return requestJson<JobResponse>(`/api/jobs/${encodeURIComponent(jobId)}`, {}, token);
 }
 
+export function cancelJob(jobId: string, token: string): Promise<{ status: string }> {
+  return requestJson<{ status: string }>(
+    `/api/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST" },
+    token,
+  );
+}
+
+
 export function fetchAnnouncements(token: string): Promise<AnnouncementsResponse> {
   return requestJson<AnnouncementsResponse>("/api/data/announcements", {}, token);
+}
+
+export function getAiAnalysis(token: string): Promise<AiAnalysisResponse> {
+  return requestJson<AiAnalysisResponse>("/api/ai-analysis", {}, token);
+}
+
+export function generateAiAnalysis(token: string, signal?: AbortSignal): Promise<AiAnalysisResponse> {
+  return requestJson<AiAnalysisResponse>(
+    "/api/ai-analysis",
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function publishAnnouncements(token: string, signal?: AbortSignal): Promise<PublishAnnouncementsResponse> {
+  return requestJson<PublishAnnouncementsResponse>(
+    "/api/data/announcements/publish",
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function getAdminUsers(token: string): Promise<AdminUsersResponse> {
+  return requestJson<AdminUsersResponse>("/api/admin/users", {}, token);
+}
+
+export function createAdminUser(
+  token: string,
+  input: CreateAdminUserInput,
+): Promise<CreateAdminUserResponse> {
+  return requestJson<CreateAdminUserResponse>(
+    "/api/admin/users",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+    token,
+  );
+}
+
+export function deleteAdminUser(token: string, userId: number): Promise<{ deleted: boolean }> {
+  return requestJson<{ deleted: boolean }>(
+    `/api/admin/users/${encodeURIComponent(String(userId))}`,
+    { method: "DELETE" },
+    token,
+  );
 }
 
 export async function streamJobEvents(
@@ -160,22 +278,62 @@ export async function streamJobEvents(
   const decoder = new TextDecoder();
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  const handleAbort = () => {
+    try {
+      reader.cancel();
+    } catch {
+      // ignore
+    }
+  };
 
-    buffer += decoder.decode(value, { stream: true });
-    const normalized = buffer.replace(/\r\n/g, "\n");
-    const parts = normalized.split("\n\n");
-    buffer = parts.pop() ?? "";
+  if (signal) {
+    if (signal.aborted) {
+      handleAbort();
+      return;
+    }
+    signal.addEventListener("abort", handleAbort);
+  }
 
-    for (const part of parts) {
-      const dataLines = part
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart());
-      if (dataLines.length === 0) continue;
-      onEvent(JSON.parse(dataLines.join("\n")) as JobEvent);
+  try {
+    while (true) {
+      if (signal?.aborted) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const normalized = buffer.replace(/\r\n/g, "\n");
+      const parts = normalized.split("\n\n");
+      buffer = parts.pop() ?? "";
+
+      for (const part of parts) {
+        const dataLines = part
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart());
+        if (dataLines.length === 0) continue;
+        onEvent(JSON.parse(dataLines.join("\n")) as JobEvent);
+      }
+    }
+
+    if (buffer.trim()) {
+      const normalized = buffer.replace(/\r\n/g, "\n");
+      const parts = normalized.split("\n\n");
+      for (const part of parts) {
+        const dataLines = part
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart());
+        if (dataLines.length === 0) continue;
+        try {
+          onEvent(JSON.parse(dataLines.join("\n")) as JobEvent);
+        } catch (e) {
+          console.error("Failed to parse remaining buffer SSE event:", e);
+        }
+      }
+    }
+  } finally {
+    if (signal) {
+      signal.removeEventListener("abort", handleAbort);
     }
   }
 }

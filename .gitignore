@@ -4,6 +4,18 @@
 **/checkpoint.json
 backend/config/llm_api_config.json
 backend/data/raw_json
+backend/data/users.db
+backend/data/brokers
+backend/data/staging/
+# Runtime generated data (keep .gitkeep for directory structure)
+backend/data/announcement_table.csv
+backend/data/announcement_table.jsonl
+backend/data/announcement_table.xlsx
+backend/data/ai-analysis.json
+backend/data/run_summary.json
+backend/data/failed_files.jsonl
+backend/data/staging/*.csv
+backend/data/staging/*.jsonl
 # Python virtual environment and cache
 .venv/
 venv/
