@@ -115,14 +115,16 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
                 "h-full rounded-full transition-[width] duration-300",
                 progress.status === "failed" || progress.status === "cancelled"
                   ? "bg-gradient-to-r from-rose-500 to-red-500"
-                  : "bg-gradient-to-r from-[#1F6FE5] via-[#4F9DF7] to-[#7AC5FF]",
+                  : progress.status === "succeeded"
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-500"
+                    : "bg-gradient-to-r from-[#1F6FE5] via-[#4F9DF7] via-[#7AC5FF] via-[#4F9DF7] to-[#1F6FE5] animate-progress-flow",
               )}
               style={{ width: `${percent}%` }}
             />
           ) : progress.status === "running" ? (
-            <div className="admin-progress-indeterminate absolute inset-y-0 left-0 w-1/2 rounded-full bg-gradient-to-r from-[#1F6FE5] via-[#4F9DF7] to-[#7AC5FF]" />
+            <div className="admin-progress-indeterminate absolute inset-y-0 left-0 w-1/2 rounded-full bg-gradient-to-r from-[#1F6FE5] via-[#4F9DF7] via-[#7AC5FF] via-[#4F9DF7] to-[#1F6FE5] animate-progress-flow" />
           ) : (
-            <div className="h-full w-0" />
+            <div className="h-full w-0 bg-slate-200" />
           )}
         </div>
         <div className="mt-2 text-xs text-[#667085]">

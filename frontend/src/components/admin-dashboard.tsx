@@ -170,6 +170,60 @@ function clearActiveJob(jobId?: string) {
   }
 }
 
+function GlowButton({
+  children,
+  onClick,
+  disabled,
+  className,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [coords, setCoords] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCoords({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  return (
+    <Button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className={cn(
+        "relative overflow-hidden transition-all duration-200",
+        className
+      )}
+    >
+      {isHovered && !disabled && (
+        <span
+          className="absolute pointer-events-none rounded-full bg-white/20 blur-md transition-opacity duration-300 pointer-events-none"
+          style={{
+            width: "60px",
+            height: "60px",
+            left: `${coords.x - 30}px`,
+            top: `${coords.y - 30}px`,
+            transform: "translate3d(0, 0, 0)",
+          }}
+        />
+      )}
+      <span className="relative z-10 flex items-center justify-center gap-1.5 w-full h-full">
+        {children}
+      </span>
+    </Button>
+  );
+}
+
 export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const { username, token, logout, clearAuth } = useAuthStore();
   const [cardStates, setCardStates] = useState<Record<CardId, TaskCardState>>(INITIAL_CARD_STATE);
@@ -924,7 +978,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
 
   return (
     <div className="min-h-screen bg-[#F5F7FA]">
-      <header className="sticky top-0 z-40 bg-[#162B49] text-white">
+      <header className="sticky top-0 z-40 bg-[#162B49]/90 backdrop-blur-md border-b border-white/5 text-white">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3">
             <button
@@ -953,10 +1007,21 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1200px] px-4 py-8 sm:px-8">
-        <div className="mb-8">
-          <h1 className="text-xl font-bold text-[#172033]">管理控制台</h1>
-          <p className="mt-1 text-sm text-[#667085]">管理抓取、候选数据生成、推送发布与 AI 情报分析。</p>
+      <main className="mx-auto max-w-[1280px] px-4 py-8 sm:px-8">
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E4E9F0] pb-5">
+          <div>
+            <h1 className="text-2xl font-bold text-[#172033]">管理控制台</h1>
+            <p className="mt-1 text-xs text-[#667085]">管理抓取、数据处理、推送发布与 AI 情报分析</p>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-[#667085]">
+            <span className="flex items-center gap-1 bg-white/70 backdrop-blur-md border border-white/40 px-2.5 py-1 rounded-full shadow-sm">
+              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              服务已连接
+            </span>
+            <span className="bg-white/70 backdrop-blur-md border border-white/40 px-2.5 py-1 rounded-full shadow-sm">
+              当前管理员: <span className="font-semibold text-[#172033]">{username}</span>
+            </span>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-3">
@@ -967,9 +1032,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             return (
               <section
                 key={card.id}
-                className="flex h-full flex-col rounded-xl border border-[#E4E9F0] bg-white shadow-sm transition-shadow hover:shadow-md"
+                className="flex h-full flex-col rounded-2xl border border-[#E4E9F0] bg-white shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-200"
               >
-                <div className="flex h-full flex-col p-5">
+                <div className="flex h-full flex-col p-6">
                   <div className="flex items-start justify-between">
                     <div
                       className={cn(
@@ -979,54 +1044,53 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                     >
                       <card.icon className="size-5 text-white" />
                     </div>
-                    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-600">
+                    <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-semibold text-blue-600 border border-blue-100">
                       已接通
                     </span>
                   </div>
 
-                  <div className="mt-4 min-h-[84px]">
-                    <h3 className="text-[15px] font-semibold text-[#172033]">{card.title}</h3>
-                    <p className="mt-1 text-xs leading-relaxed text-[#667085]">{card.description}</p>
+                  <div className="mt-4 flex-grow flex flex-col justify-start">
+                    <h3 className="text-base font-bold text-[#172033]">{card.title}</h3>
+                    <p className="mt-1.5 text-xs leading-relaxed text-[#667085] min-h-[36px]">{card.description}</p>
                   </div>
 
-                  <div className="mt-4 min-h-[110px] rounded-xl border border-[#E8EDF4] bg-[#F8FAFC] px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", statusTone(state.status))}>
-                            {statusText(state.status)}
-                          </span>
-                          <span className="text-[11px] text-[#8A94A6]">{state.lastOperationLabel}</span>
-                        </div>
-                        <div className="mt-2 flex items-start gap-2 text-sm text-[#35537A]">
-                          <span className="mt-0.5 shrink-0">{iconForStatus(state.status)}</span>
-                          <span className="min-h-[40px] whitespace-pre-wrap break-words text-[#35537A]">
-                            {state.summary}
-                          </span>
-                        </div>
+                  <div className="mt-4 min-h-[110px] rounded-xl bg-[#F8FAFC]/85 backdrop-blur-sm border border-[#E4E9F0] p-4 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold border", statusTone(state.status))}>
+                          {statusText(state.status)}
+                        </span>
+                        <span className="text-[10px] text-[#98A2B3] font-medium">{state.lastOperationLabel}</span>
                       </div>
 
                       <Button
                         type="button"
-                        variant="outline"
-                        size="icon-sm"
+                        variant="ghost"
+                        size="icon"
                         disabled={state.logs.length === 0}
                         onClick={() => setLogDialogCard(card.id)}
-                        className="border-[#D0D8E2] bg-white text-[#35537A] disabled:opacity-40"
+                        title="查看详细日志"
+                        className="size-7 hover:bg-slate-200/50 text-[#667085] disabled:opacity-30 rounded-lg flex items-center justify-center"
                       >
                         <TerminalSquare className="size-4" />
                       </Button>
                     </div>
+                    
+                    <div className="mt-3 flex items-start gap-2 flex-grow">
+                      <span className="mt-0.5 shrink-0 text-[#98A2B3]">{iconForStatus(state.status)}</span>
+                      <span className="min-h-[40px] whitespace-pre-wrap break-words text-xs text-[#35537A] leading-relaxed line-clamp-3">
+                        {state.summary}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="mt-auto pt-5">
+                  <div className="mt-6 pt-4 border-t border-[#F0F2F5] mt-auto">
                     {card.id === "llm" ? (
-                      <div className="grid grid-cols-[2fr_1fr] gap-3">
-                        <Button
-                          type="button"
+                      <div className="flex items-center gap-2 w-full">
+                        <GlowButton
                           onClick={() => void runJob("llm")}
                           disabled={isBusy}
-                          className="h-9 bg-[#162B49] text-sm text-white hover:bg-[#1E3A5F]"
+                          className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex-[7] flex items-center justify-center gap-1.5"
                         >
                           {activeOperation?.id === "llm" ? (
                             <>
@@ -1036,13 +1100,13 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           ) : (
                             "运行 LLM"
                           )}
-                        </Button>
+                        </GlowButton>
                         <Button
                           type="button"
                           onClick={() => void runPublish()}
                           disabled={isBusy}
                           variant="outline"
-                          className="h-9 border-[#162B49]/15 text-sm text-[#162B49] hover:bg-[#162B49]/5"
+                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex-[3] flex items-center justify-center gap-1"
                         >
                           {activeOperation?.id === "publish" ? (
                             <>
@@ -1058,11 +1122,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         </Button>
                       </div>
                     ) : (
-                      <Button
-                        type="button"
+                      <GlowButton
                         onClick={() => void (card.id === "crawler" ? runJob("scraper") : runAiAnalysis())}
                         disabled={isBusy}
-                        className="h-9 w-full bg-[#162B49] text-sm text-white hover:bg-[#1E3A5F]"
+                        className="h-10 w-full text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
                       >
                         {activeOperation?.cardId === card.id ? (
                           <>
@@ -1074,7 +1137,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         ) : (
                           "生成分析"
                         )}
-                      </Button>
+                      </GlowButton>
                     )}
                   </div>
                 </div>
@@ -1092,17 +1155,17 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           }
         />
 
-        <div className="mt-6 rounded-xl border border-[#E4E9F0] bg-white p-5">
-          <div className="flex items-start gap-3">
-            <TerminalSquare className="mt-0.5 size-4 shrink-0 text-[#667085]" />
-            <div className="space-y-1 text-xs leading-relaxed text-[#667085]">
+        <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="size-4 shrink-0 text-blue-600" />
+            <div className="text-xs text-blue-800 flex flex-wrap gap-x-6 gap-y-1 leading-relaxed">
               <p>
-                <span className="font-medium text-[#172033]">操作说明：</span>
-                爬虫与 LLM 继续复用 FastAPI 任务与 SSE；LLM 成功后仅生成候选 CSV，不会直接刷新正式看板。
+                <span className="font-semibold text-blue-900">操作说明：</span>
+                爬虫与 LLM 任务执行中；LLM 成功后仅生成候选 CSV，不会直接刷新正式看板。
               </p>
               <p>
-                <span className="font-medium text-[#172033]">注意事项：</span>
-                推送成功后才会刷新看板数据；关闭日志弹窗或离开页面只会停止前端读取，不会中止后端任务。
+                <span className="font-semibold text-blue-900">注意事项：</span>
+                推送成功后才会刷新看板数据；关闭日志弹窗不会中止后端任务。
               </p>
             </div>
           </div>

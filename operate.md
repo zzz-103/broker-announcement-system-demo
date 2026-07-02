@@ -285,6 +285,10 @@ cd D:\broker-announcement-system-demo
 .\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+```zsh
+.\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
+```
+
 看到类似以下内容表示后端已启动：
 
 ```text
@@ -323,6 +327,14 @@ GET  /api/health
 ```powershell
 cd D:\broker-announcement-system-demo\frontend
 pnpm exec next dev
+```
+```zsh
+cd D:\broker-announcement-system-demo\frontend
+pnpm exec next dev
+```
+```zsh
+cd frontend
+pnpm dev
 ```
 
 终端会显示前端地址，通常为：

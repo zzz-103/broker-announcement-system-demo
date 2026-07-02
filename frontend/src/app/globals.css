@@ -154,3 +154,17 @@ body {
 .admin-progress-indeterminate {
   animation: admin-progress-slide 1.6s ease-in-out infinite;
 }
+
+@keyframes progress-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.animate-progress-flow {
+  background-size: 200% auto;
+  animation: progress-flow 1.5s linear infinite;
+}
