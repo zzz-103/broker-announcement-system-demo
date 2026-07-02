@@ -26,6 +26,7 @@ LOGGER = logging.getLogger("cfcpn_scraper.client")
 def create_session() -> requests.Session:
     """Create a requests session with browser-like headers and finite retries."""
     session = requests.Session()
+    session.trust_env = False
     session.headers.update(
         {
             "User-Agent": USER_AGENT,
