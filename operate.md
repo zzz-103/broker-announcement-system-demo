@@ -284,6 +284,13 @@ pnpm build
 cd D:\broker-announcement-system-demo
 .\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+```bash
+source .venv/bin/activate
+python -m uvicorn backend.api.main:app \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --reload
+```
 
 ```zsh
 .\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000

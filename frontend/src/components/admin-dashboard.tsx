@@ -142,6 +142,13 @@ function isTerminalJobStatus(status: string) {
   return status === "succeeded" || status === "failed" || status === "cancelled";
 }
 
+function jobSuccessSummary(jobType: JobType, label: string): string {
+  if (jobType === "llm") {
+    return "LLM 处理完成，候选数据已生成，请点击\u2018推送\u2019更新正式看板。";
+  }
+  return `${label}已完成。`;
+}
+
 function saveActiveJob(jobId: string, jobType: JobType) {
   sessionStorage.setItem(ACTIVE_JOB_STORAGE_KEY, JSON.stringify({ job_id: jobId, job_type: jobType }));
 }
@@ -441,7 +448,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       const succeeded = event.status === "succeeded";
       const cancelled = event.status === "cancelled";
       const summary = succeeded
-        ? `${label}已完成。`
+        ? jobSuccessSummary(jobType, label)
         : cancelled
           ? `${label}已手动停止。`
         : `${label}执行失败${event.error ? `：${event.error}` : "。"} `;
@@ -523,7 +530,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               const succeeded = job.status === "succeeded";
               const cancelled = job.status === "cancelled";
               const summary = succeeded
-                ? `${label}已完成。`
+                ? jobSuccessSummary(jobType, label)
                 : cancelled
                   ? `${label}已手动停止。`
                 : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
@@ -619,7 +626,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             const succeeded = job.status === "succeeded";
             const cancelled = job.status === "cancelled";
             const summary = succeeded
-              ? `${label}已完成。`
+              ? jobSuccessSummary(jobType, label)
               : cancelled
                 ? `${label}已手动停止。`
               : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
@@ -644,7 +651,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               const succeeded = job.status === "succeeded";
               const cancelled = job.status === "cancelled";
               const summary = succeeded
-                ? `${label}已完成。`
+                ? jobSuccessSummary(jobType, label)
                 : cancelled
                   ? `${label}已手动停止。`
                 : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
@@ -734,7 +741,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             const succeeded = job.status === "succeeded";
             const cancelled = job.status === "cancelled";
             const summary = succeeded
-              ? `${label}已完成。`
+              ? jobSuccessSummary(jobType, label)
               : cancelled
                 ? `${label}已手动停止。`
                 : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
@@ -781,7 +788,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             const succeeded = latest.status === "succeeded";
             const cancelled = latest.status === "cancelled";
             const summary = succeeded
-              ? `${label}已完成。`
+              ? jobSuccessSummary(jobType, label)
               : cancelled
                 ? `${label}已手动停止。`
                 : `${label}执行失败${latest.error ? `：${latest.error}` : "。"}`;
@@ -842,7 +849,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     try {
       const result = await publishAnnouncements(token, controller.signal);
       if (controller.signal.aborted || !mountedRef.current) return;
-      const summary = `推送成功，正式看板已更新 ${result.meta.count} 条记录。`;
+      const summary = `推送成功，正式看板数据已更新（${result.meta.count} 条记录）。`;
       appendLog("llm", "system", summary);
       finalizeTask("publish", "succeeded", summary);
       onDataRefresh?.();
@@ -852,12 +859,16 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         handleUnauthorized();
         return;
       }
-      const summary =
-        error instanceof BackendApiError
-          ? backendErrorMessage(error)
-          : error instanceof Error
-            ? error.message
-            : "推送失败。";
+      let summary: string;
+      if (error instanceof BackendApiError && error.status === 404) {
+        summary = "候选数据文件不存在，请先运行 LLM 生成候选 CSV，再执行推送。";
+      } else if (error instanceof BackendApiError) {
+        summary = backendErrorMessage(error);
+      } else if (error instanceof Error) {
+        summary = error.message;
+      } else {
+        summary = "推送失败。";
+      }
       appendLog("llm", "system", summary);
       finalizeTask("publish", "failed", summary);
     } finally {
