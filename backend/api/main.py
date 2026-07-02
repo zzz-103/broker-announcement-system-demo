@@ -449,12 +449,11 @@ def get_job(job_id: str) -> dict[str, object]:
 
 
 @app.post("/api/jobs/{job_id}/cancel", dependencies=[Depends(require_admin_token)])
-def cancel_job(job_id: str) -> dict[str, str]:
+def cancel_job(job_id: str) -> dict[str, object]:
     try:
-        job_manager.cancel_job(job_id)
+        return job_manager.cancel_job(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found") from exc
-    return {"status": "cancelling"}
 
 
 @app.get("/api/jobs/{job_id}/events", dependencies=[Depends(require_admin_token)])

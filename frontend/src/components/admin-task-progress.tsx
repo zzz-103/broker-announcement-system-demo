@@ -35,6 +35,9 @@ function progressLabel(progress: AdminTaskProgressState): string {
   if (progress.status === "succeeded") {
     return "已完成";
   }
+  if (progress.status === "cancelled") {
+    return "已停止";
+  }
   if (progress.status === "failed") {
     return "执行失败";
   }
@@ -51,7 +54,7 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
     ? Math.max(0, Math.min(100, Math.round((progress.current! / progress.total!) * 100)))
     : progress.status === "succeeded"
       ? 100
-      : progress.status === "failed"
+      : progress.status === "failed" || progress.status === "cancelled"
         ? 100
         : 0;
 
@@ -64,7 +67,7 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
               "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full",
               progress.status === "running" && "bg-blue-50 text-blue-600",
               progress.status === "succeeded" && "bg-emerald-50 text-emerald-600",
-              progress.status === "failed" && "bg-red-50 text-red-600",
+              (progress.status === "failed" || progress.status === "cancelled") && "bg-red-50 text-red-600",
               progress.status === "idle" && "bg-slate-100 text-slate-500",
             )}
           >
@@ -72,7 +75,7 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
               <LoaderCircle className="size-4 animate-spin" />
             ) : progress.status === "succeeded" ? (
               <CheckCircle2 className="size-4" />
-            ) : progress.status === "failed" ? (
+            ) : progress.status === "failed" || progress.status === "cancelled" ? (
               <AlertCircle className="size-4" />
             ) : (
               <LoaderCircle className="size-4" />
@@ -106,11 +109,11 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
 
       <div className="mt-4">
         <div className="relative h-3 overflow-hidden rounded-full bg-[#E9EEF5]">
-          {determinate || progress.status === "succeeded" || progress.status === "failed" ? (
+          {determinate || progress.status === "succeeded" || progress.status === "failed" || progress.status === "cancelled" ? (
             <div
               className={cn(
                 "h-full rounded-full transition-[width] duration-300",
-                progress.status === "failed"
+                progress.status === "failed" || progress.status === "cancelled"
                   ? "bg-gradient-to-r from-rose-500 to-red-500"
                   : "bg-gradient-to-r from-[#1F6FE5] via-[#4F9DF7] to-[#7AC5FF]",
               )}

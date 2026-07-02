@@ -2,7 +2,7 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
   "http://localhost:8000";
 
-export type JobStatus = "idle" | "running" | "succeeded" | "failed";
+export type JobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
 export type JobType = "scraper" | "llm";
 
 export interface LoginResponse {
@@ -22,7 +22,7 @@ export interface StartJobResponse {
 export interface JobResponse {
   job_id: string;
   job_type: JobType;
-  status: "pending" | "running" | "succeeded" | "failed";
+  status: "pending" | "running" | "succeeded" | "failed" | "cancelled";
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -67,7 +67,7 @@ export type JobEvent =
   | {
       type: "done";
       job_id: string;
-      status: "succeeded" | "failed";
+      status: "succeeded" | "failed" | "cancelled";
       exit_code: number | null;
       timestamp: string;
       error?: string;
@@ -216,8 +216,8 @@ export function getJob(jobId: string, token: string): Promise<JobResponse> {
   return requestJson<JobResponse>(`/api/jobs/${encodeURIComponent(jobId)}`, {}, token);
 }
 
-export function cancelJob(jobId: string, token: string): Promise<{ status: string }> {
-  return requestJson<{ status: string }>(
+export function cancelJob(jobId: string, token: string): Promise<{ status: string; message?: string }> {
+  return requestJson<{ status: string; message?: string }>(
     `/api/jobs/${encodeURIComponent(jobId)}/cancel`,
     { method: "POST" },
     token,

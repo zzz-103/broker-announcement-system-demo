@@ -61,6 +61,7 @@ class JobManager:
         self._running_job_id: str | None = None
         self._active_operation: str | None = None
         self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._cancel_requested: set[str] = set()
 
     def start_scraper(self) -> Job:
         return self._start_job("scraper", self._build_scraper_command)
@@ -122,7 +123,7 @@ class JobManager:
             if job_id not in self._jobs:
                 raise JobNotFoundError(job_id)
             events = list(self._events.get(job_id, ()))
-            finished = self._jobs[job_id].status in {"succeeded", "failed"}
+            finished = self._jobs[job_id].status in {"succeeded", "failed", "cancelled"}
             sequence = self._event_sequences.get(job_id, 0)
             return events, finished, sequence
 
@@ -132,26 +133,40 @@ class JobManager:
                 raise JobNotFoundError(job_id)
             self._condition.wait_for(
                 lambda: self._event_sequences.get(job_id, 0) > current_sequence
-                or self._jobs[job_id].status in {"succeeded", "failed"},
+                or self._jobs[job_id].status in {"succeeded", "failed", "cancelled"},
                 timeout=timeout,
             )
             return self._event_sequences.get(job_id, 0)
 
-    def cancel_job(self, job_id: str) -> None:
+    def cancel_job(self, job_id: str) -> dict[str, Any]:
         """Request cancellation of a running job by terminating its subprocess."""
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
                 raise JobNotFoundError(job_id)
             if job.status not in {"running", "pending"}:
-                return  # already finished, nothing to do
+                return {"status": job.status, "message": "job already finished"}
+            self._cancel_requested.add(job_id)
             process = self._processes.get(job_id)
+            pid = process.pid if process else job.pid
+
+        self._append_event(
+            job_id,
+            {
+                "type": "log",
+                "job_id": job_id,
+                "stream": "stderr",
+                "message": "管理员手动停止任务",
+                "timestamp": utc_now(),
+            },
+        )
 
         if process and process.poll() is None:
-            try:
-                process.terminate()
-            except OSError:
-                pass
+            self._terminate_process_tree(process)
+            return {"status": "cancelling", "pid": pid}
+
+        self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
+        return {"status": "cancelled", "pid": pid}
 
     def _run_job(self, job_id: str, command_builder: Any) -> None:
         process: subprocess.Popen[str] | None = None
@@ -205,8 +220,13 @@ class JobManager:
             for reader in readers:
                 reader.join(timeout=2)
 
-            status = "succeeded" if exit_code == 0 else "failed"
-            self._finish_job(job_id, status=status, exit_code=exit_code, error=None)
+            with self._lock:
+                cancelled = job_id in self._cancel_requested
+            if cancelled:
+                self._finish_job(job_id, status="cancelled", exit_code=exit_code, error="管理员手动停止")
+            else:
+                status = "succeeded" if exit_code == 0 else "failed"
+                self._finish_job(job_id, status=status, exit_code=exit_code, error=None)
         except Exception as exc:
             if process and process.poll() is None:
                 try:
@@ -218,8 +238,36 @@ class JobManager:
         finally:
             with self._lock:
                 self._processes.pop(job_id, None)
+                self._cancel_requested.discard(job_id)
                 if job_id in self._jobs:
                     self._jobs[job_id].process_alive = False
+
+    def _terminate_process_tree(self, process: subprocess.Popen[str]) -> None:
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+            except OSError:
+                try:
+                    process.terminate()
+                except OSError:
+                    pass
+            return
+
+        try:
+            process.terminate()
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except OSError:
+                pass
+        except OSError:
+            pass
 
     def _build_scraper_command(self) -> tuple[list[str], Path, dict[str, str]]:
         project_root = Path(__file__).resolve().parents[2]
@@ -354,6 +402,8 @@ class JobManager:
     ) -> None:
         with self._condition:
             job = self._jobs[job_id]
+            if job.status in {"succeeded", "failed", "cancelled"}:
+                return
             job.status = status
             job.finished_at = utc_now()
             job.exit_code = exit_code

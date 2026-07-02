@@ -61,6 +61,7 @@ interface ActiveOperation {
 
 const MAX_LOG_LINES = 300;
 const PROGRESS_RESET_DELAY_MS = 4000;
+const ACTIVE_JOB_STORAGE_KEY = "broker-admin-active-job";
 
 const INITIAL_CARD_STATE: Record<CardId, TaskCardState> = {
   crawler: {
@@ -99,7 +100,7 @@ function backendErrorMessage(error: BackendApiError) {
 function statusTone(status: JobStatus) {
   if (status === "running") return "bg-blue-50 text-blue-700";
   if (status === "succeeded") return "bg-emerald-50 text-emerald-700";
-  if (status === "failed") return "bg-rose-50 text-rose-700";
+  if (status === "failed" || status === "cancelled") return "bg-rose-50 text-rose-700";
   return "bg-slate-50 text-slate-600";
 }
 
@@ -107,6 +108,7 @@ function statusText(status: JobStatus) {
   if (status === "running") return "运行中";
   if (status === "succeeded") return "已完成";
   if (status === "failed") return "失败";
+  if (status === "cancelled") return "已停止";
   return "待执行";
 }
 
@@ -128,8 +130,44 @@ function labelForOperation(operationId: OperationId): string {
 function iconForStatus(status: JobStatus) {
   if (status === "running") return <RefreshCw className="size-3.5 animate-spin" />;
   if (status === "succeeded") return <CheckCircle2 className="size-3.5" />;
-  if (status === "failed") return <AlertCircle className="size-3.5" />;
+  if (status === "failed" || status === "cancelled") return <AlertCircle className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
+}
+
+function isActiveJobStatus(status: string) {
+  return status === "pending" || status === "running";
+}
+
+function isTerminalJobStatus(status: string) {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+function saveActiveJob(jobId: string, jobType: JobType) {
+  sessionStorage.setItem(ACTIVE_JOB_STORAGE_KEY, JSON.stringify({ job_id: jobId, job_type: jobType }));
+}
+
+function readActiveJob(): { job_id: string; job_type: JobType } | null {
+  try {
+    const raw = sessionStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { job_id?: unknown; job_type?: unknown };
+    if (
+      typeof parsed.job_id === "string" &&
+      (parsed.job_type === "scraper" || parsed.job_type === "llm")
+    ) {
+      return { job_id: parsed.job_id, job_type: parsed.job_type };
+    }
+  } catch {
+    // ignore invalid stored state
+  }
+  return null;
+}
+
+function clearActiveJob(jobId?: string) {
+  const stored = readActiveJob();
+  if (!jobId || stored?.job_id === jobId) {
+    sessionStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+  }
 }
 
 export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
@@ -152,6 +190,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     scraper: null,
     llm: null,
   });
+  const streamingJobIdRef = useRef<string>("");
   // Ref tracking the current job_id for SSE jobs so cancel can call the API
   const currentJobIdRef = useRef<string>("");
   // AbortController for non-SSE direct fetch operations (ai_analysis, publish)
@@ -272,6 +311,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           abortRefs.current[operationId]?.abort();
           abortRefs.current[operationId] = null;
         }
+        clearActiveJob(currentJobIdRef.current);
+        currentJobIdRef.current = "";
+        streamingJobIdRef.current = "";
       } else {
         if (directAbortRef.current) {
           directAbortRef.current.abort();
@@ -343,17 +385,22 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       }
 
       const succeeded = event.status === "succeeded";
+      const cancelled = event.status === "cancelled";
       const summary = succeeded
         ? `${label}已完成。`
+        : cancelled
+          ? `${label}已手动停止。`
         : `${label}执行失败${event.error ? `：${event.error}` : "。"} `;
       appendLog(
         cardId,
         "system",
         succeeded
           ? `${label}完成，exit_code=${event.exit_code ?? "unknown"}`
+          : cancelled
+            ? `${label}已手动停止`
           : `${label}失败，exit_code=${event.exit_code ?? "unknown"}${event.error ? `，${event.error}` : ""}`,
       );
-      finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary.trim());
+      finalizeTask(jobType, succeeded ? "succeeded" : cancelled ? "cancelled" : "failed", summary.trim());
     },
     [appendLog, finalizeTask, setCardSummary],
   );
@@ -418,17 +465,20 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                 return { ...prev, message };
               });
               setCardSummary(cardId, "running", message, label);
-            } else if (job.status === "succeeded" || job.status === "failed") {
+            } else if (isTerminalJobStatus(job.status)) {
               const succeeded = job.status === "succeeded";
+              const cancelled = job.status === "cancelled";
               const summary = succeeded
                 ? `${label}已完成。`
+                : cancelled
+                  ? `${label}已手动停止。`
                 : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
               appendLog(
                 cardId,
                 "system",
                 `轮询检测到任务已结束，状态：${job.status}，日志事件数：${job.log_count ?? "unknown"}`,
               );
-              finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary);
+              finalizeTask(jobType, succeeded ? "succeeded" : cancelled ? "cancelled" : "failed", summary);
             }
           } catch (pollError) {
             if (!mountedRef.current) {
@@ -451,6 +501,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         const started = await startJob(jobType, token);
         jobId = started.job_id;
         currentJobIdRef.current = jobId;
+        saveActiveJob(jobId, jobType);
         appendLog(cardId, "system", `${label}已启动，job_id=${jobId}`);
 
         // Job has been created; logs may still be waiting on the SSE stream.
@@ -474,6 +525,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           }
         }, 10000);
 
+        streamingJobIdRef.current = jobId;
         await streamJobEvents(
           jobId,
           token,
@@ -509,13 +561,16 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         if (!doneReceived && jobId && !controller.signal.aborted) {
           const job = await getJob(jobId, token);
           if (!mountedRef.current) return;
-          if (job.status === "succeeded" || job.status === "failed") {
+          if (isTerminalJobStatus(job.status)) {
             const succeeded = job.status === "succeeded";
+            const cancelled = job.status === "cancelled";
             const summary = succeeded
               ? `${label}已完成。`
+              : cancelled
+                ? `${label}已手动停止。`
               : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
             appendLog(cardId, "system", `SSE 已断开，直接查询任务状态为终态：${job.status}`);
-            finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary);
+            finalizeTask(jobType, succeeded ? "succeeded" : cancelled ? "cancelled" : "failed", summary);
           } else {
             appendLog(cardId, "system", `SSE 已断开，任务仍在运行，启动轮询兜底。`);
             startPolling();
@@ -531,12 +586,15 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         if (jobId) {
           try {
             const job = await getJob(jobId, token);
-            if (job.status === "succeeded" || job.status === "failed") {
+            if (isTerminalJobStatus(job.status)) {
               const succeeded = job.status === "succeeded";
+              const cancelled = job.status === "cancelled";
               const summary = succeeded
                 ? `${label}已完成。`
+                : cancelled
+                  ? `${label}已手动停止。`
                 : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
-              finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary);
+              finalizeTask(jobType, succeeded ? "succeeded" : cancelled ? "cancelled" : "failed", summary);
               return;
             } else {
               startPolling();
@@ -559,6 +617,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         if (abortRefs.current[jobType] === controller) {
           abortRefs.current[jobType] = null;
         }
+        if (streamingJobIdRef.current === jobId) {
+          streamingJobIdRef.current = "";
+        }
         if (connectionTimeout) {
           clearTimeout(connectionTimeout);
         }
@@ -574,6 +635,143 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       token,
     ],
   );
+
+  useEffect(() => {
+    if (!token || activeOperationRef.current) return;
+    const storedJob = readActiveJob();
+    if (!storedJob) return;
+    if (streamingJobIdRef.current === storedJob.job_id) return;
+
+    let stopped = false;
+    const jobType = storedJob.job_type;
+    const cardId = cardIdForJob(jobType);
+    const label = labelForOperation(jobType);
+
+    const restoreJob = async () => {
+      try {
+        const job = await getJob(storedJob.job_id, token);
+        if (stopped || !mountedRef.current) return;
+
+        if (!isActiveJobStatus(job.status) && !isTerminalJobStatus(job.status)) {
+          clearActiveJob(storedJob.job_id);
+          return;
+        }
+
+        clearProgressResetTimer();
+        setActiveOperation({ id: jobType, cardId, label });
+        currentJobIdRef.current = storedJob.job_id;
+        setCardSummary(cardId, job.status === "pending" ? "running" : job.status, "正在恢复任务状态...", label);
+        setProgressState({
+          status: isActiveJobStatus(job.status) ? "running" : job.status,
+          taskName: label,
+          message: isActiveJobStatus(job.status) ? "正在恢复任务日志..." : "任务已结束",
+        });
+
+        let lastHandledSequence = 0;
+        for (const event of job.events || []) {
+          const sequence = event.sequence ?? 0;
+          if (sequence > 0) lastHandledSequence = Math.max(lastHandledSequence, sequence);
+          handleJobEvent(jobType, event);
+        }
+
+        if (isTerminalJobStatus(job.status)) {
+          clearActiveJob(storedJob.job_id);
+          if (!job.events?.some((event) => event.type === "done")) {
+            const succeeded = job.status === "succeeded";
+            const cancelled = job.status === "cancelled";
+            const summary = succeeded
+              ? `${label}已完成。`
+              : cancelled
+                ? `${label}已手动停止。`
+                : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
+            finalizeTask(jobType, succeeded ? "succeeded" : cancelled ? "cancelled" : "failed", summary);
+          }
+          return;
+        }
+
+        appendLog(cardId, "system", `已恢复运行中的任务，job_id=${storedJob.job_id}`);
+        saveActiveJob(storedJob.job_id, jobType);
+        const controller = new AbortController();
+        abortRefs.current[jobType]?.abort();
+        abortRefs.current[jobType] = controller;
+        streamingJobIdRef.current = storedJob.job_id;
+
+        await streamJobEvents(
+          storedJob.job_id,
+          token,
+          (event) => {
+            if (!mountedRef.current || stopped) return;
+            const sequence = event.sequence ?? 0;
+            if (sequence > 0 && sequence <= lastHandledSequence) return;
+            if (sequence > 0) lastHandledSequence = sequence;
+            handleJobEvent(jobType, event);
+          },
+          controller.signal,
+          {
+            onOpen: (response) => {
+              appendLog(
+                cardId,
+                "system",
+                `SSE 已重新连接，HTTP ${response.status}，Content-Type=${response.headers.get("content-type") || "unknown"}`,
+              );
+            },
+            onParseError: (error) => {
+              appendLog(cardId, "system", `忽略一条无法解析的 SSE 事件：${error.message}`);
+            },
+          },
+        );
+
+        if (!controller.signal.aborted && !stopped) {
+          const latest = await getJob(storedJob.job_id, token);
+          if (isTerminalJobStatus(latest.status)) {
+            const succeeded = latest.status === "succeeded";
+            const cancelled = latest.status === "cancelled";
+            const summary = succeeded
+              ? `${label}已完成。`
+              : cancelled
+                ? `${label}已手动停止。`
+                : `${label}执行失败${latest.error ? `：${latest.error}` : "。"}`;
+            finalizeTask(jobType, succeeded ? "succeeded" : cancelled ? "cancelled" : "failed", summary);
+          }
+        }
+      } catch (error) {
+        if (stopped || !mountedRef.current) return;
+        if (error instanceof BackendApiError && error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        clearActiveJob(storedJob.job_id);
+        currentJobIdRef.current = "";
+        streamingJobIdRef.current = "";
+        setActiveOperation(null);
+        if (error instanceof BackendApiError && error.status !== 404) {
+          appendLog(cardId, "system", `恢复任务失败：${backendErrorMessage(error)}`);
+        }
+      } finally {
+        if (abortRefs.current[jobType]?.signal.aborted) {
+          abortRefs.current[jobType] = null;
+        }
+        if (streamingJobIdRef.current === storedJob.job_id && stopped) {
+          streamingJobIdRef.current = "";
+        }
+      }
+    };
+
+    void restoreJob();
+
+    return () => {
+      stopped = true;
+    };
+  }, [
+    appendLog,
+    clearProgressResetTimer,
+    finalizeTask,
+    handleJobEvent,
+    handleUnauthorized,
+    setActiveOperation,
+    setCardSummary,
+    token,
+  ]);
 
   const runPublish = useCallback(async () => {
     if (activeOperationRef.current) return;
@@ -618,30 +816,35 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const handleCancel = useCallback(async () => {
     if (!activeOperationRef.current || !token) return;
     const op = activeOperationRef.current;
+    if (op.id !== "scraper" && op.id !== "llm") return;
+    if (!window.confirm(`确定停止当前${op.label}任务吗？`)) return;
 
-    if (op.id === "scraper" || op.id === "llm") {
-      const jobId = currentJobIdRef.current;
-      if (jobId) {
-        try {
-          await cancelJob(jobId, token);
-        } catch {
-          // ignore
+    const jobId = currentJobIdRef.current;
+    if (jobId) {
+      try {
+        await cancelJob(jobId, token);
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          const job = await getJob(jobId, token);
+          if (isTerminalJobStatus(job.status)) break;
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
+      } catch (error) {
+        const message =
+          error instanceof BackendApiError
+            ? backendErrorMessage(error)
+            : error instanceof Error
+              ? error.message
+              : "停止任务失败。";
+        appendLog(op.cardId, "system", message);
       }
-      abortRefs.current[op.id as JobType]?.abort();
-      if (mountedRef.current) {
-        const summary = `${op.label}已手动终止。`;
-        appendLog(op.cardId, "system", summary);
-        finalizeTask(op.id, "failed", summary);
-      }
-      return;
     }
 
-    directAbortRef.current?.abort();
+    abortRefs.current[op.id]?.abort();
+    clearActiveJob(jobId);
     if (mountedRef.current) {
-      const summary = `${op.label}已手动终止。`;
+      const summary = `${op.label}已手动停止。`;
       appendLog(op.cardId, "system", summary);
-      finalizeTask(op.id, "failed", summary);
+      finalizeTask(op.id, "cancelled", summary);
     }
   }, [appendLog, finalizeTask, token]);
 
@@ -880,7 +1083,14 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           })}
         </div>
 
-        <AdminTaskProgress progress={progressState} onCancel={activeOperation ? handleCancel : undefined} />
+        <AdminTaskProgress
+          progress={progressState}
+          onCancel={
+            activeOperation?.id === "scraper" || activeOperation?.id === "llm"
+              ? handleCancel
+              : undefined
+          }
+        />
 
         <div className="mt-6 rounded-xl border border-[#E4E9F0] bg-white p-5">
           <div className="flex items-start gap-3">
