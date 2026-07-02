@@ -48,6 +48,13 @@ else:
 admin_username = os.getenv("ADMIN_USERNAME", "admin")
 admin_password = os.getenv("ADMIN_PASSWORD")
 frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+frontend_origins = [
+    origin.strip()
+    for origin in frontend_origin.split(",")
+    if origin.strip()
+]
+if not frontend_origins:
+    frontend_origins = ["http://localhost:3000"]
 
 if not admin_password:
     print("Warning: ADMIN_PASSWORD is not set in the environment.")
@@ -82,10 +89,10 @@ app = FastAPI(title="Broker Announcement API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[frontend_origin],
+    allow_origins=frontend_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
@@ -436,7 +443,7 @@ def post_ai_analysis() -> dict[str, object]:
 @app.get("/api/jobs/{job_id}", dependencies=[Depends(require_admin_token)])
 def get_job(job_id: str) -> dict[str, object]:
     try:
-        return job_manager.get_job(job_id).to_dict()
+        return job_manager.get_job(job_id)
     except JobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found") from exc
 

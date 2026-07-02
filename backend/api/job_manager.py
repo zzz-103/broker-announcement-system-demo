@@ -30,6 +30,10 @@ class Job:
     finished_at: str | None = None
     exit_code: int | None = None
     error: str | None = None
+    pid: int | None = None
+    log_count: int = 0
+    last_event_at: str | None = None
+    process_alive: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -98,12 +102,20 @@ class JobManager:
         thread.start()
         return job
 
-    def get_job(self, job_id: str) -> Job:
+    def get_job(self, job_id: str) -> dict[str, Any]:
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
                 raise JobNotFoundError(job_id)
-            return Job(**job.to_dict())
+            snapshot = job.to_dict()
+            process = self._processes.get(job_id)
+            snapshot["process_alive"] = bool(process and process.poll() is None)
+            snapshot["log_count"] = len(self._events.get(job_id, ()))
+            snapshot["events"] = [
+                self._public_event(event)
+                for event in list(self._events.get(job_id, ()))[-50:]
+            ]
+            return snapshot
 
     def snapshot_events(self, job_id: str) -> tuple[list[dict[str, Any]], bool, int]:
         with self._lock:
@@ -171,6 +183,8 @@ class JobManager:
 
             with self._lock:
                 self._processes[job_id] = process
+                self._jobs[job_id].pid = process.pid
+                self._jobs[job_id].process_alive = True
 
             readers = [
                 threading.Thread(
@@ -204,6 +218,8 @@ class JobManager:
         finally:
             with self._lock:
                 self._processes.pop(job_id, None)
+                if job_id in self._jobs:
+                    self._jobs[job_id].process_alive = False
 
     def _build_scraper_command(self) -> tuple[list[str], Path, dict[str, str]]:
         project_root = Path(__file__).resolve().parents[2]
@@ -211,11 +227,15 @@ class JobManager:
         default_script = scraper_root / "cfcpn_scraper.py"
 
         default_python = scraper_root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        python_executable = Path(
-            os.getenv("SCRAPER_PYTHON_EXECUTABLE") or (str(default_python) if default_python.exists() else sys.executable)
+        python_executable = self._resolve_path(
+            os.getenv("SCRAPER_PYTHON_EXECUTABLE"),
+            project_root,
+            default_python if default_python.exists() else Path(sys.executable),
         )
-        script_path = Path(os.getenv("SCRAPER_SCRIPT_PATH") or default_script)
-        working_dir = Path(os.getenv("SCRAPER_WORKING_DIR") or scraper_root)
+        script_path = self._resolve_path(os.getenv("SCRAPER_SCRIPT_PATH"), project_root, default_script)
+        working_dir = self._resolve_path(os.getenv("SCRAPER_WORKING_DIR"), project_root, scraper_root)
+
+        self._validate_executable_job_paths("Scraper", python_executable, script_path, working_dir)
 
         command = [
             str(python_executable),
@@ -261,6 +281,7 @@ class JobManager:
             raise JobStartError(f"LLM input directory not found: {input_dir}")
         if not config_path.exists():
             raise JobStartError(f"LLM config file not found: {config_path}")
+        self._validate_executable_job_paths("LLM", python_executable, script_path, working_dir)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         command = [
@@ -307,6 +328,22 @@ class JobManager:
             )
         stream.close()
 
+    @staticmethod
+    def _validate_executable_job_paths(
+        label: str,
+        python_executable: Path,
+        script_path: Path,
+        working_dir: Path,
+    ) -> None:
+        if not python_executable.exists():
+            raise JobStartError(f"{label} python executable not found")
+        if not script_path.exists():
+            raise JobStartError(f"{label} script not found")
+        if not working_dir.exists():
+            raise JobStartError(f"{label} working directory not found")
+        if not working_dir.is_dir():
+            raise JobStartError(f"{label} working directory is invalid")
+
     def _finish_job(
         self,
         job_id: str,
@@ -347,6 +384,16 @@ class JobManager:
         stored_event = dict(event)
         stored_event["_seq"] = self._event_sequences[job_id]
         self._events[job_id].append(stored_event)
+        if job_id in self._jobs:
+            self._jobs[job_id].log_count = len(self._events[job_id])
+            self._jobs[job_id].last_event_at = str(event.get("timestamp") or utc_now())
+
+    @staticmethod
+    def _public_event(event: dict[str, Any]) -> dict[str, Any]:
+        public_event = {key: value for key, value in event.items() if not key.startswith("_")}
+        if "_seq" in event:
+            public_event["sequence"] = event["_seq"]
+        return public_event
 
     def _maybe_append_progress_event(self, job_id: str, message: str) -> bool:
         prefix = "::progress::"
@@ -392,5 +439,5 @@ class JobManager:
 
 
 def format_sse(event: dict[str, Any]) -> str:
-    public_event = {key: value for key, value in event.items() if not key.startswith("_")}
+    public_event = JobManager._public_event(event)
     return f"data: {json.dumps(public_event, ensure_ascii=False)}\n\n"

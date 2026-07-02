@@ -299,7 +299,9 @@ text/event-stream
 7. 必须正确处理 SSE 跨网络 chunk 拆分。
 8. 必须维护字符串 buffer。
 9. 不能对单个 chunk 直接 `split("\n")` 后立即 `JSON.parse`。
-9. SSE 异常断开后，前端查询一次任务最终状态。
+10. SSE 异常断开后，前端查询一次任务最终状态。
+11. 前端启动任务后，10 秒未收到 SSE 业务事件时进入状态轮询回退。
+12. 状态轮询每 2 秒查询 `GET /api/jobs/{job_id}`，看到 `succeeded` 或 `failed` 必须结束运行态。
 
 ---
 
@@ -492,7 +494,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```env
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-me
-FRONTEND_ORIGIN=http://localhost:3000
+FRONTEND_ORIGIN=http://localhost:3000,http://localhost:5000
 
 SCRAPER_PYTHON_EXECUTABLE=
 SCRAPER_SCRIPT_PATH=
@@ -521,6 +523,7 @@ AI_ANALYSIS_TIMEOUT_SECONDS=120
 3. 前端可公开变量只能使用 `NEXT_PUBLIC_`。
 4. API Key 不能使用 `NEXT_PUBLIC_`。
 5. 修改环境变量后必须重启对应服务。
+6. `FRONTEND_ORIGIN` 可用英文逗号配置多个本地 Origin，例如 `http://localhost:3000,http://127.0.0.1:3000`。
 
 ---
 
@@ -553,6 +556,20 @@ pnpm dev
 ```
 
 默认地址通常是 `http://localhost:3000`。如果端口变化，必须同步更新 `FRONTEND_ORIGIN` 和 `NEXT_PUBLIC_API_BASE_URL`。
+
+### 任务联调
+
+任务接口：
+
+```text
+POST /api/jobs/scraper
+POST /api/jobs/llm
+GET  /api/jobs/{job_id}
+GET  /api/jobs/{job_id}/events
+POST /api/jobs/{job_id}/cancel
+```
+
+`GET /api/jobs/{job_id}` 可返回 `pid`、`log_count`、`last_event_at`、`process_alive` 和最近事件 `events` 等非敏感诊断字段，用于 SSE 异常时前端轮询回补。SSE 首包必须有 2KB 注释 padding，无业务日志时约 10 秒发送 `: ping`。如任务异常卡住，可用管理员 Token 调用 cancel 接口，或在本机确认 PID 后手动终止对应 Python 子进程；不得把命令行密钥或 Token 写入日志。
 
 ---
 
@@ -685,6 +702,8 @@ Codex 必须遵守：
 - 全局互斥（爬虫、LLM、推送、AI 分析四操作同一时间只允许一个执行）
 - 统一任务进度条（`AdminTaskProgress`）
 - 详细日志弹窗（`AdminTaskLogDialog`，点击图标查看，不直接展开在页面上）
+- SSE 首事件超时后的状态轮询回退，避免前端永久停留在运行中
+- 任务状态接口返回 `pid/log_count/last_event_at/process_alive/events` 诊断字段
 - 三张任务卡片统一排版，按钮固定在底部，高度对齐
 - LLM 成功后不刷新看板，仅推送成功后刷新
 - 推送失败时正式 CSV 保持不变（原子替换保证）

@@ -28,6 +28,11 @@ export interface JobResponse {
   finished_at: string | null;
   exit_code: number | null;
   error: string | null;
+  pid?: number | null;
+  log_count?: number;
+  last_event_at?: string | null;
+  process_alive?: boolean;
+  events?: JobEvent[];
 }
 
 export type JobEvent =
@@ -37,6 +42,7 @@ export type JobEvent =
       job_type?: JobType;
       message: string;
       timestamp: string;
+      sequence?: number;
     }
   | {
       type: "log";
@@ -44,6 +50,7 @@ export type JobEvent =
       stream: "stdout" | "stderr";
       message: string;
       timestamp: string;
+      sequence?: number;
     }
   | {
       type: "progress";
@@ -55,6 +62,7 @@ export type JobEvent =
       total?: number;
       progress?: number;
       timestamp: string;
+      sequence?: number;
     }
   | {
       type: "done";
@@ -63,6 +71,7 @@ export type JobEvent =
       exit_code: number | null;
       timestamp: string;
       error?: string;
+      sequence?: number;
     };
 
 export interface AnnouncementsResponse {
@@ -131,6 +140,16 @@ export class BackendApiError extends Error {
   }
 }
 
+export class SseParseError extends Error {
+  rawEvent: string;
+
+  constructor(message: string, rawEvent: string) {
+    super(message);
+    this.name = "SseParseError";
+    this.rawEvent = rawEvent;
+  }
+}
+
 async function readError(response: Response): Promise<string> {
   try {
     const data = (await response.json()) as { detail?: string; error?: string };
@@ -149,6 +168,7 @@ async function requestJson<T>(
   try {
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...init,
+      cache: init.cache ?? "no-store",
       headers: {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -183,11 +203,13 @@ export function startScraperJob(token: string): Promise<StartJobResponse> {
 }
 
 export function startJob(jobType: JobType, token: string): Promise<StartJobResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
   return requestJson<StartJobResponse>(
     `/api/jobs/${jobType}`,
-    { method: "POST" },
+    { method: "POST", signal: controller.signal },
     token,
-  );
+  ).finally(() => clearTimeout(timer));
 }
 
 export function getJob(jobId: string, token: string): Promise<JobResponse> {
@@ -258,11 +280,19 @@ export async function streamJobEvents(
   token: string,
   onEvent: (event: JobEvent) => void,
   signal: AbortSignal,
+  options: {
+    onOpen?: (response: Response) => void;
+    onChunk?: () => void;
+    onParseError?: (error: SseParseError) => void;
+  } = {},
 ): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/api/jobs/${encodeURIComponent(jobId)}/events`,
     {
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Accept: "text/event-stream",
+        Authorization: `Bearer ${token}`,
+      },
       signal,
     },
   );
@@ -270,6 +300,7 @@ export async function streamJobEvents(
   if (!response.ok) {
     throw new BackendApiError(await readError(response), response.status);
   }
+  options.onOpen?.(response);
   if (!response.body) {
     throw new BackendApiError("SSE response body is empty", response.status);
   }
@@ -300,42 +331,54 @@ export async function streamJobEvents(
       const { done, value } = await reader.read();
       if (done) break;
 
+      options.onChunk?.();
       buffer += decoder.decode(value, { stream: true });
-      const normalized = buffer.replace(/\r\n/g, "\n");
-      const parts = normalized.split("\n\n");
-      buffer = parts.pop() ?? "";
-
-      for (const part of parts) {
-        const dataLines = part
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trimStart());
-        if (dataLines.length === 0) continue;
-        onEvent(JSON.parse(dataLines.join("\n")) as JobEvent);
-      }
+      buffer = drainSseBuffer(buffer, onEvent, options.onParseError);
     }
 
     if (buffer.trim()) {
-      const normalized = buffer.replace(/\r\n/g, "\n");
-      const parts = normalized.split("\n\n");
-      for (const part of parts) {
-        const dataLines = part
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trimStart());
-        if (dataLines.length === 0) continue;
-        try {
-          onEvent(JSON.parse(dataLines.join("\n")) as JobEvent);
-        } catch (e) {
-          console.error("Failed to parse remaining buffer SSE event:", e);
-        }
-      }
+      drainSseBuffer(`${buffer}\n\n`, onEvent, options.onParseError);
     }
   } finally {
     if (signal) {
       signal.removeEventListener("abort", handleAbort);
     }
   }
+}
+
+function drainSseBuffer(
+  input: string,
+  onEvent: (event: JobEvent) => void,
+  onParseError?: (error: SseParseError) => void,
+): string {
+  const normalized = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const parts = normalized.split("\n\n");
+  const remainder = parts.pop() ?? "";
+
+  for (const part of parts) {
+    const dataLines: string[] = [];
+    for (const line of part.split("\n")) {
+      if (!line || line.startsWith(":")) continue;
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice(5).trimStart());
+      }
+    }
+    if (dataLines.length === 0) continue;
+
+    const rawData = dataLines.join("\n");
+    try {
+      onEvent(JSON.parse(rawData) as JobEvent);
+    } catch (error) {
+      onParseError?.(
+        new SseParseError(
+          error instanceof Error ? error.message : "Failed to parse SSE event",
+          rawData,
+        ),
+      );
+    }
+  }
+
+  return remainder;
 }
 
 export const readScraperEvents = streamJobEvents;

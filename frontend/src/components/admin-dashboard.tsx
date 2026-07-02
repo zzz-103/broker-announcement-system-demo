@@ -172,6 +172,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       clearProgressResetTimer();
@@ -244,7 +245,6 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     ) => {
       // Prevent duplicate finalization
       if (!activeOperationRef.current || activeOperationRef.current.id !== operationId) {
-        console.log(`[Diagnostic] finalizeTask ignored for ${operationId} (current active: ${activeOperationRef.current?.id})`);
         return;
       }
 
@@ -380,6 +380,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       let jobId = "";
       let doneReceived = false;
       let hasReceivedEvents = false;
+      let hasReceivedChunk = false;
+      let lastHandledSequence = 0;
       let connectionTimeout: NodeJS.Timeout | null = null;
 
       const stopPolling = () => {
@@ -391,29 +393,44 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
 
       const startPolling = () => {
         if (pollingTimerRef.current[jobType]) return;
-        console.log(`[Diagnostic] Polling started for ${jobType}, job_id=${jobId}`);
         pollingTimerRef.current[jobType] = setInterval(async () => {
           try {
             const job = await getJob(jobId, token);
-            console.log(`[Diagnostic] Polling status for ${jobId}: ${job.status}`);
             if (!mountedRef.current) {
               stopPolling();
               return;
             }
+            for (const event of job.events || []) {
+              const sequence = event.sequence ?? 0;
+              if (sequence > 0 && sequence <= lastHandledSequence) continue;
+              if (sequence > 0) lastHandledSequence = sequence;
+              hasReceivedEvents = true;
+              if (event.type === "done") {
+                doneReceived = true;
+              }
+              handleJobEvent(jobType, event);
+            }
             if (job.status === "running") {
+              const waitingForLogs = !hasReceivedEvents;
+              const message = waitingForLogs ? "任务已创建，等待日志" : "任务正在运行";
               setProgressState((prev) => {
-                if (prev.message === "任务已启动，正在运行") return prev;
-                return { ...prev, message: "任务已启动，正在运行" };
+                if (prev.message === message) return prev;
+                return { ...prev, message };
               });
-              setCardSummary(cardId, "running", "任务已启动，正在运行", label);
+              setCardSummary(cardId, "running", message, label);
             } else if (job.status === "succeeded" || job.status === "failed") {
               const succeeded = job.status === "succeeded";
-              const summary = succeeded ? `${label}已完成。` : `${label}执行失败。`;
-              appendLog(cardId, "system", `轮询检测到任务已结束，状态：${job.status}`);
+              const summary = succeeded
+                ? `${label}已完成。`
+                : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
+              appendLog(
+                cardId,
+                "system",
+                `轮询检测到任务已结束，状态：${job.status}，日志事件数：${job.log_count ?? "unknown"}`,
+              );
               finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary);
             }
           } catch (pollError) {
-            console.error(`[Diagnostic] Error polling job ${jobId}:`, pollError);
             if (!mountedRef.current) {
               stopPolling();
               return;
@@ -436,19 +453,23 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         currentJobIdRef.current = jobId;
         appendLog(cardId, "system", `${label}已启动，job_id=${jobId}`);
 
-        // Update state to running and set message to "任务已启动，正在运行" immediately after getting job_id
-        setCardSummary(cardId, "running", "任务已启动，正在运行", label);
+        // Job has been created; logs may still be waiting on the SSE stream.
+        setCardSummary(cardId, "running", "任务已创建，等待日志", label);
         setProgressState({
           status: "running",
           taskName: label,
-          message: "任务已启动，正在运行",
+          message: "任务已创建，等待日志",
         });
 
         // Start connection timeout (10s)
         connectionTimeout = setTimeout(() => {
           if (!hasReceivedEvents && !doneReceived && !controller.signal.aborted) {
-            console.log(`[Diagnostic] SSE connection timeout (10s) for ${jobType}. Starting fallback polling.`);
-            appendLog(cardId, "system", "连接超时，启动轮询兜底机制获取状态...");
+            const message = hasReceivedChunk
+              ? "已收到 SSE 数据，等待任务日志..."
+              : "SSE 首事件等待超时，正在确认任务状态...";
+            appendLog(cardId, "system", `${message} 启动轮询兜底。`);
+            setCardSummary(cardId, "running", "任务已创建，等待日志", label);
+            setProgressState((prev) => ({ ...prev, message: "任务已创建，等待日志" }));
             startPolling();
           }
         }, 10000);
@@ -459,22 +480,40 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           (event) => {
             if (!mountedRef.current) return;
             hasReceivedEvents = true;
+            if (event.sequence && event.sequence > lastHandledSequence) {
+              lastHandledSequence = event.sequence;
+            }
             if (event.type === "done") {
               doneReceived = true;
             }
             handleJobEvent(jobType, event);
           },
           controller.signal,
+          {
+            onOpen: (response) => {
+              appendLog(
+                cardId,
+                "system",
+                `SSE 已连接，HTTP ${response.status}，Content-Type=${response.headers.get("content-type") || "unknown"}`,
+              );
+            },
+            onChunk: () => {
+              hasReceivedChunk = true;
+            },
+            onParseError: (error) => {
+              appendLog(cardId, "system", `忽略一条无法解析的 SSE 事件：${error.message}`);
+            },
+          },
         );
 
-        console.log(`[Diagnostic] streamJobEvents resolved. doneReceived=${doneReceived}`);
         if (!doneReceived && jobId && !controller.signal.aborted) {
-          console.log(`[Diagnostic] SSE closed without done. Fetching job status immediately.`);
           const job = await getJob(jobId, token);
           if (!mountedRef.current) return;
           if (job.status === "succeeded" || job.status === "failed") {
             const succeeded = job.status === "succeeded";
-            const summary = succeeded ? `${label}已完成。` : `${label}执行失败。`;
+            const summary = succeeded
+              ? `${label}已完成。`
+              : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
             appendLog(cardId, "system", `SSE 已断开，直接查询任务状态为终态：${job.status}`);
             finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary);
           } else {
@@ -491,11 +530,12 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
 
         if (jobId) {
           try {
-            console.log(`[Diagnostic] SSE stream failed, querying job status fallback.`);
             const job = await getJob(jobId, token);
             if (job.status === "succeeded" || job.status === "failed") {
               const succeeded = job.status === "succeeded";
-              const summary = succeeded ? `${label}已完成。` : `${label}执行失败。`;
+              const summary = succeeded
+                ? `${label}已完成。`
+                : `${label}执行失败${job.error ? `：${job.error}` : "。"}`;
               finalizeTask(jobType, succeeded ? "succeeded" : "failed", summary);
               return;
             } else {
