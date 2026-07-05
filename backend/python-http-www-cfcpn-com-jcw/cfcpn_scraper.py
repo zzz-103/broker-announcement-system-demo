@@ -86,16 +86,27 @@ def main(argv: list[str] | None = None) -> int:
                 if args.page_size > 0:
                     last_page_from_md = math.ceil(matching_count / args.page_size)
 
-            last_page = max(last_page_from_json, last_page_from_md)
+            if args.update:
+                last_page = last_page_from_json
+            else:
+                last_page = max(last_page_from_json, last_page_from_md)
+
             if last_page > 1:
                 args.start_page = max(1, last_page - 1)
-                LOGGER.info(
-                    "从 checkpoint 和已爬取文件恢复 (json 页码: %s, md 文件数: %s, 推算页码: %s)，回退到第 %s 页重新检查",
-                    last_page_from_json if checkpoint else "无",
-                    matching_count,
-                    last_page_from_md,
-                    args.start_page,
-                )
+                if args.update:
+                    LOGGER.info(
+                        "从 checkpoint 恢复 (json 页码: %s)，回退到第 %s 页重新检查",
+                        last_page_from_json if checkpoint else "无",
+                        args.start_page,
+                    )
+                else:
+                    LOGGER.info(
+                        "从 checkpoint 和已爬取文件恢复 (json 页码: %s, md 文件数: %s, 推算页码: %s)，回退到第 %s 页重新检查",
+                        last_page_from_json if checkpoint else "无",
+                        matching_count,
+                        last_page_from_md,
+                        args.start_page,
+                    )
 
     existing_paths = scan_existing_notice_paths(notices_dir)
     processed_ids: set[str] = set()
@@ -117,10 +128,12 @@ def main(argv: list[str] | None = None) -> int:
     throttle = Throttle(args)
     forbidden_state = {"consecutive": 0}
 
+    all_todo_items: list[dict[str, Any]] = []
     total = 0
     end_page = args.end_page
     page_no = args.start_page
     try:
+        emit_progress("scanning", 0, "正在扫描列表获取待更新公告...")
         while True:
             if circuit_breaker:
                 stop_reason = STOP_FORBIDDEN
@@ -185,19 +198,21 @@ def main(argv: list[str] | None = None) -> int:
                 if end_page is None:
                     end_page = auto_end_page
 
-            page_stats = process_page(
+            stats["total"] = total
+
+            todo_items, page_stats = scan_page(
                 page_no=page_no,
                 page_data=page_data,
                 args=args,
-                session=session,
                 notices_dir=notices_dir,
                 failures_path=failures_path,
                 existing_paths=existing_paths,
                 processed_ids=processed_ids,
                 stats=stats,
                 throttle=throttle,
-                forbidden_state=forbidden_state,
             )
+            all_todo_items.extend(todo_items)
+
             if page_stats["circuit_breaker"]:
                 circuit_breaker = True
                 stop_reason = STOP_FORBIDDEN
@@ -212,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
                     "checked_items": stats["found"],
                     "saved_items": stats["saved"],
                     "updated_at": now_iso(),
-                    "stop_reason": stop_reason or "running",
+                    "stop_reason": stop_reason or "scanning",
                     "completed": False,
                 },
             )
@@ -262,6 +277,55 @@ def main(argv: list[str] | None = None) -> int:
                 stop_reason = "达到 end-page" if args.end_page is not None else "已到最后一页"
                 break
             page_no += 1
+
+        # 第二阶段：详情下载与保存
+        N = len(all_todo_items)
+        if N > 0 and not circuit_breaker:
+            LOGGER.info("扫描结束，本次需要新增爬取 %s 个公告。开始下载详情...", N)
+            for i, item in enumerate(all_todo_items):
+                if circuit_breaker:
+                    break
+                title = item.get("noticeTitle") or ""
+                progress_percent = int((i + 1) * 100 / N)
+                emit_progress(
+                    "crawling",
+                    progress_percent,
+                    f"正在爬取新公告 ({i+1}/{N}): {title}",
+                    current=i+1,
+                    total=N,
+                )
+                item_circuit_breaker = download_and_save_item(
+                    list_item=item,
+                    args=args,
+                    session=session,
+                    notices_dir=notices_dir,
+                    failures_path=failures_path,
+                    existing_paths=existing_paths,
+                    stats=stats,
+                    throttle=throttle,
+                    forbidden_state=forbidden_state,
+                )
+                if item_circuit_breaker:
+                    circuit_breaker = True
+                    stop_reason = STOP_FORBIDDEN
+
+                write_checkpoint(
+                    checkpoint_path,
+                    {
+                        "keyword": args.keyword,
+                        "since_date": args.since_date.isoformat(),
+                        "last_completed_page": item.get("_page_no", page_no),
+                        "checked_items": stats["found"],
+                        "saved_items": stats["saved"],
+                        "updated_at": now_iso(),
+                        "stop_reason": stop_reason or "crawling",
+                        "completed": False,
+                    },
+                )
+        else:
+            if not circuit_breaker:
+                LOGGER.info("扫描结束，没有发现需要新增爬取的公告。")
+                emit_progress("completed", 100, "已检查所有列表，没有新增的公告需要爬取。", current=0, total=0)
     except KeyboardInterrupt:
         stop_reason = "用户中断"
         LOGGER.warning("用户中断，正在重建索引")
@@ -279,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
             "saved_items": stats["saved"],
             "updated_at": now_iso(),
             "stop_reason": stop_reason,
-            "completed": stop_reason in {"达到 end-page", "已到最后一页", STOP_BEFORE_SINCE_DATE},
+            "completed": stop_reason in {"达到 end-page", "已到最后一页", STOP_BEFORE_SINCE_DATE, "连续旧分页"},
         },
     )
     print_stats(stats, output_dir, index_path, checkpoint_path, args.update, stop_reason, circuit_breaker)
@@ -315,11 +379,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--delay", type=non_negative_float, default=1.0, help="兼容旧命令的固定请求间隔秒数")
     parser.add_argument("--delay-min", type=non_negative_float, help="详情请求随机间隔最小秒数，默认：20")
     parser.add_argument("--delay-max", type=non_negative_float, help="详情请求随机间隔最大秒数，默认：40")
-    parser.add_argument("--page-delay-min", type=non_negative_float, help="列表翻页随机间隔最小秒数，默认：15")
-    parser.add_argument("--page-delay-max", type=non_negative_float, help="列表翻页随机间隔最大秒数，默认：30")
-    parser.add_argument("--batch-size", type=positive_int, default=15, help="每检查多少条公告后批次休息，默认：15")
-    parser.add_argument("--batch-rest-min", type=non_negative_float, default=100.0, help="批次休息最小秒数，默认：100")
-    parser.add_argument("--batch-rest-max", type=non_negative_float, default=200.0, help="批次休息最大秒数，默认：200")
+    parser.add_argument("--page-delay-min", type=non_negative_float, help="列表翻页随机间隔最小秒数，默认：3")
+    parser.add_argument("--page-delay-max", type=non_negative_float, help="列表翻页随机间隔最大秒数，默认：6")
+    parser.add_argument("--batch-size", type=positive_int, default=20, help="每检查多少条公告后批次休息，默认：20")
+    parser.add_argument("--batch-rest-min", type=non_negative_float, default=60.0, help="批次休息最小秒数，默认：60")
+    parser.add_argument("--batch-rest-max", type=non_negative_float, default=120.0, help="批次休息最大秒数，默认：120")
     parser.add_argument("--forbidden-cooldown-min", type=non_negative_float, default=90.0, help="403 冷却最小秒数，默认：90")
     parser.add_argument("--forbidden-cooldown-max", type=non_negative_float, default=180.0, help="403 冷却最大秒数，默认：180")
     parser.add_argument("--max-consecutive-403", type=positive_int, default=2, help="连续 403 熔断阈值，默认：2")
@@ -398,14 +462,14 @@ def finalize_delay_args(args: argparse.Namespace, raw_args: list[str]) -> None:
         args.delay_max = 40.0
 
     if page_random_supplied:
-        args.page_delay_min = 15.0 if args.page_delay_min is None else args.page_delay_min
-        args.page_delay_max = 30.0 if args.page_delay_max is None else args.page_delay_max
+        args.page_delay_min = 3.0 if args.page_delay_min is None else args.page_delay_min
+        args.page_delay_max = 6.0 if args.page_delay_max is None else args.page_delay_max
     elif old_delay_supplied:
         args.page_delay_min = args.delay
         args.page_delay_max = args.delay
     else:
-        args.page_delay_min = 15.0
-        args.page_delay_max = 30.0
+        args.page_delay_min = 3.0
+        args.page_delay_max = 6.0
 
 
 def validate_range(name: str, minimum: float, maximum: float) -> None:
@@ -523,19 +587,17 @@ def retry_after_seconds(headers: dict[str, str]) -> float | None:
     return max(0.0, (retry_at - datetime.now(retry_at.tzinfo)).total_seconds())
 
 
-def process_page(
+def scan_page(
     page_no: int,
     page_data: dict[str, Any],
     args: argparse.Namespace,
-    session: Any,
     notices_dir: Path,
     failures_path: Path,
     existing_paths: dict[str, Path],
     processed_ids: set[str],
     stats: dict[str, int],
     throttle: Throttle,
-    forbidden_state: dict[str, int],
-) -> dict[str, int]:
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
     page_stats = {
         "items": 0,
         "new_ids": 0,
@@ -544,14 +606,16 @@ def process_page(
         "circuit_breaker": 0,
         "before_since_date": 0,
     }
+    todo_items: list[dict[str, Any]] = []
+
     for item_index, list_item in enumerate(page_data["rows"], start=1):
         if reached_max_items(stats["found"], args.max_items):
             break
         page_stats["items"] += 1
         stats["found"] += 1
+
         notice_id = str(list_item.get("id") or "")
         title = str(list_item.get("noticeTitle") or "")
-        notice_type = list_item.get("noticeType") or "1"
         publish_date = parse_publish_date(list_item.get("publishTime"))
 
         if publish_date and publish_date < args.since_date:
@@ -583,6 +647,7 @@ def process_page(
             )
             throttle.maybe_batch_rest(stats["found"])
             continue
+
         if notice_id in processed_ids:
             LOGGER.info("本轮已处理，跳过：%s %s", notice_id, title)
             stats["skipped"] += 1
@@ -601,98 +666,137 @@ def process_page(
 
         page_stats["new_ids"] += 1
         stats["new_ids"] += 1
-        try:
-            waited = throttle.wait_detail()
-            LOGGER.info(
-                "详情请求：当前页 %s，当前公告序号 %s，公告 ID %s，标题 %s，等待 %.1f 秒，连续 403 次数 %s",
-                page_no,
-                item_index,
-                notice_id,
-                title,
-                waited,
-                forbidden_state["consecutive"],
-            )
-            detail_data = request_with_403_handling(
-                lambda: fetch_notice_detail(notice_id, notice_type, session=session),
-                args=args,
-                stats=stats,
-                forbidden_state=forbidden_state,
-                stage="detail",
-                title=title,
-            )
-            if detail_data is None:
-                page_stats["circuit_breaker"] = 1
-                raise CfcpnError(STOP_FORBIDDEN, status_code=403)
-            LOGGER.info(
-                "详情请求结果：当前页 %s，当前公告序号 %s，公告 ID %s，请求结果 success，连续 403 次数 %s",
-                page_no,
-                item_index,
-                notice_id,
-                forbidden_state["consecutive"],
-            )
-        except Exception as exc:
-            LOGGER.error("详情请求失败：%s %s %s", notice_id, title, exc)
-            stats["failed"] += 1
-            page_stats["failed"] += 1
-            append_failure(
-                failures_path,
-                {
-                    "notice_id": notice_id,
-                    "title": title,
-                    "url": build_detail_url(notice_id, notice_type),
-                    "stage": "detail",
-                    "error": str(exc),
-                },
-            )
-            throttle.maybe_batch_rest(stats["found"])
-            if page_stats["circuit_breaker"]:
-                break
-            continue
 
-        try:
-            notice = parse_notice_detail(detail_data, list_item)
-        except Exception as exc:
-            LOGGER.error("字段解析失败：%s %s %s", notice_id, title, exc)
-            stats["failed"] += 1
-            page_stats["failed"] += 1
-            append_failure(
-                failures_path,
-                {
-                    "notice_id": notice_id,
-                    "title": title,
-                    "url": detail_data.get("_detail_url", ""),
-                    "stage": "parse",
-                    "error": str(exc),
-                },
-            )
-            throttle.maybe_batch_rest(stats["found"])
-            continue
+        list_item["_item_index"] = item_index
+        list_item["_page_no"] = page_no
+        todo_items.append(list_item)
+        throttle.maybe_batch_rest(stats["found"])
 
-        try:
-            if args.overwrite and existing_path and existing_path.exists():
-                existing_path.unlink()
-            path = write_notice_markdown(notice, notices_dir, keyword=args.keyword)
-            existing_paths[notice_id] = path
-            stats["saved"] += 1
-            LOGGER.info("已保存：%s", path)
-        except Exception as exc:
-            LOGGER.error("写入失败：%s %s %s", notice_id, title, exc)
-            stats["failed"] += 1
-            page_stats["failed"] += 1
-            append_failure(
-                failures_path,
-                {
-                    "notice_id": notice_id,
-                    "title": title,
-                    "url": notice.get("detail_url", ""),
-                    "stage": "write",
-                    "error": str(exc),
-                },
-            )
-            continue
-        finally:
-            throttle.maybe_batch_rest(stats["found"])
-    return page_stats
+    return todo_items, page_stats
+
+
+def download_and_save_item(
+    list_item: dict[str, Any],
+    args: argparse.Namespace,
+    session: Any,
+    notices_dir: Path,
+    failures_path: Path,
+    existing_paths: dict[str, Path],
+    stats: dict[str, int],
+    throttle: Throttle,
+    forbidden_state: dict[str, int],
+) -> bool:
+    """下载并保存单个公告详情，返回是否发生熔断 (circuit_breaker)"""
+    notice_id = str(list_item.get("id") or "")
+    title = str(list_item.get("noticeTitle") or "")
+    notice_type = list_item.get("noticeType") or "1"
+    item_index = list_item.get("_item_index", 1)
+    page_no = list_item.get("_page_no", 1)
+    
+    existing_path = existing_paths.get(notice_id)
+    circuit_breaker = False
+
+    try:
+        waited = throttle.wait_detail()
+        LOGGER.info(
+            "详情请求：当前页 %s，当前公告序号 %s，公告 ID %s，标题 %s，等待 %.1f 秒，连续 403 次数 %s",
+            page_no,
+            item_index,
+            notice_id,
+            title,
+            waited,
+            forbidden_state["consecutive"],
+        )
+        detail_data = request_with_403_handling(
+            lambda: fetch_notice_detail(notice_id, notice_type, session=session),
+            args=args,
+            stats=stats,
+            forbidden_state=forbidden_state,
+            stage="detail",
+            title=title,
+        )
+        if detail_data is None:
+            circuit_breaker = True
+            raise CfcpnError(STOP_FORBIDDEN, status_code=403)
+        LOGGER.info(
+            "详情请求结果：当前页 %s，当前公告序号 %s，公告 ID %s，请求结果 success，连续 403 次数 %s",
+            page_no,
+            item_index,
+            notice_id,
+            forbidden_state["consecutive"],
+        )
+    except Exception as exc:
+        LOGGER.error("详情请求失败：%s %s %s", notice_id, title, exc)
+        stats["failed"] += 1
+        append_failure(
+            failures_path,
+            {
+                "notice_id": notice_id,
+                "title": title,
+                "url": build_detail_url(notice_id, notice_type),
+                "stage": "detail",
+                "error": str(exc),
+            },
+        )
+        return circuit_breaker
+
+    try:
+        notice = parse_notice_detail(detail_data, list_item)
+    except Exception as exc:
+        LOGGER.error("字段解析失败：%s %s %s", notice_id, title, exc)
+        stats["failed"] += 1
+        append_failure(
+            failures_path,
+            {
+                "notice_id": notice_id,
+                "title": title,
+                "url": detail_data.get("_detail_url", ""),
+                "stage": "parse",
+                "error": str(exc),
+            },
+        )
+        return circuit_breaker
+
+    try:
+        if args.overwrite and existing_path and existing_path.exists():
+            existing_path.unlink()
+        path = write_notice_markdown(notice, notices_dir, keyword=args.keyword)
+        existing_paths[notice_id] = path
+        stats["saved"] += 1
+        LOGGER.info("已保存：%s", path)
+    except Exception as exc:
+        LOGGER.error("写入失败：%s %s %s", notice_id, title, exc)
+        stats["failed"] += 1
+        append_failure(
+            failures_path,
+            {
+                "notice_id": notice_id,
+                "title": title,
+                "url": notice.get("detail_url", ""),
+                "stage": "write",
+                "error": str(exc),
+            },
+        )
+    return circuit_breaker
+
+
+def emit_progress(
+    stage: str,
+    progress: int,
+    message: str,
+    *,
+    current: int | None = None,
+    total: int | None = None,
+) -> None:
+    payload = {
+        "stage": stage,
+        "progress": max(0, min(100, int(progress))),
+        "message": message,
+    }
+    if current is not None and total is not None:
+        payload["current"] = max(0, int(current))
+        payload["total"] = max(0, int(total))
+    print(f"::progress::{json.dumps(payload, ensure_ascii=False)}", flush=True)
 
 
 def append_failure(path: Path, record: dict[str, Any]) -> None:

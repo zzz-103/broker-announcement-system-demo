@@ -325,7 +325,7 @@ export default function Dashboard() {
     }
   }, [activeTab, filteredData.length]);
 
-  const hasFilters =
+  const hasFilters = Boolean(
     search ||
     brokerNames.length > 0 ||
     primaryDomain ||
@@ -333,7 +333,8 @@ export default function Dashboard() {
     procurementMethod ||
     timeRange !== "90d" ||
     !finTechOnly ||
-    detailFilter;
+    detailFilter
+  );
 
   const totalBrokers = useMemo(
     () =>

@@ -72,7 +72,7 @@ export function KeyProjectRadar({
           <button
             key={r.projectKey}
             onClick={() => onSelectProject(r)}
-            className="relative overflow-hidden text-left border border-[#E4EAF2] rounded-xl pl-5 pr-4 py-4 hover:border-blue-500/35 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)] transition-all duration-200 motion-reduce:transition-none motion-reduce:transform-none cursor-pointer bg-white"
+            className="relative overflow-hidden text-left border border-[#E4EAF2] rounded-xl pl-5 pr-4 py-4 hover:border-blue-500/35 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)] transition-all duration-200 motion-reduce:transition-none motion-reduce:transform-none cursor-pointer bg-white flex flex-col justify-between h-full min-h-[210px]"
           >
             {/* Left accent strip */}
             <div 
@@ -80,46 +80,61 @@ export function KeyProjectRadar({
               style={{ backgroundColor: getAccentColor(r.announcement_stage, r.primaryDomain) }}
             />
 
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{
-                  backgroundColor:
-                    DOMAIN_COLORS[r.primaryDomain] || "#98A2B3",
-                }}
-              />
-              <span className="text-[11px] text-[#667085] truncate font-medium">
-                {r.primaryDomain}
-              </span>
-            </div>
-            <div className="text-[13px] text-[#172033] font-bold line-clamp-2 leading-relaxed mb-2">
-              {r.normalizedProjectName}
-            </div>
-            <div className="flex flex-wrap gap-1 mb-3">
-              {r.topicTags.slice(0, 3).map((tag) => (
+            {/* Upper Section */}
+            <div className="w-full">
+              <div className="flex items-center gap-2 mb-2">
                 <span
-                  key={tag}
-                  className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#F0F2F5] text-[#667085]"
-                >
-                  {tag}
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{
+                    backgroundColor:
+                      DOMAIN_COLORS[r.primaryDomain] || "#98A2B3",
+                  }}
+                />
+                <span className="text-[11px] text-[#667085] truncate font-medium">
+                  {r.primaryDomain}
                 </span>
-              ))}
-            </div>
-            <div className="flex items-center justify-between text-[11px] text-[#98A2B3]">
-              <span className="font-medium text-[#718096]">{r.validBrokerName}</span>
-              <span className="tabular-nums">{formatDate(r.validPublishDate)}</span>
-            </div>
-            {r.normalizedSupplier && (
-              <div className="text-[11px] text-[#667085] mt-1.5 truncate font-medium">
-                供应商: <span className="text-[#172033]">{r.normalizedSupplier}</span>
               </div>
-            )}
-            {r.winning_amount_yuan !== null && (
-              <div className="text-[12px] text-[#0F9F8F] font-bold mt-1.5 tabular-nums">
-                {formatAmount(r.winning_amount_yuan)}
+              <div className="text-[13px] text-[#172033] font-bold line-clamp-2 leading-relaxed mb-2 h-[38px] flex items-start">
+                {r.normalizedProjectName}
               </div>
-            )}
-            <div className="text-[10px] text-[#F59E0B] mt-2.5 font-medium">{reason}</div>
+              <div className="flex flex-wrap gap-1 mb-3 h-[20px] overflow-hidden">
+                {r.topicTags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag}
+                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-[#F0F2F5] text-[#667085] leading-none flex items-center"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Lower Section (with top border for alignment visualization) */}
+            <div className="w-full mt-auto pt-2.5 border-t border-[#F0F2F5]/80">
+              <div className="flex items-center justify-between text-[11px] text-[#98A2B3] h-[16px]">
+                <span className="font-medium text-[#718096] truncate pr-2 max-w-[65%]">{r.validBrokerName}</span>
+                <span className="tabular-nums shrink-0">{formatDate(r.validPublishDate)}</span>
+              </div>
+              <div className="flex items-center justify-between text-[11px] mt-2 h-[16px]">
+                {r.normalizedSupplier ? (
+                  <span className="text-[#667085] truncate max-w-[65%] font-medium">
+                    供应商: <span className="text-[#172033] font-semibold">{r.normalizedSupplier}</span>
+                  </span>
+                ) : (
+                  <span className="text-[#98A2B3] italic font-normal">招标阶段</span>
+                )}
+                {r.winning_amount_yuan !== null ? (
+                  <span className="text-[#0F9F8F] font-bold tabular-nums text-[12px] shrink-0">
+                    {formatAmount(r.winning_amount_yuan)}
+                  </span>
+                ) : (
+                  <span className="shrink-0 w-4 h-4" />
+                )}
+              </div>
+              <div className="text-[10px] text-[#F59E0B] mt-2 font-medium line-clamp-1 h-[14px] leading-tight">
+                {reason}
+              </div>
+            </div>
           </button>
         ))}
       </div>

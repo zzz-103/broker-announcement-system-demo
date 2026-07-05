@@ -1309,6 +1309,8 @@ def main() -> int:
     print(f"请求最小启动间隔秒数: {max(0.0, args.min_interval_seconds)}")
     print(f"请求执行中日志间隔秒数: {max(0.0, args.request_log_interval_seconds)}")
     emit_progress("preparing", 5, "正在准备 LLM 候选数据...")
+    N = len(plans)
+    emit_progress("processing", 10, f"开始处理新文件，共 {N} 个...", current=0, total=N)
 
     with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
         future_map = {
@@ -1380,7 +1382,7 @@ def main() -> int:
 
     failure_path = output_dir / "failed_files.jsonl"
     write_failures_jsonl(failures, failure_path)
-    emit_progress("writing", 95, "正在写入候选 CSV...")
+    emit_progress("writing", 95, "正在写入候选 CSV...", current=N, total=N)
 
     output_rows = (
         merge_rows_by_file(existing_rows, all_rows, successful_file_keys)

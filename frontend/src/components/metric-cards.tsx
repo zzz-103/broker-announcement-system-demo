@@ -15,7 +15,7 @@ interface MetricCardsProps {
 }
 
 export function MetricCards({ data, allData }: MetricCardsProps) {
-  const { setAnnouncementStage, setDetailFilter } = useFilterStore();
+  const { setDetailFilter } = useFilterStore();
 
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
 
@@ -81,7 +81,7 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
         label: "结果公示项目",
         value: resultProjects.toLocaleString(),
         hint: "公告阶段为结果公示的去重线索",
-        onClick: () => setAnnouncementStage("结果公示"),
+        onClick: null,
         color: "#0F9F8F",
       },
       {
@@ -99,7 +99,7 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
         color: "#F59E0B",
       },
     ];
-  }, [data, baseline, setAnnouncementStage, setDetailFilter]);
+  }, [data, baseline, setDetailFilter]);
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">

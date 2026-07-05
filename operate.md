@@ -286,14 +286,10 @@ cd D:\broker-announcement-system-demo
 ```
 ```bash
 source .venv/bin/activate
-python -m uvicorn backend.api.main:app \
+python3 -m uvicorn backend.api.main:app \
   --host 0.0.0.0 \
   --port 8000 \
   --reload
-```
-
-```zsh
-.\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000
 ```
 
 看到类似以下内容表示后端已启动：
@@ -335,12 +331,9 @@ GET  /api/health
 cd D:\broker-announcement-system-demo\frontend
 pnpm exec next dev
 ```
-```zsh
-cd D:\broker-announcement-system-demo\frontend
-pnpm exec next dev
-```
-```zsh
+```bash
 cd frontend
+pnpm install
 pnpm dev
 ```
 
