@@ -7,6 +7,7 @@ backend/data/raw_json
 backend/data/users.db
 backend/data/brokers
 backend/data/staging/
+manual_test/
 # Runtime generated data (keep .gitkeep for directory structure)
 backend/data/announcement_table.csv
 backend/data/announcement_table.jsonl

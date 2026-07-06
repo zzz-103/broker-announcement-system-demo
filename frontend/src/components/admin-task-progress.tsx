@@ -44,6 +44,20 @@ function progressLabel(progress: AdminTaskProgressState): string {
   return "暂无活动任务";
 }
 
+function getStageLabel(stage?: string): string {
+  if (!stage) return "";
+  const STAGE_MAP: Record<string, string> = {
+    scanning: "阶段一：扫描列表获取待更新公告",
+    crawling: "阶段二：下载并保存公告详情",
+    preparing: "阶段一：准备 LLM 候选提取数据",
+    processing: "阶段二：调用 LLM 进行结构化提取",
+    writing: "阶段三：写入结构化数据至候选 CSV",
+    completed: "任务已顺利完成",
+    failed: "任务执行失败",
+  };
+  return STAGE_MAP[stage] || stage;
+}
+
 export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps) {
   const determinate =
     progress.status === "running" &&
@@ -128,9 +142,19 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
           )}
         </div>
         <div className="mt-2 text-xs text-[#667085]">
-          {progress.status === "idle"
-            ? "等待管理员启动任务"
-            : progress.message || progressLabel(progress)}
+          {progress.status === "idle" ? (
+            "等待管理员启动任务"
+          ) : progress.status === "running" ? (
+            getStageLabel(progress.stage) || "任务正在运行中，请稍候..."
+          ) : progress.status === "succeeded" ? (
+            "任务已成功完成"
+          ) : progress.status === "cancelled" ? (
+            "任务已停止"
+          ) : progress.status === "failed" ? (
+            "任务执行失败，请点击查看日志了解详情"
+          ) : (
+            ""
+          )}
         </div>
       </div>
     </section>

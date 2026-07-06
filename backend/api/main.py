@@ -301,6 +301,39 @@ def start_llm() -> dict[str, str]:
     return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
 
 
+@app.post("/api/jobs/pipeline", dependencies=[Depends(require_admin_token)])
+def start_pipeline() -> dict[str, str]:
+    try:
+        job = job_manager.start_pipeline()
+    except JobConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
+@app.post("/api/internal/scheduled-pipeline")
+def scheduled_pipeline(
+    x_scheduler_token: Annotated[str | None, Header()] = None,
+) -> dict[str, str]:
+    """Internal endpoint for the independent scheduler process."""
+    expected_token = os.getenv("SCHEDULER_TOKEN", "")
+    if not expected_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="scheduler token not configured",
+        )
+    provided = (x_scheduler_token or "").strip()
+    if not provided or not secrets.compare_digest(provided, expected_token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid scheduler token",
+        )
+    try:
+        job = job_manager.start_pipeline()
+    except JobConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
 @app.get("/api/data/announcements", dependencies=[Depends(require_token)])
 def get_announcements() -> dict[str, object]:
     csv_path = announcement_csv_path()

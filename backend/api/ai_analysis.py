@@ -83,28 +83,39 @@ def load_cached_analysis() -> dict[str, Any]:
     return normalized
 
 
+def _run_generate_ai_analysis(days: int | None = None) -> dict[str, Any]:
+    """Run the AI analysis without acquiring the analysis_lock.
+
+    Callers are responsible for either holding the lock or operating inside
+    the pipeline's global operation lock.  ``days`` defaults to
+    ``window_days()`` when *None*.
+    """
+    effective_days = days if days is not None else window_days()
+    recent_records, start_date, end_date = load_recent_records(effective_days)
+    prompt_messages = build_prompt(recent_records, start_date, end_date, effective_days)
+    analysis = request_model_analysis(prompt_messages)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "content": analysis["content"],
+        "updatedAt": generated_at,
+        "analysis": analysis,
+        "meta": {
+            "generated_at": generated_at,
+            "source_count": len(recent_records),
+            "window_days": effective_days,
+            "cached": False,
+        },
+    }
+    atomic_write_json(cache_path(), payload)
+    return payload
+
+
 def generate_ai_analysis() -> dict[str, Any]:
+    """HTTP-facing entry point: acquires analysis_lock then delegates."""
     if not analysis_lock.acquire(blocking=False):
         raise AiAnalysisError(409, "AI 情报分析任务正在运行")
     try:
-        days = window_days()
-        recent_records, start_date, end_date = load_recent_records(days)
-        prompt_messages = build_prompt(recent_records, start_date, end_date, days)
-        analysis = request_model_analysis(prompt_messages)
-        generated_at = datetime.now(timezone.utc).isoformat()
-        payload = {
-            "content": analysis["content"],
-            "updatedAt": generated_at,
-            "analysis": analysis,
-            "meta": {
-                "generated_at": generated_at,
-                "source_count": len(recent_records),
-                "window_days": days,
-                "cached": False,
-            },
-        }
-        atomic_write_json(cache_path(), payload)
-        return payload
+        return _run_generate_ai_analysis()
     finally:
         analysis_lock.release()
 

@@ -10,7 +10,7 @@ from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Deque
+from typing import Any, Callable, Deque
 
 
 MAX_LOG_LINES = 500
@@ -68,6 +68,29 @@ class JobManager:
 
     def start_llm(self) -> Job:
         return self._start_job("llm", self._build_llm_command)
+
+    def start_pipeline(self) -> Job:
+        """Start a pipeline job: scraper -> LLM -> AI analysis."""
+        with self._condition:
+            if self._active_operation:
+                raise JobConflictError(self._conflict_message(self._active_operation))
+
+            job = Job(
+                job_id=str(uuid.uuid4()),
+                job_type="pipeline",
+                status="running",
+                created_at=utc_now(),
+                started_at=utc_now(),
+            )
+            self._jobs[job.job_id] = job
+            self._events[job.job_id] = deque(maxlen=MAX_LOG_LINES)
+            self._event_sequences[job.job_id] = 0
+            self._running_job_id = job.job_id
+            self._active_operation = "pipeline"
+
+        thread = threading.Thread(target=self._run_pipeline, args=(job.job_id,), daemon=True)
+        thread.start()
+        return job
 
     def acquire_operation(self, operation_type: str) -> None:
         with self._condition:
@@ -241,6 +264,167 @@ class JobManager:
                 self._cancel_requested.discard(job_id)
                 if job_id in self._jobs:
                     self._jobs[job_id].process_alive = False
+
+    # ------------------------------------------------------------------
+    # Pipeline
+    # ------------------------------------------------------------------
+
+    def _run_pipeline(self, job_id: str) -> None:
+        """Run scraper -> LLM -> AI analysis as a single pipeline job.
+
+        The global ``_active_operation`` lock is already held (set to
+        ``"pipeline"``).  We release it in *finally*.
+        """
+        from .ai_analysis import AiAnalysisError, _run_generate_ai_analysis  # local import
+
+        def log(message: str, stream: str = "stdout") -> None:
+            self._append_event(
+                job_id,
+                {
+                    "type": "log",
+                    "job_id": job_id,
+                    "stream": stream,
+                    "message": message,
+                    "timestamp": utc_now(),
+                },
+            )
+
+        try:
+            self._append_event(
+                job_id,
+                {
+                    "type": "start",
+                    "job_id": job_id,
+                    "job_type": "pipeline",
+                    "message": "Pipeline 开始",
+                    "timestamp": utc_now(),
+                },
+            )
+
+            # Stage 1: scraper
+            log("[scraper] 阶段开始")
+            scraper_exit = self._execute_stage(job_id, self._build_scraper_command, "scraper")
+            if scraper_exit != 0:
+                log(f"[scraper] 失败，退出码 {scraper_exit}，Pipeline 停止", "stderr")
+                self._finish_job(job_id, status="failed", exit_code=scraper_exit, error="scraper 失败")
+                return
+            log("[scraper] 完成")
+
+            # Stage 2: LLM
+            log("[llm] 阶段开始")
+            llm_exit = self._execute_stage(job_id, self._build_llm_command, "llm")
+            if llm_exit != 0:
+                log(f"[llm] 失败，退出码 {llm_exit}，Pipeline 停止", "stderr")
+                self._finish_job(job_id, status="failed", exit_code=llm_exit, error="llm 失败")
+                return
+            log("[llm] 完成")
+
+            # Stage 3: AI analysis
+            analysis_enabled = os.getenv("PIPELINE_ANALYSIS_ENABLED", "true").strip().lower()
+            if analysis_enabled in ("false", "0", "no", "off"):
+                log("[analysis] skipped (PIPELINE_ANALYSIS_ENABLED=false)")
+            else:
+                log("[analysis] 阶段开始")
+                try:
+                    analysis_days_str = os.getenv("PIPELINE_ANALYSIS_DAYS", "30")
+                    try:
+                        analysis_days = max(1, int(analysis_days_str))
+                    except ValueError:
+                        analysis_days = 30
+                    _run_generate_ai_analysis(days=analysis_days)
+                    log("[analysis] 完成")
+                except AiAnalysisError as exc:
+                    log(f"[analysis] 失败: {exc.detail}", "stderr")
+                    self._finish_job(job_id, status="failed", exit_code=None, error=f"analysis 失败: {exc.detail}")
+                    return
+                except Exception as exc:
+                    log(f"[analysis] 失败: {exc}", "stderr")
+                    self._finish_job(job_id, status="failed", exit_code=None, error=f"analysis 异常: {exc}")
+                    return
+
+            self._finish_job(job_id, status="succeeded", exit_code=0, error=None)
+
+        except Exception as exc:
+            self._finish_job(job_id, status="failed", exit_code=None, error=str(exc))
+
+    def _execute_stage(
+        self,
+        job_id: str,
+        command_builder: Callable[[], tuple[list[str], Path, dict[str, str]]],
+        stage_label: str,
+    ) -> int:
+        """Run one subprocess stage inside the pipeline job.
+
+        Streams stdout/stderr prefixed with ``[stage_label]`` into the
+        pipeline job's event log.  Returns the process exit code.
+        """
+        process: subprocess.Popen[str] | None = None
+        try:
+            command, cwd, env = command_builder()
+
+            process = subprocess.Popen(
+                command,
+                cwd=str(cwd),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+
+            with self._lock:
+                self._processes[job_id] = process
+                self._jobs[job_id].pid = process.pid
+                self._jobs[job_id].process_alive = True
+
+            def _prefix_stream(stream: Any, stream_name: str) -> None:
+                if stream is None:
+                    return
+                for raw_line in iter(stream.readline, ""):
+                    line = raw_line.rstrip("\r\n")
+                    self._append_event(
+                        job_id,
+                        {
+                            "type": "log",
+                            "job_id": job_id,
+                            "stream": stream_name,
+                            "message": f"[{stage_label}] {line}",
+                            "timestamp": utc_now(),
+                        },
+                    )
+                stream.close()
+
+            readers = [
+                threading.Thread(target=_prefix_stream, args=(process.stdout, "stdout"), daemon=True),
+                threading.Thread(target=_prefix_stream, args=(process.stderr, "stderr"), daemon=True),
+            ]
+            for r in readers:
+                r.start()
+
+            exit_code = process.wait()
+            for r in readers:
+                r.join(timeout=2)
+
+            return exit_code
+        except Exception as exc:
+            if process and process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except OSError:
+                    pass
+            raise
+        finally:
+            with self._lock:
+                self._processes.pop(job_id, None)
+                if job_id in self._jobs:
+                    self._jobs[job_id].process_alive = False
+
+    # ------------------------------------------------------------------
+    # Termination
+    # ------------------------------------------------------------------
 
     def _terminate_process_tree(self, process: subprocess.Popen[str]) -> None:
         if os.name == "nt":
@@ -479,6 +663,7 @@ class JobManager:
         labels = {
             "scraper": "一键更新爬虫",
             "llm": "LLM 数据处理",
+            "pipeline": "自动化 Pipeline",
             "publish": "推送",
             "ai_analysis": "AI 情报分析",
         }
