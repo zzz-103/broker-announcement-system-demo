@@ -48,15 +48,17 @@ D:\broker-announcement-system-demo
 ## 4. 当前架构
 
 ```text
-浏览器
-  ↓ HTTP / SSE
-Next.js 前端
-  ↓ HTTP / SSE
-FastAPI 后端
-  ↓ subprocess
-Python 爬虫 / LLM 结构化脚本
-  ↓
-backend/data/*.csv / *.json
+ 独立调度器进程 (APScheduler)
+        ↓ HTTP (X-Scheduler-Token)
+ 浏览器   ↓
+   ↓ HTTP / SSE
+ Next.js 前端
+   ↓ HTTP / SSE
+ FastAPI 后端
+   ↓ subprocess
+ Python 爬虫 / LLM 结构化 / 自动化流水线
+   ↓
+ backend/data/*.csv / *.json
 ```
 
 ### Next.js 前端负责
@@ -73,14 +75,19 @@ backend/data/*.csv / *.json
 
 - 管理员认证
 - Bearer Token 校验
-- 启动 Python 子进程
+- 启动 Python 子进程 (包括 Scraper, LLM) 及管理流水线 (Pipeline)
 - 任务状态管理
-- SSE 日志推送
-- 任务互斥
+- SSE 日志推送与取消任务控制
+- 任务与操作互斥
 - 结构化数据接口
-- AI 情报分析接口
-- LLM 配置读取
-- 缓存文件读写
+- AI 情报分析接口与缓存读写
+- 验证定时调度器的 `X-Scheduler-Token` 安全头并触发内部任务
+
+### 独立调度器进程负责
+
+- 定时触发：基于轻量级 APScheduler 进程，读取 CRON 表达式定时触发流水线
+- 重试机制：支持网络瞬断等异常时的重试策略
+- 认证鉴权：持有并发送 `X-Scheduler-Token` 请求后端
 
 ### Python 业务脚本负责
 
@@ -109,6 +116,7 @@ backend/
 ├── api/
 │   ├── main.py
 │   ├── job_manager.py
+│   ├── scheduler.py
 │   └── requirements.txt
 ├── config/
 │   └── llm_api_config.json
@@ -140,7 +148,17 @@ cfcpn_scraper.py
 ```text
 output/notices/*.md
 → llm_markdown_table_builder.py
-→ backend/data/announcement_table.csv
+→ backend/data/staging/announcement_table.csv (候选数据源)
+```
+
+### 自动化流水线 (Pipeline)
+
+```text
+后端启动或调度器触发 pipeline 任务
+→ 依次运行:
+  1. cfcpn_scraper.py
+  2. llm_markdown_table_builder.py
+  3. AI 情报分析重构 (若 PIPELINE_ANALYSIS_ENABLED 为 true)
 ```
 
 ### 看板
@@ -176,7 +194,10 @@ GET  /api/health
 
 POST /api/jobs/scraper
 POST /api/jobs/llm
+POST /api/jobs/pipeline
+POST /api/internal/scheduled-pipeline
 GET  /api/jobs/{job_id}
+POST /api/jobs/{job_id}/cancel
 GET  /api/jobs/{job_id}/events
 
 GET  /api/data/announcements
@@ -253,15 +274,17 @@ failed
 
 ## 10. 任务互斥规则
 
-首版使用进程内锁：
+项目使用进程内锁：
 
-- 爬虫运行时不能启动 LLM。
-- LLM 运行时不能启动爬虫。
-- 同类任务不能重复启动。
-- 冲突返回 HTTP 409。
-- 错误信息应指出当前正在运行的任务类型。
-
-暂不支持多实例锁、分布式锁、任务取消、历史持久化或定时任务。
+- 互斥关系：
+  - 爬虫运行时，不能启动 LLM 或自动化流水线（Pipeline）。
+  - LLM 运行时，不能启动爬虫或自动化流水线（Pipeline）。
+  - 自动化流水线（Pipeline）运行时，不能启动爬虫、LLM 或其它流水线，且锁住推送（Publish）与 AI 分析（AI Analysis）操作。
+  - 推送（Publish）、AI分析（AI Analysis）运行时与流水线（Pipeline）互斥。
+- 同类任务或冲突操作不能重复启动。
+- 冲突返回 HTTP 409，错误信息应指出当前正在运行的任务类型。
+- 任务取消：支持运行中任务的手动取消接口 (`POST /api/jobs/{job_id}/cancel`)，可中止运行中的子进程或整个流水线，中止后释放全局锁。
+- 定时任务：已通过独立调度器进程实现周级/配置级定时触发流水线任务。
 
 ---
 
@@ -504,16 +527,28 @@ LLM_PYTHON_EXECUTABLE=
 LLM_SCRIPT_PATH=
 LLM_WORKING_DIR=
 LLM_INPUT_DIR=
-LLM_OUTPUT_DIR=backend/data
+LLM_OUTPUT_DIR=backend/data/staging
 LLM_CONFIG_PATH=backend/config/llm_api_config.json
 LLM_WORKERS=4
 
+ANNOUNCEMENT_STAGING_CSV_PATH=backend/data/staging/announcement_table.csv
 ANNOUNCEMENT_CSV_PATH=backend/data/announcement_table.csv
 USER_DB_PATH=backend/data/users.db
 
 AI_ANALYSIS_CACHE_PATH=backend/data/ai-analysis.json
 AI_ANALYSIS_WINDOW_DAYS=30
 AI_ANALYSIS_TIMEOUT_SECONDS=120
+
+# 流水线阶段 AI 分析配置
+PIPELINE_ANALYSIS_ENABLED=true
+PIPELINE_ANALYSIS_DAYS=30
+
+# 独立调度器进程配置
+SCHEDULER_ENABLED=true
+SCHEDULER_TIMEZONE=Asia/Shanghai
+SCHEDULER_CRON=0 12 * * sun
+SCHEDULER_API_URL=http://localhost:8000
+SCHEDULER_TOKEN=change-me
 ```
 
 规则：
@@ -545,6 +580,14 @@ http://localhost:8000/api/health
 http://localhost:8000/docs
 ```
 
+### 独立调度器 (Scheduler)
+
+在项目根目录：
+
+```powershell
+.\.venv\Scripts\python.exe -m backend.api.scheduler
+```
+
 ### Next.js
 
 在 `frontend` 目录：
@@ -564,6 +607,8 @@ pnpm dev
 ```text
 POST /api/jobs/scraper
 POST /api/jobs/llm
+POST /api/jobs/pipeline
+POST /api/internal/scheduled-pipeline
 GET  /api/jobs/{job_id}
 GET  /api/jobs/{job_id}/events
 POST /api/jobs/{job_id}/cancel
@@ -699,7 +744,7 @@ Codex 必须遵守：
 - 前端 AI 情报分析已迁移至 FastAPI
 - LLM 输出候选 CSV（`backend/data/staging/announcement_table.csv`）
 - 推送接口 (`POST /api/data/announcements/publish`) 实现原子替换
-- 全局互斥（爬虫、LLM、推送、AI 分析四操作同一时间只允许一个执行）
+- 全局互斥（爬虫、LLM、推送、AI 分析、流水线操作同一时间只允许一个执行）
 - 统一任务进度条（`AdminTaskProgress`）
 - 详细日志弹窗（`AdminTaskLogDialog`，点击图标查看，不直接展开在页面上）
 - SSE 首事件超时后的状态轮询回退，避免前端永久停留在运行中
@@ -708,6 +753,9 @@ Codex 必须遵守：
 - LLM 成功后不刷新看板，仅推送成功后刷新
 - 推送失败时正式 CSV 保持不变（原子替换保证）
 - `backend/data/staging/.gitkeep` 已提交，运行时 CSV 通过 `.gitignore` 排除
+- 自动化流水线（Pipeline）一键运行功能（串联 scraper -> llm -> analysis）与 API 触发
+- 独立定时任务调度进程（Scheduler），基于 APScheduler 实现 CRON 调度，持有 `X-Scheduler-Token` 安全头进行内部验证触发
+- 任务取消机制：通过 `POST /api/jobs/{job_id}/cancel` 支持中止运行中的子进程或流水线
 
 待完成或待最终验收：
 
