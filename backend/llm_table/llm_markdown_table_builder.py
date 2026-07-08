@@ -59,6 +59,7 @@ TABLE_FIELDS = [
     # 第二部分：看板核心业务数据 - 由大模型(LLM)按扁平化 Array 提取输出
     # ==========================================
     "broker_name",          # 券商名称 (看板过滤维度：查看特定券商)
+    "is_broker_project",    # 是否属于券商项目；由 LLM 判断，发布正式看板时据此过滤
     "publish_date",         # 发布日期 (看板时间轴：YYYY-MM-DD，筛选近1-2个月)
     "announcement_stage",   # 公告阶段 (看板分类器：采购招标 / 结果公示 / 流标废标)
     "procurement_category", # 行业类别 (看板饼图维度：IT软硬件 / 专业及金融服务 / 其他)
@@ -85,6 +86,13 @@ SYSTEM_PROMPT = """你是一个专为 BI 数据看板准备底层数据的数据
 
 【硬性约束与处理逻辑】
 1. 扁平结构：哪怕公告有多个标段，也请输出一个包含多个 JSON 对象的数组（Array）。
+
+1.1 券商项目判断 (is_broker_project & broker_name)：
+   - 必须判断公告采购主体是否为证券公司/券商项目，并输出布尔字段 `is_broker_project`。
+   - 证券公司、证券股份有限公司、证券有限责任公司、证券营业部等券商主体项目输出 true。
+   - 银行、保险、基金、信托、期货、资管、租赁、其他非券商机构项目输出 false；例如“交通银行”必须输出 false。
+   - `broker_name` 必须填写标准化券商名称；若 `is_broker_project=false`，仍可填写公告主体名称，但不得伪装为券商。
+   - 禁止依赖来源目录名直接判断，必须以公告正文和项目主体为准。
 
 2. 分类树强制枚举 (procurement_category & project_subcategory)：
    你必须根据项目内容，从以下规定的【一级类别】和对应的【二级细分品类】中挑选最合适的一项。严禁自行创造词汇！
@@ -180,6 +188,7 @@ SYSTEM_PROMPT = """你是一个专为 BI 数据看板准备底层数据的数据
 [
   {
     "broker_name": "string (券商名称，如 '中信证券')",
+    "is_broker_project": true,
     "publish_date": "string|null (YYYY-MM-DD)",
     "announcement_stage": "采购招标 | 结果公示 | 流标废标",
     "procurement_category": "IT软硬件 | 专业及金融服务 | 其他",
@@ -705,6 +714,9 @@ def flatten_payload(
                 records.append(
                     {
                         "broker_name": item.get("broker_name") or document.get("broker_name"),
+                        "is_broker_project": item.get("is_broker_project")
+                        if item.get("is_broker_project") is not None
+                        else document.get("is_broker_project"),
                         "publish_date": item.get("publish_date") or document.get("publish_date"),
                         "announcement_stage": item.get("announcement_stage") or item.get("result_status"),
                         "procurement_category": item.get("procurement_category"),
@@ -732,6 +744,7 @@ def flatten_payload(
             "markdown_file": metadata["markdown_file"],
             "document_sha1": metadata["document_sha1"],
             "broker_name": record.get("broker_name") or "",
+            "is_broker_project": record.get("is_broker_project"),
             "publish_date": record.get("publish_date") or "",
             "announcement_stage": record.get("announcement_stage") or "",
             "procurement_category": record.get("procurement_category") or "",
@@ -779,6 +792,10 @@ NUMERIC_FIELDS = {
     "delivery_period_days",
 }
 
+BOOLEAN_FIELDS = {
+    "is_broker_project",
+}
+
 
 def normalize_numeric(value: Any) -> int | float | None:
     if value is None or value == "":
@@ -798,12 +815,27 @@ def normalize_numeric(value: Any) -> int | float | None:
     return None
 
 
+def normalize_boolean(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes", "y", "是", "券商", "证券", "broker"}:
+        return "true"
+    if normalized in {"false", "0", "no", "n", "否", "非券商", "非证券", "non-broker"}:
+        return "false"
+    return ""
+
+
 def normalize_row_fields(row: dict[str, Any]) -> dict[str, Any]:
     normalized = {}
     for field in TABLE_FIELDS:
         val = row.get(field)
         if field in NUMERIC_FIELDS:
             normalized[field] = normalize_numeric(val)
+        elif field in BOOLEAN_FIELDS:
+            normalized[field] = normalize_boolean(val)
         else:
             normalized[field] = normalize_scalar(val)
     return normalized

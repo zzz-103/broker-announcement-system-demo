@@ -1,0 +1,12 @@
+{
+  "base_url": "https://cscocrm.csco.com.cn:11443/v1",
+  "api_key": "your_api_key_here",
+  "model": "DeepSeek-V4-Flash",
+  "temperature": 0.1,
+  "top_p": 1,
+  "max_tokens": 524288,
+  "frequency_penalty": 0,
+  "presence_penalty": 0,
+  "timeout_seconds": 180,
+  "use_json_object": true
+}

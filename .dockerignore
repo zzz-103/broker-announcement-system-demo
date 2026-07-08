@@ -1,0 +1,69 @@
+# Git 历史与配置
+.git
+.gitignore
+
+# Python 虚拟环境与本地缓存
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Node / Next.js 本地依赖与构建缓存
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+frontend/tsconfig.tsbuildinfo
+
+# 本地环境变量与密码（排除真实配置，保留示例文件）
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# LLM 敏感配置（排除真实 API Key，保留无密钥模板）
+backend/config/llm_api_config.json
+!backend/config/llm_api_config.example.json
+
+# 宿主机本地运行目录与挂载目录
+runtime/
+
+# 排除后端运行时生成的动态数据与临时结果（保留初始 CSV announcement_table.csv 作为初始数据）
+backend/data/*
+# 确保排除用户数据库及其他动态文件
+backend/data/users.db
+backend/data/csco_contacts_output.csv
+backend/data/staging/
+backend/data/brokers/
+backend/data/raw_json/
+
+# 排除爬虫运行输出文件
+backend/python-http-www-cfcpn-com-jcw/output/
+output/
+
+# 前端已废弃的旧静态数据目录
+frontend/public/data/*
+
+# 本地数据库与临时文件
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+.tmp/
+
+# 构建包、日志与系统临时文件
+*.tar
+*.tar.gz
+*.zip
+*.log
+release/
+dist/
+.vscode
+.idea
+.DS_Store
+Thumbs.db

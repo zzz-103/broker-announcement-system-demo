@@ -8,9 +8,10 @@ import threading
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from typing import Any, Callable, Deque
+from zoneinfo import ZoneInfo
 
 
 MAX_LOG_LINES = 500
@@ -207,6 +208,29 @@ class JobManager:
                 },
             )
 
+            if job_type == "scraper":
+                lookback_days, since_date = self._get_scraper_lookback_info()
+                self._append_event(
+                    job_id,
+                    {
+                        "type": "log",
+                        "job_id": job_id,
+                        "stream": "stdout",
+                        "message": f"爬虫回溯天数：{lookback_days}",
+                        "timestamp": utc_now(),
+                    },
+                )
+                self._append_event(
+                    job_id,
+                    {
+                        "type": "log",
+                        "job_id": job_id,
+                        "stream": "stdout",
+                        "message": f"爬虫起始日期：{since_date}",
+                        "timestamp": utc_now(),
+                    },
+                )
+
             process = subprocess.Popen(
                 command,
                 cwd=str(cwd),
@@ -362,6 +386,29 @@ class JobManager:
         try:
             command, cwd, env = command_builder()
 
+            if stage_label == "scraper":
+                lookback_days, since_date = self._get_scraper_lookback_info()
+                self._append_event(
+                    job_id,
+                    {
+                        "type": "log",
+                        "job_id": job_id,
+                        "stream": "stdout",
+                        "message": f"[{stage_label}] 爬虫回溯天数：{lookback_days}",
+                        "timestamp": utc_now(),
+                    },
+                )
+                self._append_event(
+                    job_id,
+                    {
+                        "type": "log",
+                        "job_id": job_id,
+                        "stream": "stdout",
+                        "message": f"[{stage_label}] 爬虫起始日期：{since_date}",
+                        "timestamp": utc_now(),
+                    },
+                )
+
             process = subprocess.Popen(
                 command,
                 cwd=str(cwd),
@@ -453,6 +500,28 @@ class JobManager:
         except OSError:
             pass
 
+    def _get_scraper_lookback_info(self) -> tuple[int, str]:
+        import logging
+        raw_lookback = os.getenv("SCRAPER_LOOKBACK_DAYS", "20")
+        lookback_days = 20
+        try:
+            val = int(raw_lookback)
+            if 1 <= val <= 365:
+                lookback_days = val
+            else:
+                logging.warning(
+                    f"SCRAPER_LOOKBACK_DAYS value {raw_lookback} out of range [1, 365]. Falling back to default 20."
+                )
+        except ValueError:
+            logging.warning(
+                f"SCRAPER_LOOKBACK_DAYS value {raw_lookback} is not a valid integer. Falling back to default 20."
+            )
+
+        timezone_name = os.getenv("SCHEDULER_TIMEZONE", "Asia/Shanghai")
+        today = datetime.now(ZoneInfo(timezone_name)).date()
+        since_date = today - timedelta(days=lookback_days)
+        return lookback_days, since_date.isoformat()
+
     def _build_scraper_command(self) -> tuple[list[str], Path, dict[str, str]]:
         project_root = Path(__file__).resolve().parents[2]
         scraper_root = project_root / "backend" / "python-http-www-cfcpn-com-jcw"
@@ -469,6 +538,8 @@ class JobManager:
 
         self._validate_executable_job_paths("Scraper", python_executable, script_path, working_dir)
 
+        lookback_days, since_date = self._get_scraper_lookback_info()
+
         command = [
             str(python_executable),
             "-u",
@@ -479,6 +550,8 @@ class JobManager:
             "--output-dir",
             "output",
             "--resume",
+            "--since-date",
+            since_date,
         ]
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"

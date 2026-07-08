@@ -3,11 +3,13 @@
 **/failures.jsonl
 **/checkpoint.json
 backend/config/llm_api_config.json
+backend/data/csco_contacts_output.csv
 backend/data/raw_json
 backend/data/users.db
 backend/data/brokers
 backend/data/staging/
 manual_test/
+.tmp/
 # Runtime generated data (keep .gitkeep for directory structure)
 backend/data/announcement_table.csv
 backend/data/announcement_table.jsonl
@@ -17,6 +19,7 @@ backend/data/run_summary.json
 backend/data/failed_files.jsonl
 backend/data/staging/*.csv
 backend/data/staging/*.jsonl
+runtime/
 # Python virtual environment and cache
 .venv/
 venv/

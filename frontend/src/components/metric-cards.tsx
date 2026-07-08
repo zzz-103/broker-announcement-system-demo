@@ -21,6 +21,11 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
 
   const metrics = useMemo(() => {
     const totalRecords = data.length;
+    const coveredBrokers = uniqueCount(
+      data
+        .filter((r) => r.validBrokerName !== "主体待识别")
+        .map((r) => r.validBrokerName)
+    );
     const uniqueProjects = uniqueCount(data.map((r) => r.projectKey));
 
     // Recent 30 days
@@ -64,6 +69,13 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
         color: "#2563EB",
       },
       {
+        label: "已采集券商",
+        value: `${coveredBrokers.toLocaleString()} 家`,
+        hint: "按当前筛选后的标准化券商去重",
+        onClick: null,
+        color: "#0F9F8F",
+      },
+      {
         label: "去重项目线索",
         value: uniqueProjects.toLocaleString(),
         hint: "按主体+标准化项目名去重",
@@ -102,7 +114,7 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
   }, [data, baseline, setDetailFilter]);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5 sm:gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3.5 sm:gap-4">
       {metrics.map((m) => {
         const content = (
           <>

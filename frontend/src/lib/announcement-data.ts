@@ -11,6 +11,7 @@ interface RawCsvRow {
   processed_at?: string;
   raw_json_path?: string;
   broker_name?: string;
+  is_broker_project?: string;
   publish_date?: string;
   announcement_stage?: string;
   procurement_category?: string;
@@ -37,6 +38,7 @@ export interface ProcessedRecord {
   processed_at: string;
   raw_json_path: string;
   broker_name_raw: string;
+  is_broker_project: boolean | null;
   publish_date_raw: string;
   announcement_stage: string;
   procurement_category: string;
@@ -251,6 +253,9 @@ function parseDate(raw: string): Date | null {
 export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
   return rawRows.map((row) => {
     const brokerNameRaw = row.broker_name?.trim() ?? "";
+    const brokerProjectRaw = row.is_broker_project?.trim().toLowerCase() ?? "";
+    const isBrokerProject =
+      brokerProjectRaw === "true" ? true : brokerProjectRaw === "false" ? false : null;
     const validBrokerName = brokerNameRaw || "主体待识别";
     const publishDateRaw = row.publish_date?.trim() ?? "";
     const validPublishDate = parseDate(publishDateRaw);
@@ -289,6 +294,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       processed_at: row.processed_at?.trim() ?? "",
       raw_json_path: row.raw_json_path?.trim() ?? "",
       broker_name_raw: brokerNameRaw,
+      is_broker_project: isBrokerProject,
       publish_date_raw: publishDateRaw,
       announcement_stage: row.announcement_stage?.trim() ?? "",
       procurement_category: category,

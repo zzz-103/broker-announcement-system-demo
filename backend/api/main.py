@@ -4,7 +4,6 @@ import asyncio
 import csv
 import os
 import secrets
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -25,8 +24,10 @@ from .job_manager import JobConflictError, JobManager, JobNotFoundError, format_
 from .user_store import (
     DuplicateUserError,
     InvalidUserCredentialsError,
+    QualificationNotFoundError,
     UserNotFoundError,
     UserStoreError,
+    apply_for_user,
     authenticate_user,
     create_user,
     delete_user,
@@ -81,9 +82,21 @@ class AdminUserCreateRequest(BaseModel):
     department: str
 
 
+class UserApplyRequest(BaseModel):
+    name: str
+    email: str
+    department: str
+
+
 job_manager = JobManager()
 session_tokens: dict[str, dict[str, str | bool]] = {}
-ANNOUNCEMENT_REQUIRED_HEADERS = {"broker_name", "project_name", "publish_date"}
+BROKER_PROJECT_HEADER = "is_broker_project"
+ANNOUNCEMENT_REQUIRED_HEADERS = {
+    "broker_name",
+    BROKER_PROJECT_HEADER,
+    "project_name",
+    "publish_date",
+}
 
 app = FastAPI(title="Broker Announcement API")
 
@@ -164,7 +177,11 @@ def read_announcement_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     return fieldnames, records
 
 
-def validate_publishable_csv(path: Path) -> tuple[list[dict[str, str]], int]:
+def is_broker_project_value(value: str | None) -> bool:
+    return str(value or "").strip().lower() == "true"
+
+
+def validate_publishable_csv(path: Path) -> tuple[list[str], list[dict[str, str]], int, int]:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as file:
             reader = csv.DictReader(file)
@@ -196,22 +213,39 @@ def validate_publishable_csv(path: Path) -> tuple[list[dict[str, str]], int]:
             detail="failed to read staging announcement CSV",
         ) from exc
 
+    source_count = len(records)
     if not records:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="staging announcement CSV does not contain valid records",
         )
-    return records, len(records)
+    publishable_records = [
+        row
+        for row in records
+        if is_broker_project_value(row.get(BROKER_PROJECT_HEADER))
+    ]
+    if not publishable_records:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="staging announcement CSV does not contain broker project records",
+        )
+    return fieldnames, publishable_records, source_count, source_count - len(publishable_records)
 
 
-def publish_csv_atomically(source_path: Path, target_path: Path) -> None:
+def publish_csv_atomically(
+    fieldnames: list[str],
+    records: list[dict[str, str]],
+    target_path: Path,
+) -> None:
     target_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = target_path.with_name(
         f".{target_path.stem}.{os.getpid()}.publish.tmp{target_path.suffix}"
     )
     try:
-        with source_path.open("rb") as source_file, temp_path.open("wb") as temp_file:
-            shutil.copyfileobj(source_file, temp_file)
+        with temp_path.open("w", encoding="utf-8-sig", newline="") as temp_file:
+            writer = csv.DictWriter(temp_file, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(records)
             temp_file.flush()
             os.fsync(temp_file.fileno())
         os.replace(temp_path, target_path)
@@ -281,6 +315,38 @@ def login(payload: LoginRequest) -> LoginResponse:
         role="user",
         is_admin=False,
     )
+
+
+@app.post("/api/users/apply")
+def apply_user(payload: UserApplyRequest) -> dict[str, object]:
+    name = payload.name.strip()
+    email = normalize_email(payload.email)
+    department = payload.department.strip()
+
+    if not name or not email or not department:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="未找到匹配资格，请联系管理员",
+        )
+
+    try:
+        user, initial_password = apply_for_user(name, email, department)
+    except QualificationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="未找到匹配资格，请联系管理员",
+        ) from exc
+    except UserStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to apply for user account",
+        ) from exc
+
+    return {
+        "user": user.to_dict(),
+        "username": user.username,
+        "initial_password": initial_password,
+    }
 
 
 @app.post("/api/jobs/scraper", dependencies=[Depends(require_admin_token)])
@@ -373,15 +439,18 @@ def publish_announcements() -> dict[str, object]:
                 detail="staging announcement CSV not found",
             )
 
-        records, count = validate_publishable_csv(staging_path)
-        publish_csv_atomically(staging_path, target_path)
+        fieldnames, records, source_count, excluded_count = validate_publishable_csv(staging_path)
+        publish_csv_atomically(fieldnames, records, target_path)
 
         published_at = datetime.now(timezone.utc).isoformat()
         updated_at = datetime.fromtimestamp(target_path.stat().st_mtime, timezone.utc).isoformat()
         return {
             "message": "推送成功",
             "meta": {
-                "count": count,
+                "count": len(records),
+                "source_count": source_count,
+                "published_count": len(records),
+                "excluded_count": excluded_count,
                 "published_at": published_at,
                 "updated_at": updated_at,
             },

@@ -60,7 +60,16 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         return bTime - aTime;
       });
     }
-    return data;
+    return [...data].sort((a, b) => {
+      const aTime = a.validPublishDate?.getTime();
+      const bTime = b.validPublishDate?.getTime();
+      const aHasDate = typeof aTime === "number";
+      const bHasDate = typeof bTime === "number";
+      if (aHasDate && bHasDate) return bTime! - aTime!;
+      if (aHasDate) return -1;
+      if (bHasDate) return 1;
+      return 0;
+    });
   }, [data, sortMode]);
 
   const columns: ColumnDef<ProcessedRecord>[] = useMemo(

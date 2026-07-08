@@ -101,6 +101,9 @@ export interface PublishAnnouncementsResponse {
   message: string;
   meta: {
     count: number;
+    source_count?: number;
+    published_count?: number;
+    excluded_count?: number;
     published_at: string;
     updated_at: string;
   };
@@ -127,6 +130,18 @@ export interface CreateAdminUserInput {
 
 export interface CreateAdminUserResponse {
   user: AdminUser;
+  initial_password: string;
+}
+
+export interface ApplyUserInput {
+  name: string;
+  email: string;
+  department: string;
+}
+
+export interface ApplyUserResponse {
+  user: AdminUser;
+  username: string;
   initial_password: string;
 }
 
@@ -195,6 +210,13 @@ export function loginAdmin(
   return requestJson<LoginResponse>("/api/login", {
     method: "POST",
     body: JSON.stringify({ username, password }),
+  });
+}
+
+export function applyForUser(input: ApplyUserInput): Promise<ApplyUserResponse> {
+  return requestJson<ApplyUserResponse>("/api/users/apply", {
+    method: "POST",
+    body: JSON.stringify(input),
   });
 }
 

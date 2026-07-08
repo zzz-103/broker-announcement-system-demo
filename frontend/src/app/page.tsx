@@ -17,7 +17,7 @@ import { BackendApiError } from "@/lib/api/backend-client";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardFilters } from "@/components/dashboard-filters";
 import { DashboardTabs } from "@/components/dashboard-tabs";
-import { LoginPage } from "@/components/login-page";
+import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
 import { HoverSelect } from "@/components/hover-select";
@@ -272,13 +272,13 @@ export default function Dashboard() {
   // Sort brokers by data volume (most records first)
   const sortedBrokers = useMemo(() => {
     const countMap = new Map<string, number>();
-    allData.forEach((r) => {
+    filteredData.forEach((r) => {
       if (r.validBrokerName && r.validBrokerName !== "主体待识别") {
         countMap.set(r.validBrokerName, (countMap.get(r.validBrokerName) || 0) + 1);
       }
     });
-    return [...brokerOptions].sort((a, b) => (countMap.get(b) || 0) - (countMap.get(a) || 0));
-  }, [allData, brokerOptions]);
+    return [...countMap.keys()].sort((a, b) => (countMap.get(b) || 0) - (countMap.get(a) || 0));
+  }, [filteredData]);
 
   // Measure header height for sticky tab bar positioning
   useLayoutEffect(() => {
@@ -348,7 +348,7 @@ export default function Dashboard() {
 
   // Show login page if not logged in
   if (!isLoggedIn) {
-    return <LoginPage />;
+    return <LoginPageWithApply />;
   }
 
   // Show admin dashboard if admin requested it

@@ -1,0 +1,59 @@
+services:
+  backend-api:
+    image: 172.16.96.238:5000/broker-backend:1.0.1
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - SCHEDULER_ENABLED=false
+    volumes:
+      - ./runtime/data:/app/backend/data
+      - ./runtime/scraper-output:/app/backend/python-http-www-cfcpn-com-jcw/output
+      - ./runtime/config/llm_api_config.json:/app/backend/config/llm_api_config.json:ro
+      - ./backend/data/csco_contacts_output.csv:/app/backend/data/csco_contacts_output.csv:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  backend-scheduler:
+    image: 172.16.96.238:5000/broker-backend:1.0.1
+    command: python -m backend.api.scheduler
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - SCHEDULER_ENABLED=true
+      - SCHEDULER_API_URL=http://backend-api:8000
+    depends_on:
+      backend-api:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  frontend:
+    image: 172.16.96.238:5000/broker-frontend:1.0.0
+    ports:
+      - "5000:3000"
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - PORT=3000
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"

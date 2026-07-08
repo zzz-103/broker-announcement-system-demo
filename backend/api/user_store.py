@@ -5,6 +5,7 @@ import hmac
 import os
 import secrets
 import sqlite3
+import csv
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = PROJECT_ROOT / "backend" / "data" / "users.db"
+DEFAULT_QUALIFICATION_CSV_PATH = PROJECT_ROOT / "backend" / "data" / "csco_contacts_output.csv"
 HASH_ITERATIONS = 210_000
 
 
@@ -28,6 +30,10 @@ class UserNotFoundError(UserStoreError):
 
 
 class InvalidUserCredentialsError(UserStoreError):
+    pass
+
+
+class QualificationNotFoundError(UserStoreError):
     pass
 
 
@@ -59,6 +65,14 @@ def resolve_user_db_path() -> Path:
     return path.resolve()
 
 
+def resolve_qualification_csv_path() -> Path:
+    configured = os.getenv("USER_QUALIFICATION_CSV_PATH")
+    path = Path(configured) if configured else DEFAULT_QUALIFICATION_CSV_PATH
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve()
+
+
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
@@ -67,8 +81,12 @@ def username_from_email(email: str) -> str:
     return email.split("@", 1)[0]
 
 
+def qualification_email_domain() -> str:
+    return os.getenv("USER_QUALIFICATION_EMAIL_DOMAIN", "csco.com.cn").strip().lower().lstrip("@")
+
+
 def generate_initial_password() -> str:
-    return f"{secrets.randbelow(1_000_000):06d}"
+    return "123456"
 
 
 def hash_password(password: str) -> str:
@@ -134,6 +152,24 @@ def row_to_user(row: sqlite3.Row) -> ApprovedUser:
     )
 
 
+def _fetch_user_by_email_or_username(
+    connection: sqlite3.Connection,
+    email: str,
+    username: str,
+) -> ApprovedUser | None:
+    row = connection.execute(
+        """
+        SELECT id, name, email, department, username, created_at
+        FROM approved_users
+        WHERE email = ? OR username = ?
+        ORDER BY id ASC
+        LIMIT 1
+        """,
+        (normalize_email(email), username.strip()),
+    ).fetchone()
+    return row_to_user(row) if row is not None else None
+
+
 def list_users() -> list[ApprovedUser]:
     try:
         with _connect() as connection:
@@ -192,6 +228,111 @@ def create_user(name: str, email: str, department: str) -> tuple[ApprovedUser, s
     if row is None:
         raise UserStoreError("failed to create user")
     return row_to_user(row), initial_password
+
+
+def create_or_get_user(
+    name: str,
+    email: str,
+    department: str,
+    username: str | None = None,
+) -> tuple[ApprovedUser, str]:
+    normalized_email = normalize_email(email)
+    resolved_username = (username or username_from_email(normalized_email)).strip()
+    initial_password = generate_initial_password()
+    password_hash = hash_password(initial_password)
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    try:
+        with _connect() as connection:
+            ensure_schema(connection)
+            existing = _fetch_user_by_email_or_username(connection, normalized_email, resolved_username)
+            if existing is not None:
+                return existing, initial_password
+
+            cursor = connection.execute(
+                """
+                INSERT INTO approved_users
+                    (name, email, department, username, password_hash, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    name.strip(),
+                    normalized_email,
+                    department.strip(),
+                    resolved_username,
+                    password_hash,
+                    created_at,
+                ),
+            )
+            connection.commit()
+            row = connection.execute(
+                """
+                SELECT id, name, email, department, username, created_at
+                FROM approved_users
+                WHERE id = ?
+                """,
+                (cursor.lastrowid,),
+            ).fetchone()
+    except sqlite3.IntegrityError:
+        try:
+            with _connect() as connection:
+                ensure_schema(connection)
+                existing = _fetch_user_by_email_or_username(connection, normalized_email, resolved_username)
+        except sqlite3.Error as exc:
+            raise UserStoreError("failed to load existing user") from exc
+        if existing is not None:
+            return existing, initial_password
+        raise DuplicateUserError("email or username already exists")
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to create user") from exc
+
+    if row is None:
+        raise UserStoreError("failed to create user")
+    return row_to_user(row), initial_password
+
+
+def find_qualified_contact(name: str, email: str) -> tuple[str, str, str]:
+    normalized_name = name.strip()
+    normalized_email = normalize_email(email)
+    domain = qualification_email_domain()
+    if not normalized_name or not normalized_email.endswith(f"@{domain}"):
+        raise QualificationNotFoundError("qualification not found")
+
+    csv_path = resolve_qualification_csv_path()
+    try:
+        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
+            reader = csv.DictReader(file)
+            required_headers = {"姓名中文", "邮箱", "邮箱前缀"}
+            fieldnames = set(reader.fieldnames or [])
+            if not required_headers.issubset(fieldnames):
+                raise UserStoreError("qualification CSV headers are invalid")
+            for row in reader:
+                row_name = str(row.get("姓名中文") or "").strip()
+                row_email = normalize_email(str(row.get("邮箱") or ""))
+                row_prefix = str(row.get("邮箱前缀") or "").strip()
+                if row_name == normalized_name and row_email == normalized_email and row_prefix:
+                    return row_name, row_email, row_prefix
+    except FileNotFoundError as exc:
+        raise UserStoreError("qualification CSV not found") from exc
+    except OSError as exc:
+        raise UserStoreError("failed to read qualification CSV") from exc
+    except csv.Error as exc:
+        raise UserStoreError("qualification CSV is invalid") from exc
+
+    raise QualificationNotFoundError("qualification not found")
+
+
+def apply_for_user(name: str, email: str, department: str) -> tuple[ApprovedUser, str]:
+    department_value = department.strip()
+    if not department_value:
+        raise QualificationNotFoundError("qualification not found")
+    qualified_name, qualified_email, username = find_qualified_contact(name, email)
+    return create_or_get_user(
+        name=qualified_name,
+        email=qualified_email,
+        department=department_value,
+        username=username,
+    )
 
 
 def authenticate_user(username: str, password: str) -> ApprovedUser:

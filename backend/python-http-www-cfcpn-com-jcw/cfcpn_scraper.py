@@ -322,6 +322,10 @@ def main(argv: list[str] | None = None) -> int:
                         "completed": False,
                     },
                 )
+
+                processed = i + 1
+                if processed < N and not circuit_breaker:
+                    throttle.maybe_batch_rest(processed)
         else:
             if not circuit_breaker:
                 LOGGER.info("扫描结束，没有发现需要新增爬取的公告。")
@@ -629,7 +633,6 @@ def scan_page(
             )
             stats["skipped_by_date"] += 1
             page_stats["before_since_date"] = 1
-            throttle.maybe_batch_rest(stats["found"])
             break
 
         if not notice_id:
@@ -645,14 +648,12 @@ def scan_page(
                     "error": "list item has no id",
                 },
             )
-            throttle.maybe_batch_rest(stats["found"])
             continue
 
         if notice_id in processed_ids:
             LOGGER.info("本轮已处理，跳过：%s %s", notice_id, title)
             stats["skipped"] += 1
             page_stats["known_ids"] += 1
-            throttle.maybe_batch_rest(stats["found"])
             continue
         processed_ids.add(notice_id)
 
@@ -661,7 +662,6 @@ def scan_page(
             LOGGER.info("已存在，跳过：%s %s", notice_id, title)
             stats["skipped"] += 1
             page_stats["known_ids"] += 1
-            throttle.maybe_batch_rest(stats["found"])
             continue
 
         page_stats["new_ids"] += 1
@@ -670,7 +670,6 @@ def scan_page(
         list_item["_item_index"] = item_index
         list_item["_page_no"] = page_no
         todo_items.append(list_item)
-        throttle.maybe_batch_rest(stats["found"])
 
     return todo_items, page_stats
 

@@ -104,30 +104,52 @@ D:\broker-announcement-system-demo
 
 ```text
 frontend/
-├── src/app/page.tsx
-├── src/components/admin-dashboard.tsx
-├── src/components/login-page.tsx
-├── src/lib/api/backend-client.ts
-├── src/lib/announcement-data.ts
-├── src/store/auth-store.ts
-└── .env.example
+├── src/app/
+│   ├── page.tsx              # 看板主页面 (包含用户及管理员面板入口)
+│   ├── globals.css           # 全局样式
+│   └── layout.tsx            # 全局布局
+├── src/components/
+│   ├── admin-dashboard.tsx       # 管理员任务调度与配置控制台
+│   ├── admin-task-progress.tsx   # 任务统一进度条组件
+│   ├── admin-task-log-dialog.tsx # 详细日志弹窗组件
+│   ├── user-approval-manager.tsx # 用户审批及权限管理组件
+│   ├── login-page.tsx            # 登录页面组件
+│   ├── charts.tsx                # 图表组件 (数据看板)
+│   ├── project-table.tsx         # 招采项目表格展示
+│   ├── ai-summary.tsx            # AI 智能摘要展示
+│   └── executive-summary.tsx     # 核心指标与高管摘要
+├── src/lib/
+│   ├── api/
+│   │   └── backend-client.ts # 集中式 FastAPI 客户端封装
+│   ├── announcement-data.ts  # 数据模型定义与转换逻辑
+│   └── utils.ts              # 通用辅助工具
+├── src/store/
+│   ├── auth-store.ts         # 登录会话与 Token 状态管理
+│   └── filter-store.ts       # 筛选条件状态管理
+└── .env.example              # 前端环境变量模板
 
 backend/
 ├── api/
-│   ├── main.py
-│   ├── job_manager.py
-│   ├── scheduler.py
-│   └── requirements.txt
+│   ├── main.py               # FastAPI 后端入口及核心 API 路由
+│   ├── job_manager.py        # 子进程任务调度与状态管理锁
+│   ├── scheduler.py          # 独立定时任务调度进程 (APScheduler)
+│   ├── ai_analysis.py        # AI 智能情报分析处理逻辑
+│   ├── user_store.py         # 用户账号存储及 SQLite 数据库接口
+│   └── requirements.txt      # 后端 Python 依赖清单
 ├── config/
-│   └── llm_api_config.json
+│   ├── llm_api_config.json   # 外部 LLM API 密钥与配置 (不提交)
+│   └── llm_api_config.example.json # LLM 配置模板
 ├── data/
-│   ├── announcement_table.csv
-│   └── ai-analysis.json
+│   ├── announcement_table.csv  # 正式结构化招采数据 CSV (原子替换)
+│   ├── ai-analysis.json        # AI 情报分析结果缓存 JSON (原子替换)
+│   ├── users.db                # 用户账号 SQLite 数据库
+│   └── staging/
+│       └── announcement_table.csv # LLM 结构化提取候选临时数据
 ├── llm_table/
-│   └── llm_markdown_table_builder.py
+│   └── llm_markdown_table_builder.py # LLM 结构化表格提取与解析脚本
 └── python-http-www-cfcpn-com-jcw/
-    ├── cfcpn_scraper.py
-    └── output/notices/
+    ├── cfcpn_scraper.py      # 爬虫抓取脚本
+    └── output/notices/       # 爬虫抓取输出 notices 目录 (.md 格式)
 ```
 
 旧运行时数据源 `frontend/public/data/announcement_table.csv` 不再作为正式数据源。正式结构化数据默认位于 `backend/data/announcement_table.csv`。
