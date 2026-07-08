@@ -1,9 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import csv
 import os
 import secrets
+import shutil
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
@@ -25,6 +27,7 @@ from .user_store import (
     DuplicateUserError,
     InvalidUserCredentialsError,
     QualificationNotFoundError,
+    QualificationServiceUnavailableError,
     UserNotFoundError,
     UserStoreError,
     apply_for_user,
@@ -88,15 +91,33 @@ class UserApplyRequest(BaseModel):
     department: str
 
 
+class LlmJobRequest(BaseModel):
+    mode: str = "incremental"
+    overwrite: bool = False
+
+    class Config:
+        extra = "forbid"
+
+
 job_manager = JobManager()
 session_tokens: dict[str, dict[str, str | bool]] = {}
 BROKER_PROJECT_HEADER = "is_broker_project"
+QUALIFICATION_NOT_FOUND_MESSAGE = "\u672a\u627e\u5230\u5339\u914d\u8d44\u683c\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
+QUALIFICATION_SERVICE_UNAVAILABLE_MESSAGE = "\u8d44\u683c\u670d\u52a1\u6682\u4e0d\u53ef\u7528\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
 ANNOUNCEMENT_REQUIRED_HEADERS = {
     "broker_name",
     BROKER_PROJECT_HEADER,
     "project_name",
     "publish_date",
 }
+PUBLISH_MIN_RETAIN_RATIO = 0.5
+
+
+@dataclass
+class PublishPlan:
+    fieldnames: list[str]
+    records: list[dict[str, str]]
+    meta: dict[str, object]
 
 app = FastAPI(title="Broker Announcement API")
 
@@ -177,11 +198,34 @@ def read_announcement_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     return fieldnames, records
 
 
-def is_broker_project_value(value: str | None) -> bool:
-    return str(value or "").strip().lower() == "true"
+def broker_project_classification(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "true":
+        return "true"
+    if normalized == "false":
+        return "false"
+    return "empty"
 
 
-def validate_publishable_csv(path: Path) -> tuple[list[str], list[dict[str, str]], int, int]:
+def publish_min_retain_ratio() -> float:
+    raw = os.getenv("PUBLISH_MIN_RETAIN_RATIO", str(PUBLISH_MIN_RETAIN_RATIO)).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return PUBLISH_MIN_RETAIN_RATIO
+    if value <= 0 or value > 1:
+        return PUBLISH_MIN_RETAIN_RATIO
+    return value
+
+
+def count_csv_records(path: Path) -> int:
+    if not path.exists():
+        return 0
+    _, records = read_announcement_csv(path)
+    return len([row for row in records if any(str(value or "").strip() for value in row.values())])
+
+
+def validate_publishable_csv(path: Path, previous_count: int) -> PublishPlan:
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as file:
             reader = csv.DictReader(file)
@@ -213,23 +257,66 @@ def validate_publishable_csv(path: Path) -> tuple[list[str], list[dict[str, str]
             detail="failed to read staging announcement CSV",
         ) from exc
 
-    source_count = len(records)
+    staging_count = len(records)
     if not records:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="staging announcement CSV does not contain valid records",
         )
-    publishable_records = [
-        row
-        for row in records
-        if is_broker_project_value(row.get(BROKER_PROJECT_HEADER))
-    ]
+
+    true_records: list[dict[str, str]] = []
+    false_count = 0
+    empty_count = 0
+    for row in records:
+        classification = broker_project_classification(row.get(BROKER_PROJECT_HEADER))
+        if classification == "true":
+            true_records.append(row)
+        elif classification == "false":
+            false_count += 1
+        else:
+            empty_count += 1
+
+    publishable_records = true_records
+    meta: dict[str, object] = {
+        "staging_count": staging_count,
+        "source_count": staging_count,
+        "true_count": len(true_records),
+        "false_count": false_count,
+        "empty_count": empty_count,
+        "previous_count": previous_count,
+        "published_count": len(publishable_records),
+        "excluded_count": false_count,
+    }
+
+    if empty_count:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "staging announcement CSV contains unclassified broker project records",
+                "meta": meta,
+            },
+        )
     if not publishable_records:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="staging announcement CSV does not contain broker project records",
+            detail={
+                "message": "staging announcement CSV does not contain broker project records",
+                "meta": meta,
+            },
         )
-    return fieldnames, publishable_records, source_count, source_count - len(publishable_records)
+
+    min_retain_ratio = publish_min_retain_ratio()
+    if previous_count > 0 and len(publishable_records) < previous_count * min_retain_ratio:
+        meta["min_retain_ratio"] = min_retain_ratio
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "published record count dropped too much; refusing to overwrite official CSV",
+                "meta": meta,
+            },
+        )
+
+    return PublishPlan(fieldnames=fieldnames, records=publishable_records, meta=meta)
 
 
 def publish_csv_atomically(
@@ -260,6 +347,35 @@ def publish_csv_atomically(
                 temp_path.unlink()
             except OSError:
                 pass
+
+
+def backup_csv_atomically(target_path: Path) -> str | None:
+    if not target_path.exists():
+        return None
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup_path = target_path.with_name(f"{target_path.stem}-{timestamp}.backup{target_path.suffix}")
+    temp_path = target_path.with_name(
+        f".{target_path.stem}.{os.getpid()}.backup.tmp{target_path.suffix}"
+    )
+    try:
+        with target_path.open("rb") as source, temp_path.open("wb") as temp_file:
+            shutil.copyfileobj(source, temp_file)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, backup_path)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to backup announcement CSV",
+        ) from exc
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+    return backup_path.name
 
 
 @app.post("/api/login", response_model=LoginResponse)
@@ -326,15 +442,22 @@ def apply_user(payload: UserApplyRequest) -> dict[str, object]:
     if not name or not email or not department:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="未找到匹配资格，请联系管理员",
+            detail=QUALIFICATION_NOT_FOUND_MESSAGE,
         )
+
 
     try:
         user, initial_password = apply_for_user(name, email, department)
+    except QualificationServiceUnavailableError as exc:
+        print(f"Qualification service unavailable: {exc.__class__.__name__}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=QUALIFICATION_SERVICE_UNAVAILABLE_MESSAGE,
+        ) from exc
     except QualificationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="未找到匹配资格，请联系管理员",
+            detail=QUALIFICATION_NOT_FOUND_MESSAGE,
         ) from exc
     except UserStoreError as exc:
         raise HTTPException(
@@ -359,9 +482,26 @@ def start_scraper() -> dict[str, str]:
 
 
 @app.post("/api/jobs/llm", dependencies=[Depends(require_admin_token)])
-def start_llm() -> dict[str, str]:
+def start_llm(payload: LlmJobRequest | None = None) -> dict[str, str]:
+    mode = (payload.mode if payload else "incremental").strip()
+    overwrite = bool(payload.overwrite) if payload else False
+    if mode not in {"incremental", "full_refresh"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="invalid LLM mode",
+        )
+    if mode == "incremental" and overwrite:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="overwrite is only allowed for full_refresh mode",
+        )
+    if mode == "full_refresh" and not overwrite:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="full_refresh mode requires overwrite=true",
+        )
     try:
-        job = job_manager.start_llm()
+        job = job_manager.start_llm(mode=mode, overwrite=overwrite)
     except JobConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
@@ -439,21 +579,23 @@ def publish_announcements() -> dict[str, object]:
                 detail="staging announcement CSV not found",
             )
 
-        fieldnames, records, source_count, excluded_count = validate_publishable_csv(staging_path)
-        publish_csv_atomically(fieldnames, records, target_path)
+        previous_count = count_csv_records(target_path)
+        publish_plan = validate_publishable_csv(staging_path, previous_count)
+        backup_name = backup_csv_atomically(target_path)
+        publish_csv_atomically(publish_plan.fieldnames, publish_plan.records, target_path)
 
         published_at = datetime.now(timezone.utc).isoformat()
         updated_at = datetime.fromtimestamp(target_path.stat().st_mtime, timezone.utc).isoformat()
+        meta = {
+            **publish_plan.meta,
+            "count": len(publish_plan.records),
+            "published_at": published_at,
+            "updated_at": updated_at,
+            "backup_file": backup_name,
+        }
         return {
             "message": "推送成功",
-            "meta": {
-                "count": len(records),
-                "source_count": source_count,
-                "published_count": len(records),
-                "excluded_count": excluded_count,
-                "published_at": published_at,
-                "updated_at": updated_at,
-            },
+            "meta": meta,
         }
     finally:
         job_manager.release_operation("publish")

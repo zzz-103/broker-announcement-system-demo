@@ -101,11 +101,17 @@ export interface PublishAnnouncementsResponse {
   message: string;
   meta: {
     count: number;
+    staging_count?: number;
+    true_count?: number;
+    false_count?: number;
+    empty_count?: number;
+    previous_count?: number;
     source_count?: number;
     published_count?: number;
     excluded_count?: number;
     published_at: string;
     updated_at: string;
+    backup_file?: string | null;
   };
 }
 
@@ -167,8 +173,15 @@ export class SseParseError extends Error {
 
 async function readError(response: Response): Promise<string> {
   try {
-    const data = (await response.json()) as { detail?: string; error?: string };
-    return data.detail || data.error || response.statusText;
+    const data = (await response.json()) as { detail?: unknown; error?: unknown };
+    const detail = data.detail ?? data.error;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
+      const payload = detail as { message?: unknown; meta?: unknown };
+      const message = typeof payload.message === "string" ? payload.message : response.statusText;
+      return payload.meta ? `${message}: ${JSON.stringify(payload.meta)}` : message;
+    }
+    return response.statusText;
   } catch {
     return response.statusText || "Request failed";
   }
@@ -224,12 +237,22 @@ export function startScraperJob(token: string): Promise<StartJobResponse> {
   return startJob("scraper", token);
 }
 
-export function startJob(jobType: JobType, token: string): Promise<StartJobResponse> {
+export interface StartLlmJobOptions {
+  mode?: "incremental" | "full_refresh";
+  overwrite?: boolean;
+}
+
+export function startJob(
+  jobType: JobType,
+  token: string,
+  options?: StartLlmJobOptions,
+): Promise<StartJobResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
+  const body = jobType === "llm" && options ? JSON.stringify(options) : undefined;
   return requestJson<StartJobResponse>(
     `/api/jobs/${jobType}`,
-    { method: "POST", signal: controller.signal },
+    { method: "POST", signal: controller.signal, body },
     token,
   ).finally(() => clearTimeout(timer));
 }

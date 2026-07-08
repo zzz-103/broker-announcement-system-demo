@@ -467,7 +467,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   );
 
   const runJob = useCallback(
-    async (jobType: JobType) => {
+    async (jobType: JobType, options?: { mode?: "incremental" | "full_refresh"; overwrite?: boolean }) => {
       if (activeOperationRef.current) return;
       if (!token) {
         handleUnauthorized();
@@ -559,7 +559,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       };
 
       try {
-        const started = await startJob(jobType, token);
+        const started = await startJob(jobType, token, options);
         jobId = started.job_id;
         currentJobIdRef.current = jobId;
         saveActiveJob(jobId, jobType);
@@ -696,6 +696,14 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       token,
     ],
   );
+
+  const runFullRefresh = useCallback(async () => {
+    const confirmed = window.confirm(
+      "确认执行 LLM 全量重建？该操作会重新请求全部 Markdown，并覆盖已有 raw_json 缓存。普通增量任务不受影响。",
+    );
+    if (!confirmed) return;
+    await runJob("llm", { mode: "full_refresh", overwrite: true });
+  }, [runJob]);
 
   useEffect(() => {
     if (!token || activeOperationRef.current) return;
@@ -849,6 +857,14 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     try {
       const result = await publishAnnouncements(token, controller.signal);
       if (controller.signal.aborted || !mountedRef.current) return;
+      {
+        const backupText = result.meta.backup_file ? `，备份：${result.meta.backup_file}` : "";
+        const summary = `推送成功，正式发布 ${result.meta.published_count ?? result.meta.count} 条；staging ${result.meta.staging_count ?? result.meta.source_count ?? "unknown"} 条，false ${result.meta.false_count ?? 0} 条，空值 ${result.meta.empty_count ?? 0} 条${backupText}。`;
+        appendLog("llm", "system", summary);
+        finalizeTask("publish", "succeeded", summary);
+        onDataRefresh?.();
+        return;
+      }
       const summary = `推送成功，正式看板数据已更新（${result.meta.count} 条记录）。`;
       appendLog("llm", "system", summary);
       finalizeTask("publish", "succeeded", summary);
@@ -1112,6 +1128,15 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                             "运行 LLM"
                           )}
                         </GlowButton>
+                        <Button
+                          type="button"
+                          onClick={() => void runFullRefresh()}
+                          disabled={isBusy}
+                          variant="outline"
+                          className="h-10 text-xs font-semibold border-amber-200 text-amber-700 hover:bg-amber-50 flex-[3] flex items-center justify-center gap-1"
+                        >
+                          全量重建
+                        </Button>
                         <Button
                           type="button"
                           onClick={() => void runPublish()}

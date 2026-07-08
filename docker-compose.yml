@@ -1,6 +1,6 @@
 services:
   backend-api:
-    image: 172.16.96.238:5000/broker-backend:1.0.1
+    image: 172.16.96.238:5000/broker-backend:1.2.0
     ports:
       - "8000:8000"
     restart: unless-stopped
@@ -12,7 +12,7 @@ services:
       - ./runtime/data:/app/backend/data
       - ./runtime/scraper-output:/app/backend/python-http-www-cfcpn-com-jcw/output
       - ./runtime/config/llm_api_config.json:/app/backend/config/llm_api_config.json:ro
-      - ./backend/data/csco_contacts_output.csv:/app/backend/data/csco_contacts_output.csv:ro
+      - ./runtime/config/user_qualification.csv:/app/backend/config/user_qualification.csv:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 10s
@@ -26,7 +26,7 @@ services:
         max-file: "5"
 
   backend-scheduler:
-    image: 172.16.96.238:5000/broker-backend:1.0.1
+    image: 172.16.96.238:5000/broker-backend:1.2.0
     command: python -m backend.api.scheduler
     restart: unless-stopped
     env_file:
@@ -44,12 +44,10 @@ services:
         max-file: "5"
 
   frontend:
-    image: 172.16.96.238:5000/broker-frontend:1.0.0
+    image: 172.16.96.238:5000/broker-frontend:1.2.0
     ports:
       - "5000:3000"
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       - PORT=3000
     logging:

@@ -67,8 +67,11 @@ class JobManager:
     def start_scraper(self) -> Job:
         return self._start_job("scraper", self._build_scraper_command)
 
-    def start_llm(self) -> Job:
-        return self._start_job("llm", self._build_llm_command)
+    def start_llm(self, *, mode: str = "incremental", overwrite: bool = False) -> Job:
+        return self._start_job(
+            "llm",
+            lambda: self._build_llm_command(mode=mode, overwrite=overwrite),
+        )
 
     def start_pipeline(self) -> Job:
         """Start a pipeline job: scraper -> LLM -> AI analysis."""
@@ -558,7 +561,12 @@ class JobManager:
         env.setdefault("PYTHONIOENCODING", "utf-8")
         return command, working_dir, env
 
-    def _build_llm_command(self) -> tuple[list[str], Path, dict[str, str]]:
+    def _build_llm_command(
+        self,
+        *,
+        mode: str = "incremental",
+        overwrite: bool = False,
+    ) -> tuple[list[str], Path, dict[str, str]]:
         project_root = Path(__file__).resolve().parents[2]
         default_script = project_root / "backend" / "llm_table" / "llm_markdown_table_builder.py"
         default_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "notices"
@@ -602,6 +610,8 @@ class JobManager:
             "--workers",
             workers,
         ]
+        if mode == "full_refresh" and overwrite:
+            command.extend(["--full-refresh", "--overwrite"])
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("PYTHONIOENCODING", "utf-8")

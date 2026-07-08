@@ -644,10 +644,38 @@ POST /api/jobs/{job_id}/cancel
 
 每次修改至少完成与任务相关的验证。
 
+### 本仓库常用验证命令（Windows / PowerShell）
+
+为避免在当前 Windows 环境中反复试错，Codex 优先使用以下命令：
+
+```powershell
+# Python 语法验证（常规）
+.\.venv\Scripts\python.exe -m py_compile backend\api\main.py backend\api\user_store.py backend\api\job_manager.py backend\llm_table\llm_markdown_table_builder.py
+
+# 如果 py_compile 出现 WinError 5 / __pycache__ 写入权限问题，不要反复重试；
+# 只允许改用一次内存 compile 验证语法，或按权限规则申请提升权限后重跑 py_compile。
+.\.venv\Scripts\python.exe -c "from pathlib import Path; files=['backend/api/main.py','backend/api/user_store.py','backend/api/job_manager.py','backend/llm_table/llm_markdown_table_builder.py']; [compile(Path(f).read_text(encoding='utf-8-sig'), f, 'exec') for f in files]; print('syntax ok')"
+
+# 前端 TypeScript 验证
+cd frontend
+.\node_modules\.bin\tsc.cmd -p tsconfig.json
+
+# 前端 Next 构建验证
+.\node_modules\.bin\next.cmd build
+```
+
+前端验证规则：
+
+1. 在 Windows/PowerShell 中，`pnpm build` 可能因为 bash 包装脚本输出异常或 `.next` 产物权限问题失败；不要连续反复执行。
+2. 优先执行 `.\node_modules\.bin\tsc.cmd -p tsconfig.json` 和 `.\node_modules\.bin\next.cmd build`。
+3. 如果 `next build` 报 `.next` 下 `EPERM unlink/rename`，先说明是构建产物权限问题；如确需完整构建验证，只申请一次权限删除 `frontend\.next` 后重跑 `next build`。
+4. 只有 `next build` 真实完成并退出 0，才能写“前端构建通过”；只有 `tsc` 退出 0，才能写“TypeScript 验证通过”。
+5. 不要把 `pnpm build` 包装脚本失败但底层 `next build` 通过，描述为 `pnpm build` 通过。
+
 ### 后端基础验证
 
 ```powershell
-.\.venv\Scripts\python.exe -m py_compile backend\api\main.py backend\api\job_manager.py
+.\.venv\Scripts\python.exe -m py_compile backend\api\main.py backend\api\user_store.py backend\api\job_manager.py backend\llm_table\llm_markdown_table_builder.py
 ```
 
 按需验证：
@@ -666,7 +694,9 @@ POST /api/jobs/{job_id}/cancel
 ### 前端基础验证
 
 ```powershell
-pnpm build
+cd frontend
+.\node_modules\.bin\tsc.cmd -p tsconfig.json
+.\node_modules\.bin\next.cmd build
 ```
 
 按需验证：

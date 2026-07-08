@@ -1,7 +1,8 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import hmac
+import io
 import os
 import secrets
 import sqlite3
@@ -13,7 +14,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = PROJECT_ROOT / "backend" / "data" / "users.db"
-DEFAULT_QUALIFICATION_CSV_PATH = PROJECT_ROOT / "backend" / "data" / "csco_contacts_output.csv"
+DEFAULT_QUALIFICATION_CSV_PATH = PROJECT_ROOT / "backend" / "config" / "user_qualification.csv"
 HASH_ITERATIONS = 210_000
 
 
@@ -34,6 +35,10 @@ class InvalidUserCredentialsError(UserStoreError):
 
 
 class QualificationNotFoundError(UserStoreError):
+    pass
+
+
+class QualificationServiceUnavailableError(UserStoreError):
     pass
 
 
@@ -83,6 +88,18 @@ def username_from_email(email: str) -> str:
 
 def qualification_email_domain() -> str:
     return os.getenv("USER_QUALIFICATION_EMAIL_DOMAIN", "csco.com.cn").strip().lower().lstrip("@")
+
+
+def read_qualification_csv_text(path: Path) -> str:
+    last_error: UnicodeError | None = None
+    for encoding in ("utf-8-sig", "gb18030"):
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeError as exc:
+            last_error = exc
+    if last_error is not None:
+        raise QualificationServiceUnavailableError("qualification CSV encoding is invalid") from last_error
+    raise QualificationServiceUnavailableError("qualification CSV encoding is invalid")
 
 
 def generate_initial_password() -> str:
@@ -300,24 +317,26 @@ def find_qualified_contact(name: str, email: str) -> tuple[str, str, str]:
 
     csv_path = resolve_qualification_csv_path()
     try:
-        with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-            reader = csv.DictReader(file)
-            required_headers = {"姓名中文", "邮箱", "邮箱前缀"}
-            fieldnames = set(reader.fieldnames or [])
-            if not required_headers.issubset(fieldnames):
-                raise UserStoreError("qualification CSV headers are invalid")
-            for row in reader:
-                row_name = str(row.get("姓名中文") or "").strip()
-                row_email = normalize_email(str(row.get("邮箱") or ""))
-                row_prefix = str(row.get("邮箱前缀") or "").strip()
-                if row_name == normalized_name and row_email == normalized_email and row_prefix:
-                    return row_name, row_email, row_prefix
+        reader = csv.DictReader(io.StringIO(read_qualification_csv_text(csv_path)))
+        fieldnames = set(reader.fieldnames or [])
+        required_headers = {"姓名中文", "邮箱", "邮箱前缀"}
+        if not required_headers.issubset(fieldnames):
+            raise QualificationServiceUnavailableError("qualification CSV headers are invalid")
+        for row in reader:
+            row_name = str(row.get("姓名中文") or "").strip()
+            row_email = normalize_email(str(row.get("邮箱") or ""))
+            row_prefix = str(row.get("邮箱前缀") or "").strip()
+            if row_name == normalized_name and row_email == normalized_email and row_prefix:
+                return row_name, row_email, row_prefix
+        raise QualificationNotFoundError("qualification not found")
     except FileNotFoundError as exc:
-        raise UserStoreError("qualification CSV not found") from exc
+        raise QualificationServiceUnavailableError("qualification CSV not found") from exc
     except OSError as exc:
-        raise UserStoreError("failed to read qualification CSV") from exc
+        raise QualificationServiceUnavailableError("failed to read qualification CSV") from exc
+    except UnicodeError as exc:
+        raise QualificationServiceUnavailableError("qualification CSV encoding is invalid") from exc
     except csv.Error as exc:
-        raise UserStoreError("qualification CSV is invalid") from exc
+        raise QualificationServiceUnavailableError("qualification CSV is invalid") from exc
 
     raise QualificationNotFoundError("qualification not found")
 

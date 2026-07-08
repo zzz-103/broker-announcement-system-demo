@@ -1290,6 +1290,13 @@ def main() -> int:
         overwrite=args.overwrite,
     )
     plans = selection.plans
+    cache_reused_files = sum(
+        1
+        for plan in plans
+        if not plan.force_refresh
+        and (output_dir / "raw_json" / plan.path.relative_to(input_dir).with_suffix(".json")).exists()
+    )
+    llm_requested_files = len(plans) - cache_reused_files
 
     if not plans and args.incremental:
         emit_progress("completed", 100, "没有新增或变更文件，沿用现有候选结果。")
@@ -1302,6 +1309,8 @@ def main() -> int:
             "api_base_url": llm_config.base_url,
             "incremental": True,
             "discovered_files": len(discovered_files),
+            "llm_requested_files": 0,
+            "cache_reused_files": 0,
             "processed_files": 0,
             "skipped_unchanged_files": len(selection.skipped_files),
             "new_files": 0,
@@ -1325,6 +1334,9 @@ def main() -> int:
     request_semaphore = threading.Semaphore(max_concurrent_requests)
     request_start_lock = threading.Lock() if args.min_interval_seconds > 0 else None
     next_allowed_call_at = [0.0]
+    print(f"discovered_files={len(discovered_files)}")
+    print(f"llm_requested_files={llm_requested_files}")
+    print(f"cache_reused_files={cache_reused_files}")
 
     print(f"扫描到 Markdown 文件数: {len(discovered_files)}")
     print(f"本次待处理文件数: {len(plans)}")
@@ -1462,6 +1474,8 @@ def main() -> int:
         "api_base_url": llm_config.base_url,
         "incremental": args.incremental,
         "discovered_files": len(discovered_files),
+        "llm_requested_files": llm_requested_files,
+        "cache_reused_files": cache_reused_files,
         "processed_files": len(plans),
         "skipped_unchanged_files": len(selection.skipped_files),
         "new_files": len(selection.new_files),

@@ -33,6 +33,10 @@ export function LoginPageWithApply() {
     password: string;
   } | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "username" | "password" | "failed">("idle");
+  const [coords, setCoords] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+  const [btnCoords, setBtnCoords] = useState({ x: 0, y: 0 });
+  const [btnHovered, setBtnHovered] = useState(false);
 
   const login = useAuthStore((s) => s.login);
   const authError = useAuthStore((s) => s.error);
@@ -95,11 +99,59 @@ export function LoginPageWithApply() {
     setCopyState("idle");
   };
 
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setCoords({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+  };
+
+  const handleBtnMouseMove = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setBtnCoords({
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    });
+  };
+
+  const circleX = isHovered ? (coords.x - 250) * 0.18 : 0;
+  const circleY = isHovered ? (coords.y - 300) * 0.18 : 0;
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F5F7FA] p-4 sm:p-6 md:p-8">
-      <div className="w-full max-w-[1080px] min-h-[600px] bg-white rounded-[20px] shadow-xl border border-[#E4E9F0] overflow-hidden flex flex-col md:flex-row">
-        <div className="w-full md:w-[52%] bg-gradient-to-br from-[#0F2038] via-[#162B49] to-[#2563EB] p-8 md:p-12 text-white flex flex-col justify-between relative overflow-hidden shrink-0">
+    <div className="min-h-screen flex items-center justify-center bg-[#F5F7FA] p-4 sm:p-6 md:p-8 relative">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[10%] right-[15%] w-[45vw] h-[45vw] max-w-[600px] bg-blue-100/40 rounded-full opacity-60 blur-3xl" />
+        <div className="absolute bottom-[10%] left-[10%] w-[40vw] h-[40vw] max-w-[500px] bg-indigo-100/50 rounded-full opacity-60 blur-3xl" />
+      </div>
+      <div className="relative w-full max-w-[1080px] min-h-[600px] bg-white rounded-[20px] shadow-xl border border-[#E4E9F0] overflow-hidden flex flex-col md:flex-row">
+        <div
+          onMouseMove={handleMouseMove}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+          className="w-full md:w-[52%] bg-gradient-to-br from-[#0F2038] via-[#162B49] to-[#2563EB] p-8 md:p-12 text-white flex flex-col justify-between relative overflow-hidden shrink-0"
+        >
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+          {isHovered && (
+            <div
+              className="absolute pointer-events-none rounded-full bg-white/[0.15] blur-[70px] transition-opacity duration-300"
+              style={{
+                width: "320px",
+                height: "320px",
+                left: `${coords.x - 160}px`,
+                top: `${coords.y - 160}px`,
+                transform: "translate3d(0, 0, 0)",
+              }}
+            />
+          )}
+          <div
+            className="absolute -top-20 -left-20 w-60 h-60 bg-blue-500/18 rounded-full blur-3xl pointer-events-none transition-transform duration-500 ease-out"
+            style={{ transform: `translate3d(${circleX}px, ${circleY}px, 0)` }}
+          />
+          <div
+            className="absolute -bottom-20 -right-20 w-60 h-60 bg-indigo-500/22 rounded-full blur-3xl pointer-events-none transition-transform duration-700 ease-out"
+            style={{ transform: `translate3d(${-circleX}px, ${-circleY}px, 0)` }}
+          />
           <div className="relative z-10">
             <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-white/15 backdrop-blur-lg border border-white/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)] mb-6 md:mb-10">
               <Lock className="w-10 h-10 text-white" />
@@ -181,8 +233,23 @@ export function LoginPageWithApply() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-12 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    onMouseMove={handleBtnMouseMove}
+                    onMouseEnter={() => setBtnHovered(true)}
+                    onMouseLeave={() => setBtnHovered(false)}
+                    className="relative overflow-hidden w-full h-12 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
+                    {btnHovered && !loading && (
+                      <span
+                        className="absolute pointer-events-none rounded-full bg-white/20 blur-md transition-opacity duration-300"
+                        style={{
+                          width: "80px",
+                          height: "80px",
+                          left: `${btnCoords.x - 40}px`,
+                          top: `${btnCoords.y - 40}px`,
+                          transform: "translate3d(0, 0, 0)",
+                        }}
+                      />
+                    )}
                     {loading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -206,11 +273,8 @@ export function LoginPageWithApply() {
                     className="w-full h-10 rounded-lg border border-[#E4E9F0] text-sm font-semibold text-[#162B49] hover:bg-[#F8FAFC] active:scale-[0.99] transition-all flex items-center justify-center gap-2"
                   >
                     <UserPlus className="w-4 h-4" />
-                    申请资格
+                    资格体验
                   </button>
-                  <p className="text-xs text-[#98A2B3] text-center">
-                    管理员账号可进入控制台并运行后端任务
-                  </p>
                 </div>
               </>
             )}
@@ -226,32 +290,47 @@ export function LoginPageWithApply() {
                     <ArrowLeft className="w-3.5 h-3.5" />
                     返回登录
                   </button>
-                  <h2 className="text-2xl font-bold text-[#172033]">申请资格</h2>
+                  <h2 className="text-2xl font-bold text-[#172033]">资格体验</h2>
                   <p className="text-sm text-[#667085] mt-1.5">
                     请使用公司工作邮箱提交资格申请
                   </p>
                 </div>
                 <form onSubmit={handleApply} className="space-y-4">
-                  <TextField label="姓名" value={applyName} onChange={setApplyName} placeholder="张三" />
+                  <TextField label="姓名" value={applyName} onChange={setApplyName} placeholder="示例：张三" />
                   <TextField
                     label="工作邮箱"
                     value={applyEmail}
                     onChange={setApplyEmail}
-                    placeholder="example@csco.com.cn"
+                    placeholder="示例：example@csco.com.cn"
                     type="email"
                   />
                   <TextField
                     label="部门"
                     value={applyDepartment}
                     onChange={setApplyDepartment}
-                    placeholder="信息技术部"
+                    placeholder="示例：信息技术部"
                   />
                   {error && <ErrorMessage message={error} />}
                   <button
                     type="submit"
                     disabled={applyLoading}
-                    className="w-full h-12 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    onMouseMove={handleBtnMouseMove}
+                    onMouseEnter={() => setBtnHovered(true)}
+                    onMouseLeave={() => setBtnHovered(false)}
+                    className="relative overflow-hidden w-full h-12 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                   >
+                    {btnHovered && !applyLoading && (
+                      <span
+                        className="absolute pointer-events-none rounded-full bg-white/20 blur-md transition-opacity duration-300"
+                        style={{
+                          width: "80px",
+                          height: "80px",
+                          left: `${btnCoords.x - 40}px`,
+                          top: `${btnCoords.y - 40}px`,
+                          transform: "translate3d(0, 0, 0)",
+                        }}
+                      />
+                    )}
                     {applyLoading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
