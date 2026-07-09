@@ -808,11 +808,13 @@ Codex 必须遵守：
 - 自动化流水线（Pipeline）一键运行功能（串联 scraper -> llm -> analysis）与 API 触发
 - 独立定时任务调度进程（Scheduler），基于 APScheduler 实现 CRON 调度，持有 `X-Scheduler-Token` 安全头进行内部验证触发
 - 任务取消机制：通过 `POST /api/jobs/{job_id}/cancel` 支持中止运行中的子进程或流水线
+- 采购公告与结果公告规则匹配器（`backend/matching/project_matcher.py`），输出匹配、候选分数、未匹配结果和运行摘要
 
 待完成或待最终验收：
 
 - 真实端到端流程验证（爬虫→LLM→推送→看板刷新全链路）
 - 真实 LLM AI 情报分析调用验证（需 llm_api_config.json 配置）
+- 真实结果公告数据匹配质量验收（当前本地 `result_table.csv` 仅有表头）
 - 完整生产部署和启动说明
 
 状态变化后应更新本节。
