@@ -6,7 +6,7 @@ import {
   DataNotGeneratedError,
   loadAndProcessData,
   getDataBaseline,
-  formatDate,
+  getValidBrokerName,
   exportCsv,
   uniqueCount,
   type ProcessedRecord,
@@ -20,8 +20,6 @@ import { DashboardTabs } from "@/components/dashboard-tabs";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
-import { HoverSelect } from "@/components/hover-select";
-import { MultiHoverSelect } from "@/components/multi-hover-select";
 
 // ─── Dynamic imports for heavy components (code splitting) ───
 const AdminDashboard = dynamic(
@@ -184,15 +182,6 @@ export default function Dashboard() {
 
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
 
-  // Options for dropdowns
-  const brokerOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const r of allData) {
-      if (r.validBrokerName !== "主体待识别") set.add(r.validBrokerName);
-    }
-    return Array.from(set).sort();
-  }, [allData]);
-
   const methodOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of allData) {
@@ -201,8 +190,9 @@ export default function Dashboard() {
     return Array.from(set).sort();
   }, [allData]);
 
-  // Filtered data
-  const filteredData = useMemo(() => {
+  // Apply all filters except broker multi-select so broker options do not disappear
+  // because of their own selection.
+  const dataBeforeBrokerFilter = useMemo(() => {
     let result = allData;
 
     // FinTech only
@@ -239,8 +229,6 @@ export default function Dashboard() {
       );
     }
 
-    if (brokerNames.length > 0)
-      result = result.filter((r) => brokerNames.includes(r.validBrokerName));
     if (primaryDomain)
       result = result.filter((r) => r.primaryDomain === primaryDomain);
     if (announcementStage)
@@ -262,23 +250,54 @@ export default function Dashboard() {
     timeRange,
     baseline,
     search,
-    brokerNames,
     primaryDomain,
     announcementStage,
     procurementMethod,
     detailFilter,
   ]);
 
+  // Options for dropdowns: derived from real data after other filters only.
+  const brokerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of dataBeforeBrokerFilter) {
+      const brokerName = getValidBrokerName(r);
+      if (brokerName) set.add(brokerName);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  }, [dataBeforeBrokerFilter]);
+
+  useEffect(() => {
+    if (brokerNames.length === 0) return;
+    const validOptions = new Set(brokerOptions);
+    const nextBrokerNames = brokerNames.filter((name) => validOptions.has(name));
+    if (nextBrokerNames.length !== brokerNames.length) {
+      setBrokerNames(nextBrokerNames);
+    }
+  }, [brokerNames, brokerOptions, setBrokerNames]);
+
+  // Final filtered data
+  const filteredData = useMemo(() => {
+    if (brokerNames.length === 0) return dataBeforeBrokerFilter;
+    return dataBeforeBrokerFilter.filter((r) => {
+      const brokerName = getValidBrokerName(r);
+      return brokerName !== null && brokerNames.includes(brokerName);
+    });
+  }, [brokerNames, dataBeforeBrokerFilter]);
+
   // Sort brokers by data volume (most records first)
   const sortedBrokers = useMemo(() => {
     const countMap = new Map<string, number>();
-    filteredData.forEach((r) => {
-      if (r.validBrokerName && r.validBrokerName !== "主体待识别") {
-        countMap.set(r.validBrokerName, (countMap.get(r.validBrokerName) || 0) + 1);
+    dataBeforeBrokerFilter.forEach((r) => {
+      const brokerName = getValidBrokerName(r);
+      if (brokerName) {
+        countMap.set(brokerName, (countMap.get(brokerName) || 0) + 1);
       }
     });
-    return [...countMap.keys()].sort((a, b) => (countMap.get(b) || 0) - (countMap.get(a) || 0));
-  }, [filteredData]);
+    return [...countMap.keys()].sort((a, b) => {
+      const countDiff = (countMap.get(b) || 0) - (countMap.get(a) || 0);
+      return countDiff || a.localeCompare(b, "zh-Hans-CN");
+    });
+  }, [dataBeforeBrokerFilter]);
 
   // Measure header height for sticky tab bar positioning
   useLayoutEffect(() => {
@@ -340,8 +359,8 @@ export default function Dashboard() {
     () =>
       uniqueCount(
         allData
-          .filter((r) => r.validBrokerName !== "主体待识别")
-          .map((r) => r.validBrokerName)
+          .map((r) => getValidBrokerName(r))
+          .filter((name): name is string => name !== null)
       ),
     [allData]
   );

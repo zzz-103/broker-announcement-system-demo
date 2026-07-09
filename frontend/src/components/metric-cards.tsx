@@ -4,8 +4,8 @@ import { useMemo } from "react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
   getDataBaseline,
+  getValidBrokerName,
   uniqueCount,
-  formatDate,
 } from "@/lib/announcement-data";
 import { useFilterStore } from "@/store/filter-store";
 
@@ -23,8 +23,8 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
     const totalRecords = data.length;
     const coveredBrokers = uniqueCount(
       data
-        .filter((r) => r.validBrokerName !== "主体待识别")
-        .map((r) => r.validBrokerName)
+        .map((r) => getValidBrokerName(r))
+        .filter((name): name is string => name !== null)
     );
     const uniqueProjects = uniqueCount(data.map((r) => r.projectKey));
 
@@ -62,18 +62,19 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
 
     return [
       {
+        label: "采集券商",
+        value: `${coveredBrokers.toLocaleString()} 家`,
+        hint: `当前筛选覆盖 ${coveredBrokers.toLocaleString()} 家`,
+        onClick: null,
+        color: "#2563EB",
+        featured: true,
+      },
+      {
         label: "公告结构化记录",
         value: totalRecords.toLocaleString(),
         hint: "当前筛选后的CSV行数",
         onClick: null,
-        color: "#2563EB",
-      },
-      {
-        label: "已采集券商",
-        value: `${coveredBrokers.toLocaleString()} 家`,
-        hint: "按当前筛选后的标准化券商去重",
-        onClick: null,
-        color: "#0F9F8F",
+        color: "#64748B",
       },
       {
         label: "去重项目线索",
@@ -116,19 +117,22 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3.5 sm:gap-4">
       {metrics.map((m) => {
+        const featuredClass = m.featured
+          ? "border-[#B8CCF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F9FF_100%)] shadow-[0_4px_14px_rgba(37,99,235,0.08)]"
+          : "border-[#E4EAF2] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]";
         const content = (
           <>
             <div 
-              className="absolute top-0 left-0 right-0 h-[3px] pointer-events-none"
+              className={`absolute top-0 left-0 right-0 pointer-events-none ${m.featured ? "h-1" : "h-[3px]"}`}
               style={{ backgroundColor: m.color }}
             />
-            <div className="text-[12px] text-[#718096] font-medium leading-none">
+            <div className={`text-[12px] font-medium leading-none ${m.featured ? "text-[#2563EB]" : "text-[#718096]"}`}>
               {m.label}
             </div>
-            <div className="text-[26px] sm:text-[28px] font-bold text-[#172033] tabular-nums leading-none mt-1 py-1 flex-grow flex items-center">
+            <div className={`${m.featured ? "text-[29px] sm:text-[31px]" : "text-[26px] sm:text-[28px]"} font-bold text-[#172033] tabular-nums leading-none mt-1 py-1 flex-grow flex items-center`}>
               {m.value}
             </div>
-            <div className="text-[11px] text-[#98A2B3] leading-none">
+            <div className={`text-[11px] leading-none ${m.featured ? "text-[#667085]" : "text-[#98A2B3]"}`}>
               {m.hint}
             </div>
           </>
@@ -138,14 +142,14 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
           <button
             key={m.label}
             onClick={m.onClick}
-            className="relative overflow-hidden bg-white rounded-xl border border-[#E4EAF2] p-4 text-left transition-all duration-200 shadow-[0_1px_3px_rgba(0,0,0,0.02)] motion-reduce:transition-none motion-reduce:transform-none hover:border-blue-500/35 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)] h-[108px] flex flex-col justify-between group cursor-pointer"
+            className={`relative overflow-hidden rounded-xl border p-4 text-left transition-all duration-200 motion-reduce:transition-none motion-reduce:transform-none hover:border-blue-500/35 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)] h-[108px] flex flex-col justify-between group cursor-pointer ${featuredClass}`}
           >
             {content}
           </button>
         ) : (
           <div
             key={m.label}
-            className="relative overflow-hidden bg-white rounded-xl border border-[#E4EAF2] p-4 text-left shadow-[0_1px_3px_rgba(0,0,0,0.02)] h-[108px] flex flex-col justify-between select-none"
+            className={`relative overflow-hidden rounded-xl border p-4 text-left h-[108px] flex flex-col justify-between select-none ${featuredClass}`}
           >
             {content}
           </div>

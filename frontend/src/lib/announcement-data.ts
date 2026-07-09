@@ -316,6 +316,29 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
   });
 }
 
+const INVALID_BROKER_NAMES = new Set([
+  "",
+  "未知",
+  "未识别",
+  "主体待识别",
+  "券商待识别",
+  "无法识别",
+  "未提供",
+  "无",
+  "null",
+  "undefined",
+  "-",
+  "--",
+]);
+
+export function getValidBrokerName(record: ProcessedRecord): string | null {
+  if (record.is_broker_project === false) return null;
+  const brokerName = record.validBrokerName.trim();
+  if (!brokerName) return null;
+  if (INVALID_BROKER_NAMES.has(brokerName.toLowerCase())) return null;
+  return brokerName;
+}
+
 export async function loadAndProcessData(token: string): Promise<ProcessedRecord[]> {
   try {
     const data = await fetchAnnouncements(token);
