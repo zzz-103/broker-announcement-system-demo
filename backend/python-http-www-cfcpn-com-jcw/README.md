@@ -66,6 +66,25 @@ python cfcpn_scraper.py \
   --delay-max 8
 ```
 
+结果公告小规模联网验证：
+
+```bash
+python3 cfcpn_scraper.py \
+  --notice-type result \
+  --keyword "证券" \
+  --start-page 1 \
+  --end-page 1 \
+  --max-items 1 \
+  --output-dir output \
+  --delay 1.2
+```
+
+Windows 语法验证示例：
+
+```powershell
+.\.venv\Scripts\python.exe -m py_compile backend\python-http-www-cfcpn-com-jcw\cfcpn_scraper.py backend\python-http-www-cfcpn-com-jcw\cfcpn_scraper\client.py backend\python-http-www-cfcpn-com-jcw\cfcpn_scraper\parser.py backend\python-http-www-cfcpn-com-jcw\cfcpn_scraper\markdown.py
+```
+
 只测试 3 条公告：
 
 ```bash
@@ -132,6 +151,7 @@ python3 cfcpn_scraper.py \
 ## 参数说明
 
 - `--keyword`：搜索关键词，默认 `证券`。
+- `--notice-type`：公告类型，`procurement` 为采购公告，`result` 为结果公告，默认 `procurement`。
 - `--since-date`：只处理此日期及之后的公告，默认 `2026-01-01`。遇到更早公告会停止继续扫描后续历史页。
 - `--start-page`：起始页，默认 `1`，必须大于等于 1。
 - `--end-page`：结束页。不传时根据接口 `total` 和 `page-size` 自动计算。
@@ -177,7 +197,7 @@ python3 cfcpn_scraper.py \
 
 ## 输出文件说明
 
-输出目录完全由 `--output-dir` 控制：
+输出目录由 `--output-dir` 和公告类型共同控制。采购公告默认保持旧目录兼容：
 
 ```text
 output_test/
@@ -186,9 +206,37 @@ output_test/
 └── failures.jsonl
 ```
 
+结果公告默认写入独立目录，checkpoint 也独立保存：
+
+```text
+output/
+├── result/
+│   ├── notices/
+│   ├── index.md
+│   └── failures.jsonl
+└── checkpoints/
+    └── result.json
+```
+
 每条公告保存为一个 Markdown 文件，文件名包含发布日期、公告 ID 前 8 位和清理后的标题。去重不依赖文件名，而是读取 Markdown front matter 中的完整 `notice_id`。
 
 `index.md` 会根据当前 `notices/` 目录下实际存在的 Markdown 文件重建，同一完整公告 ID 只保留一行。
+
+## 临时外来 Markdown
+
+临时外来公告不进入正常爬虫目录，也不修改采购公告或结果公告 checkpoint。请将同事提供的 `.md` 文件放入：
+
+```text
+output/external/notices/
+```
+
+Docker 部署时，对应宿主机路径是：
+
+```text
+runtime/scraper-output/external/notices/
+```
+
+管理员在前端点击“导入外来公告”后，后端会调用 LLM 处理该目录，并将结果合并进现有 staging 候选数据；正式看板仍需点击“推送”发布。
 
 ## 失败日志说明
 

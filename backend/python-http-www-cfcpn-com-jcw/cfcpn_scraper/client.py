@@ -15,9 +15,9 @@ from .models import (
     DATA_URL,
     DEFAULT_TIMEOUT,
     DETAIL_PATH,
-    LIST_PAGE_URL,
     USER_AGENT,
     CfcpnError,
+    build_list_page_url,
 )
 
 LOGGER = logging.getLogger("cfcpn_scraper.client")
@@ -31,7 +31,7 @@ def create_session() -> requests.Session:
         {
             "User-Agent": USER_AGENT,
             "Origin": BASE_URL,
-            "Referer": LIST_PAGE_URL,
+            "Referer": build_list_page_url("cggg"),
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",
         }
@@ -52,8 +52,8 @@ def create_session() -> requests.Session:
     return session
 
 
-def build_detail_url(notice_id: str, notice_type: str | int | None) -> str:
-    column = str(notice_type or "")
+def build_detail_url(notice_id: str, column: str | int | None) -> str:
+    column = str(column or "")
     query = urlencode(
         {
             "url": "modules/sys/login/detail",
@@ -68,12 +68,14 @@ def fetch_notice_list(
     page_no: int,
     page_size: int,
     keyword: str,
+    notice_type: str | int = "1",
+    column: str = "cggg",
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
     """Fetch one notice-list page and return {"total": int, "rows": list}."""
     active_session = session or create_session()
     payload = {
-        "noticeType": "1",
+        "noticeType": str(notice_type),
         "pageSize": str(page_size),
         "pageNo": str(page_no),
         "noticeState": "1",
@@ -95,7 +97,7 @@ def fetch_notice_list(
         DATA_URL,
         data=payload,
         headers={
-            "Referer": LIST_PAGE_URL,
+            "Referer": build_list_page_url(column),
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         },
         timeout=DEFAULT_TIMEOUT,
@@ -110,7 +112,7 @@ def fetch_notice_list(
 
 def fetch_notice_detail(
     notice_id: str,
-    notice_type: str | int | None,
+    column: str | int | None,
     session: requests.Session | None = None,
 ) -> dict[str, Any]:
     """Fetch detail JSON for one notice using the verified detail Referer.
@@ -119,7 +121,7 @@ def fetch_notice_detail(
     A direct POST succeeds as long as the Referer is the constructed shell URL.
     """
     active_session = session or create_session()
-    detail_url = build_detail_url(notice_id, notice_type)
+    detail_url = build_detail_url(notice_id, column)
     response = active_session.post(
         DATA_URL,
         data={"id": notice_id, "isDetail": "1"},

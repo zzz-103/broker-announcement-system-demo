@@ -37,13 +37,26 @@ SLEEP_FUNC = time.sleep
 RANDOM_UNIFORM = random.uniform
 STOP_FORBIDDEN = "连续 403，触发访问保护熔断"
 STOP_BEFORE_SINCE_DATE = "遇到早于日期下限的公告，停止扫描"
+NOTICE_TYPE_CONFIGS = {
+    "procurement": {"column": "cggg", "list_notice_type": "1", "label": "采购公告"},
+    "result": {"column": "jggg", "list_notice_type": "4", "label": "结果公告"},
+}
 
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args = parse_args(argv)
     validate_keyword(args.keyword)
+    notice_config = NOTICE_TYPE_CONFIGS[args.notice_type]
+    args.column = notice_config["column"]
+    args.list_notice_type = notice_config["list_notice_type"]
     logging.info("本次检索关键词：%r", args.keyword)
+    logging.info(
+        "公告类型：%s (%s, column=%s)",
+        notice_config["label"],
+        args.notice_type,
+        args.column,
+    )
     logging.info("日期范围：%s 至今", args.since_date.isoformat())
     if args.update and args.overwrite:
         raise SystemExit("--update cannot be used together with --overwrite")
@@ -53,10 +66,11 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--end-page must be greater than or equal to --start-page")
 
     output_dir = Path(args.output_dir)
-    notices_dir = output_dir / "notices"
-    index_path = output_dir / "index.md"
-    failures_path = output_dir / "failures.jsonl"
-    checkpoint_path = Path(args.checkpoint_file) if args.checkpoint_file else output_dir / "checkpoint.json"
+    runtime_paths = resolve_runtime_paths(output_dir, args.notice_type, args.checkpoint_file)
+    notices_dir = runtime_paths["notices_dir"]
+    index_path = runtime_paths["index_path"]
+    failures_path = runtime_paths["failures_path"]
+    checkpoint_path = runtime_paths["checkpoint_path"]
     notices_dir.mkdir(parents=True, exist_ok=True)
     if args.resume:
         checkpoint = load_checkpoint(checkpoint_path)
@@ -70,6 +84,12 @@ def main(argv: list[str] | None = None) -> int:
                         "checkpoint keyword %r differs from current keyword %r",
                         checkpoint.get("keyword"),
                         args.keyword,
+                    )
+                if checkpoint.get("notice_type") and checkpoint.get("notice_type") != args.notice_type:
+                    LOGGER.warning(
+                        "checkpoint notice_type %r differs from current notice_type %r",
+                        checkpoint.get("notice_type"),
+                        args.notice_type,
                     )
                 last_page_from_json = int(checkpoint.get("last_completed_page") or 1)
 
@@ -108,11 +128,13 @@ def main(argv: list[str] | None = None) -> int:
                         args.start_page,
                     )
 
-    existing_paths = scan_existing_notice_paths(notices_dir)
+    existing_paths = scan_existing_notice_paths(notices_dir, args.notice_type)
     processed_ids: set[str] = set()
     session = create_session()
     stats = {
         "keyword": args.keyword,
+        "notice_type": args.notice_type,
+        "column": args.column,
         "list_pages": 0,
         "found": 0,
         "new_ids": 0,
@@ -149,7 +171,12 @@ def main(argv: list[str] | None = None) -> int:
                 throttle.wait_page()
                 page_data = request_with_403_handling(
                     lambda: fetch_notice_list(
-                        page_no, args.page_size, args.keyword, session=session
+                        page_no,
+                        args.page_size,
+                        args.keyword,
+                        notice_type=args.list_notice_type,
+                        column=args.column,
+                        session=session,
                     ),
                     args=args,
                     stats=stats,
@@ -222,6 +249,8 @@ def main(argv: list[str] | None = None) -> int:
                 checkpoint_path,
                 {
                     "keyword": args.keyword,
+                    "notice_type": args.notice_type,
+                    "column": args.column,
                     "since_date": args.since_date.isoformat(),
                     "last_completed_page": page_no,
                     "checked_items": stats["found"],
@@ -313,6 +342,8 @@ def main(argv: list[str] | None = None) -> int:
                     checkpoint_path,
                     {
                         "keyword": args.keyword,
+                        "notice_type": args.notice_type,
+                        "column": args.column,
                         "since_date": args.since_date.isoformat(),
                         "last_completed_page": item.get("_page_no", page_no),
                         "checked_items": stats["found"],
@@ -341,6 +372,8 @@ def main(argv: list[str] | None = None) -> int:
         checkpoint_path,
         {
             "keyword": args.keyword,
+            "notice_type": args.notice_type,
+            "column": args.column,
             "since_date": args.since_date.isoformat(),
             "last_completed_page": max(args.start_page, page_no if stats["list_pages"] else args.start_page),
             "checked_items": stats["found"],
@@ -374,6 +407,12 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     raw_args = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description="抓取金采网公告并保存为 Markdown。")
     parser.add_argument("--keyword", default="证券", help="列表搜索关键词，默认：证券")
+    parser.add_argument(
+        "--notice-type",
+        choices=sorted(NOTICE_TYPE_CONFIGS),
+        default="procurement",
+        help="公告类型，procurement=采购公告，result=结果公告，默认：procurement",
+    )
     parser.add_argument("--since-date", type=parse_iso_date, default=get_default_since_date(), help="只处理此日期及之后的公告，默认：近三个月 (即 90 天前)")
     parser.add_argument("--start-page", type=positive_int, default=1, help="起始页，默认：1")
     parser.add_argument("--end-page", type=positive_int, help="结束页，不传则按 total 自动计算")
@@ -417,6 +456,34 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     validate_range("batch-rest", args.batch_rest_min, args.batch_rest_max)
     validate_range("forbidden-cooldown", args.forbidden_cooldown_min, args.forbidden_cooldown_max)
     return args
+
+
+def resolve_runtime_paths(
+    output_dir: Path,
+    notice_type: str,
+    checkpoint_file: str | None,
+) -> dict[str, Path]:
+    if notice_type == "result":
+        type_output_dir = output_dir / "result"
+        checkpoint_path = (
+            Path(checkpoint_file)
+            if checkpoint_file
+            else output_dir / "checkpoints" / "result.json"
+        )
+        return {
+            "notices_dir": type_output_dir / "notices",
+            "index_path": type_output_dir / "index.md",
+            "failures_path": type_output_dir / "failures.jsonl",
+            "checkpoint_path": checkpoint_path,
+        }
+
+    checkpoint_path = Path(checkpoint_file) if checkpoint_file else output_dir / "checkpoint.json"
+    return {
+        "notices_dir": output_dir / "notices",
+        "index_path": output_dir / "index.md",
+        "failures_path": output_dir / "failures.jsonl",
+        "checkpoint_path": checkpoint_path,
+    }
 
 
 def positive_int(value: str) -> int:
@@ -650,14 +717,15 @@ def scan_page(
             )
             continue
 
-        if notice_id in processed_ids:
+        notice_key_value = notice_key(args.notice_type, notice_id)
+        if notice_key_value in processed_ids:
             LOGGER.info("本轮已处理，跳过：%s %s", notice_id, title)
             stats["skipped"] += 1
             page_stats["known_ids"] += 1
             continue
-        processed_ids.add(notice_id)
+        processed_ids.add(notice_key_value)
 
-        existing_path = existing_paths.get(notice_id)
+        existing_path = existing_paths.get(notice_key_value)
         if existing_path and not args.overwrite:
             LOGGER.info("已存在，跳过：%s %s", notice_id, title)
             stats["skipped"] += 1
@@ -688,11 +756,11 @@ def download_and_save_item(
     """下载并保存单个公告详情，返回是否发生熔断 (circuit_breaker)"""
     notice_id = str(list_item.get("id") or "")
     title = str(list_item.get("noticeTitle") or "")
-    notice_type = list_item.get("noticeType") or "1"
     item_index = list_item.get("_item_index", 1)
     page_no = list_item.get("_page_no", 1)
     
-    existing_path = existing_paths.get(notice_id)
+    notice_key_value = notice_key(args.notice_type, notice_id)
+    existing_path = existing_paths.get(notice_key_value)
     circuit_breaker = False
 
     try:
@@ -707,7 +775,7 @@ def download_and_save_item(
             forbidden_state["consecutive"],
         )
         detail_data = request_with_403_handling(
-            lambda: fetch_notice_detail(notice_id, notice_type, session=session),
+            lambda: fetch_notice_detail(notice_id, args.column, session=session),
             args=args,
             stats=stats,
             forbidden_state=forbidden_state,
@@ -732,7 +800,7 @@ def download_and_save_item(
             {
                 "notice_id": notice_id,
                 "title": title,
-                "url": build_detail_url(notice_id, notice_type),
+                "url": build_detail_url(notice_id, args.column),
                 "stage": "detail",
                 "error": str(exc),
             },
@@ -740,7 +808,12 @@ def download_and_save_item(
         return circuit_breaker
 
     try:
-        notice = parse_notice_detail(detail_data, list_item)
+        notice = parse_notice_detail(
+            detail_data,
+            list_item,
+            notice_type=args.notice_type,
+            column=args.column,
+        )
     except Exception as exc:
         LOGGER.error("字段解析失败：%s %s %s", notice_id, title, exc)
         stats["failed"] += 1
@@ -760,7 +833,7 @@ def download_and_save_item(
         if args.overwrite and existing_path and existing_path.exists():
             existing_path.unlink()
         path = write_notice_markdown(notice, notices_dir, keyword=args.keyword)
-        existing_paths[notice_id] = path
+        existing_paths[notice_key_value] = path
         stats["saved"] += 1
         LOGGER.info("已保存：%s", path)
     except Exception as exc:
@@ -851,15 +924,24 @@ def now_iso() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def scan_existing_notice_paths(notices_dir: Path) -> dict[str, Path]:
+def notice_key(notice_type: str, notice_id: str) -> str:
+    return f"{notice_type}:{notice_id}"
+
+
+def scan_existing_notice_paths(notices_dir: Path, notice_type: str) -> dict[str, Path]:
     paths: dict[str, Path] = {}
     if not notices_dir.exists():
         return paths
     for path in notices_dir.glob("*.md"):
         data = read_front_matter(path)
         notice_id = str(data.get("notice_id") or "")
-        if notice_id and notice_id not in paths:
-            paths[notice_id] = path
+        existing_notice_type = str(data.get("notice_type") or "")
+        if notice_type == "procurement" and existing_notice_type == "":
+            existing_notice_type = "procurement"
+        if notice_id and existing_notice_type == notice_type:
+            key = notice_key(notice_type, notice_id)
+            if key not in paths:
+                paths[key] = path
     return paths
 
 
@@ -919,6 +1001,8 @@ def print_stats(
 ) -> None:
     print(f"运行模式: {'增量更新' if update_mode else '普通扫描'}")
     print(f"检索关键词: {stats.get('keyword', '')}")
+    print(f"公告类型: {stats.get('notice_type', '')}")
+    print(f"栏目: {stats.get('column', '')}")
     print(f"请求页数: {stats['list_pages']}")
     print(f"检查公告数: {stats['found']}")
     print(f"发现新 ID 数量: {stats['new_ids']}")

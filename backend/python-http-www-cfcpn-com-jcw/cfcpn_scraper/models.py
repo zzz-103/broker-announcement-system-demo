@@ -4,9 +4,13 @@ from __future__ import annotations
 
 
 BASE_URL = "http://www.cfcpn.com"
-LIST_PAGE_URL = (
-    f"{BASE_URL}/jcw/sys/index/goUrl?url=modules/sys/login/list&column=cggg"
-)
+
+
+def build_list_page_url(column: str = "cggg") -> str:
+    return f"{BASE_URL}/jcw/sys/index/goUrl?url=modules/sys/login/list&column={column}"
+
+
+LIST_PAGE_URL = build_list_page_url("cggg")
 DATA_URL = f"{BASE_URL}/jcw/noticeinfo/noticeInfo/dataNoticeList"
 DETAIL_PATH = "/jcw/sys/index/goUrl"
 DEFAULT_TIMEOUT = (5, 20)

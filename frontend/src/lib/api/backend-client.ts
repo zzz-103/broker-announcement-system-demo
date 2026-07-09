@@ -11,7 +11,7 @@ function buildApiUrl(path: string): string {
 }
 
 export type JobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
-export type JobType = "scraper" | "llm";
+export type JobType = "scraper" | "llm" | "pipeline" | "llm-external";
 
 export interface LoginResponse {
   token: string;

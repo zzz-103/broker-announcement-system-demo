@@ -14,7 +14,10 @@ from .models import BASE_URL
 
 
 def parse_notice_detail(
-    response_data: dict[str, Any], list_item: dict[str, Any]
+    response_data: dict[str, Any],
+    list_item: dict[str, Any],
+    notice_type: str | None = None,
+    column: str | None = None,
 ) -> dict[str, Any]:
     """Normalize one detail response and its originating list item."""
     rows = response_data.get("rows") if isinstance(response_data, dict) else None
@@ -23,7 +26,7 @@ def parse_notice_detail(
         detail = {}
 
     notice_id = _first(detail, list_item, "id")
-    notice_type = _first(detail, list_item, "noticeType")
+    raw_notice_type = _first(detail, list_item, "noticeType")
     content_html = _unescape_html(
         _first(detail, list_item, "noticeContent")
         or _first(detail, list_item, "briefContent")
@@ -39,9 +42,11 @@ def parse_notice_detail(
         "tag": _first(detail, list_item, "yxCategoryNames"),
         "category": _first(detail, list_item, "labelAllId"),
         "notice_source": _first(detail, list_item, "noticeSource"),
-        "notice_type": str(notice_type),
+        "notice_type": str(notice_type or raw_notice_type),
+        "column": str(column or raw_notice_type),
+        "raw_notice_type": str(raw_notice_type),
         "detail_url": response_data.get("_detail_url")
-        or build_detail_url(notice_id, notice_type),
+        or build_detail_url(notice_id, column or raw_notice_type),
         "content_html": content_html,
         "content_text": html_to_text(content_html),
         "attachments": parse_attachments(detail.get("file")),

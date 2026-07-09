@@ -507,6 +507,15 @@ def start_llm(payload: LlmJobRequest | None = None) -> dict[str, str]:
     return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
 
 
+@app.post("/api/jobs/llm-external", dependencies=[Depends(require_admin_token)])
+def start_llm_external() -> dict[str, str]:
+    try:
+        job = job_manager.start_llm_external()
+    except JobConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
 @app.post("/api/jobs/pipeline", dependencies=[Depends(require_admin_token)])
 def start_pipeline() -> dict[str, str]:
     try:

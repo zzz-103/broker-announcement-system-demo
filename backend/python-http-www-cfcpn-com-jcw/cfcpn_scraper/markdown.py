@@ -17,7 +17,10 @@ FRONT_MATTER_FIELDS = [
     "source",
     "source_url",
     "notice_id",
+    "notice_type",
+    "column",
     "title",
+    "publish_date",
     "publish_time",
     "purchaser",
     "procurement_method",
@@ -26,6 +29,7 @@ FRONT_MATTER_FIELDS = [
     "category",
     "notice_source",
     "keyword",
+    "scraped_at",
     "crawled_at",
 ]
 
@@ -87,7 +91,10 @@ def build_markdown(
             "source": "金采网",
             "source_url": _string(notice.get("detail_url")),
             "notice_id": notice_id,
+            "notice_type": _string(notice.get("notice_type")),
+            "column": _string(notice.get("column")),
             "title": title,
+            "publish_date": _publish_date(_string(notice.get("publish_time"))),
             "publish_time": _string(notice.get("publish_time")),
             "purchaser": _string(notice.get("purchaser")),
             "procurement_method": _string(notice.get("procurement_method")),
@@ -96,6 +103,7 @@ def build_markdown(
             "category": _string(notice.get("category")),
             "notice_source": _string(notice.get("notice_source")),
             "keyword": keyword,
+            "scraped_at": crawled_at,
             "crawled_at": crawled_at,
         }
     )

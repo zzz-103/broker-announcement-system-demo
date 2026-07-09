@@ -73,6 +73,12 @@ class JobManager:
             lambda: self._build_llm_command(mode=mode, overwrite=overwrite),
         )
 
+    def start_llm_external(self) -> Job:
+        return self._start_job(
+            "llm-external",
+            lambda: self._build_llm_command(external=True),
+        )
+
     def start_pipeline(self) -> Job:
         """Start a pipeline job: scraper -> LLM -> AI analysis."""
         with self._condition:
@@ -566,10 +572,17 @@ class JobManager:
         *,
         mode: str = "incremental",
         overwrite: bool = False,
+        external: bool = False,
     ) -> tuple[list[str], Path, dict[str, str]]:
         project_root = Path(__file__).resolve().parents[2]
         default_script = project_root / "backend" / "llm_table" / "llm_markdown_table_builder.py"
         default_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "notices"
+        default_external_input_dir = (
+            project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "external" / "notices"
+        )
+        default_external_state_path = (
+            project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "checkpoints" / "external_llm.json"
+        )
         default_output_dir = project_root / "backend" / "data" / "staging"
         default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
         default_working_dir = project_root / "backend" / "llm_table"
@@ -581,7 +594,12 @@ class JobManager:
         )
         script_path = self._resolve_path(os.getenv("LLM_SCRIPT_PATH"), project_root, default_script)
         working_dir = self._resolve_path(os.getenv("LLM_WORKING_DIR"), project_root, default_working_dir)
-        input_dir = self._resolve_path(os.getenv("LLM_INPUT_DIR"), project_root, default_input_dir)
+        input_env = os.getenv("LLM_EXTERNAL_INPUT_DIR") if external else os.getenv("LLM_INPUT_DIR")
+        input_dir = self._resolve_path(
+            input_env,
+            project_root,
+            default_external_input_dir if external else default_input_dir,
+        )
         output_dir = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, default_output_dir)
         config_path = self._resolve_path(os.getenv("LLM_CONFIG_PATH"), project_root, default_config_path)
         workers = os.getenv("LLM_WORKERS", "4")
@@ -590,7 +608,9 @@ class JobManager:
             raise JobStartError(f"LLM script not found: {script_path}")
         if not working_dir.exists():
             raise JobStartError(f"LLM working directory not found: {working_dir}")
-        if not input_dir.exists():
+        if external:
+            input_dir.mkdir(parents=True, exist_ok=True)
+        elif not input_dir.exists():
             raise JobStartError(f"LLM input directory not found: {input_dir}")
         if not config_path.exists():
             raise JobStartError(f"LLM config file not found: {config_path}")
@@ -612,6 +632,21 @@ class JobManager:
         ]
         if mode == "full_refresh" and overwrite:
             command.extend(["--full-refresh", "--overwrite"])
+        if external:
+            state_path = self._resolve_path(
+                os.getenv("LLM_EXTERNAL_STATE_PATH"),
+                project_root,
+                default_external_state_path,
+            )
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            command.extend(
+                [
+                    "--allow-empty",
+                    "--require-title-heading",
+                    "--processed-sha256-state",
+                    str(state_path),
+                ]
+            )
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("PYTHONIOENCODING", "utf-8")
@@ -746,6 +781,7 @@ class JobManager:
         labels = {
             "scraper": "一键更新爬虫",
             "llm": "LLM 数据处理",
+            "llm-external": "外来公告导入",
             "pipeline": "自动化 Pipeline",
             "publish": "推送",
             "ai_analysis": "AI 情报分析",

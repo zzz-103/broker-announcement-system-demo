@@ -24,6 +24,13 @@ import {
 import { UserApprovalManager } from "@/components/user-approval-manager";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   BackendApiError,
   cancelJob,
   generateAiAnalysis,
@@ -44,7 +51,7 @@ interface DashboardProps {
 }
 
 type CardId = "crawler" | "llm" | "ai";
-type OperationId = "scraper" | "llm" | "publish" | "ai_analysis";
+type OperationId = "scraper" | "llm" | "pipeline" | "llm-external" | "publish" | "ai_analysis";
 
 interface TaskCardState {
   status: JobStatus;
@@ -123,6 +130,8 @@ function cardIdForJob(jobType: JobType): CardId {
 function labelForOperation(operationId: OperationId): string {
   if (operationId === "scraper") return "一键更新爬虫";
   if (operationId === "llm") return "LLM 数据处理";
+  if (operationId === "llm-external") return "外来公告导入";
+  if (operationId === "pipeline") return "自动化 Pipeline";
   if (operationId === "publish") return "推送";
   return "AI 情报分析";
 }
@@ -143,7 +152,7 @@ function isTerminalJobStatus(status: string) {
 }
 
 function jobSuccessSummary(jobType: JobType, label: string): string {
-  if (jobType === "llm") {
+  if (jobType === "llm" || jobType === "llm-external") {
     return "LLM 处理完成，候选数据已生成，请点击\u2018推送\u2019更新正式看板。";
   }
   return `${label}已完成。`;
@@ -160,7 +169,10 @@ function readActiveJob(): { job_id: string; job_type: JobType } | null {
     const parsed = JSON.parse(raw) as { job_id?: unknown; job_type?: unknown };
     if (
       typeof parsed.job_id === "string" &&
-      (parsed.job_type === "scraper" || parsed.job_type === "llm")
+      (parsed.job_type === "scraper" ||
+        parsed.job_type === "llm" ||
+        parsed.job_type === "pipeline" ||
+        parsed.job_type === "llm-external")
     ) {
       return { job_id: parsed.job_id, job_type: parsed.job_type };
     }
@@ -243,13 +255,16 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   }, []);
 
   const [logDialogCard, setLogDialogCard] = useState<CardId | null>(null);
+  const [llmModeDialogOpen, setLlmModeDialogOpen] = useState(false);
 
   const mountedRef = useRef(true);
   const resetTimerRef = useRef<number | null>(null);
-  // AbortControllers for SSE-based jobs (scraper, llm)
+  // AbortControllers for SSE-based jobs
   const abortRefs = useRef<Record<JobType, AbortController | null>>({
     scraper: null,
     llm: null,
+    pipeline: null,
+    "llm-external": null,
   });
   const streamingJobIdRef = useRef<string>("");
   // Ref tracking the current job_id for SSE jobs so cancel can call the API
@@ -260,6 +275,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const pollingTimerRef = useRef<Record<OperationId, NodeJS.Timeout | null>>({
     scraper: null,
     llm: null,
+    pipeline: null,
+    "llm-external": null,
     publish: null,
     ai_analysis: null,
   });
@@ -278,11 +295,15 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       clearProgressResetTimer();
       abortRefs.current.scraper?.abort();
       abortRefs.current.llm?.abort();
+      abortRefs.current.pipeline?.abort();
+      abortRefs.current["llm-external"]?.abort();
       directAbortRef.current?.abort();
 
       // Clear any active polling timers
       if (pollingTimerRef.current.scraper) clearInterval(pollingTimerRef.current.scraper);
       if (pollingTimerRef.current.llm) clearInterval(pollingTimerRef.current.llm);
+      if (pollingTimerRef.current.pipeline) clearInterval(pollingTimerRef.current.pipeline);
+      if (pollingTimerRef.current["llm-external"]) clearInterval(pollingTimerRef.current["llm-external"]);
       if (pollingTimerRef.current.publish) clearInterval(pollingTimerRef.current.publish);
       if (pollingTimerRef.current.ai_analysis) clearInterval(pollingTimerRef.current.ai_analysis);
     };
@@ -367,7 +388,12 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       setActiveOperation(null);
 
       // Clean up AbortControllers
-      if (operationId === "scraper" || operationId === "llm") {
+      if (
+        operationId === "scraper" ||
+        operationId === "llm" ||
+        operationId === "pipeline" ||
+        operationId === "llm-external"
+      ) {
         if (abortRefs.current[operationId]) {
           abortRefs.current[operationId]?.abort();
           abortRefs.current[operationId] = null;
@@ -478,6 +504,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       const initialMessage =
         jobType === "scraper"
           ? "正在连接后端并启动爬虫任务..."
+          : jobType === "llm-external"
+            ? "正在导入外来公告，输出候选 CSV..."
           : "正在启动 LLM 数据处理，输出候选 CSV...";
       const label = beginOperation(jobType, cardId, initialMessage);
       const controller = new AbortController();
@@ -698,12 +726,21 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   );
 
   const runFullRefresh = useCallback(async () => {
+    setLlmModeDialogOpen(false);
     const confirmed = window.confirm(
       "确认执行 LLM 全量重建？该操作会重新请求全部 Markdown，并覆盖已有 raw_json 缓存。普通增量任务不受影响。",
     );
     if (!confirmed) return;
     await runJob("llm", { mode: "full_refresh", overwrite: true });
   }, [runJob]);
+
+  const chooseLlmJob = useCallback(
+    async (jobType: Extract<JobType, "llm" | "llm-external">) => {
+      setLlmModeDialogOpen(false);
+      await runJob(jobType);
+    },
+    [runJob],
+  );
 
   useEffect(() => {
     if (!token || activeOperationRef.current) return;
@@ -897,7 +934,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const handleCancel = useCallback(async () => {
     if (!activeOperationRef.current || !token) return;
     const op = activeOperationRef.current;
-    if (op.id !== "scraper" && op.id !== "llm") return;
+    if (op.id !== "scraper" && op.id !== "llm" && op.id !== "llm-external" && op.id !== "pipeline") return;
     if (!window.confirm(`确定停止当前${op.label}任务吗？`)) return;
 
     const jobId = currentJobIdRef.current;
@@ -969,8 +1006,11 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   }, [appendLog, beginOperation, finalizeTask, handleUnauthorized, token]);
 
   const handleLogout = useCallback(() => {
+    setLlmModeDialogOpen(false);
     abortRefs.current.scraper?.abort();
     abortRefs.current.llm?.abort();
+    abortRefs.current["llm-external"]?.abort();
+    abortRefs.current.pipeline?.abort();
     logout();
   }, [logout]);
 
@@ -988,7 +1028,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         icon: Database,
         iconBg: "from-blue-500 to-indigo-600",
         title: "LLM 数据处理",
-        description: "生成候选 CSV；确认成功后再执行推送，正式发布到看板。",
+        description: "生成候选 CSV；外来公告请先放入 external/notices 目录，再点击导入。",
       },
       {
         id: "ai" as const,
@@ -1115,11 +1155,11 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                     {card.id === "llm" ? (
                       <div className="flex items-center gap-2 w-full">
                         <GlowButton
-                          onClick={() => void runJob("llm")}
+                          onClick={() => setLlmModeDialogOpen(true)}
                           disabled={isBusy}
                           className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex-[7] flex items-center justify-center gap-1.5"
                         >
-                          {activeOperation?.id === "llm" ? (
+                          {activeOperation?.id === "llm" || activeOperation?.id === "llm-external" ? (
                             <>
                               <RefreshCw className="size-3.5 animate-spin" />
                               运行中...
@@ -1185,7 +1225,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         <AdminTaskProgress
           progress={progressState}
           onCancel={
-            activeOperation?.id === "scraper" || activeOperation?.id === "llm"
+            activeOperation?.id === "scraper" ||
+            activeOperation?.id === "llm" ||
+            activeOperation?.id === "llm-external"
               ? handleCancel
               : undefined
           }
@@ -1219,6 +1261,36 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         status={selectedLogCardState?.status ?? "idle"}
         logs={selectedLogCardState?.logs ?? []}
       />
+
+      <Dialog open={llmModeDialogOpen} onOpenChange={setLlmModeDialogOpen}>
+        <DialogContent className="max-w-md border-[#D9E2EC]">
+          <DialogHeader>
+            <DialogTitle className="text-base text-[#172033]">选择 LLM 处理来源</DialogTitle>
+            <DialogDescription className="text-[#667085]">
+              选择本次要处理正常爬虫公告，或处理已放入 external/notices 的外来 Markdown。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 pt-2">
+            <Button
+              type="button"
+              onClick={() => void chooseLlmJob("llm")}
+              className="h-11 justify-start bg-[#162B49] text-sm font-semibold text-white hover:bg-[#1e3a5f]"
+            >
+              <Database className="size-4" />
+              处理正常公告
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void chooseLlmJob("llm-external")}
+              variant="outline"
+              className="h-11 justify-start border-sky-200 text-sm font-semibold text-sky-700 hover:bg-sky-50"
+            >
+              <Upload className="size-4" />
+              处理外来公告
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
