@@ -1,6 +1,14 @@
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/+$/, "") ||
-  "http://localhost:8000";
+function normalizeApiBaseUrl(value: string | undefined): string {
+  const trimmed = value?.trim().replace(/\/+$/, "") ?? "";
+  return trimmed.replace(/\/api$/i, "");
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+
+function buildApiUrl(path: string): string {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
 
 export type JobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
 export type JobType = "scraper" | "llm";
@@ -194,7 +202,7 @@ async function requestJson<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    response = await fetch(buildApiUrl(path), {
       ...init,
       cache: init.cache ?? "no-store",
       headers: {
@@ -332,7 +340,7 @@ export async function streamJobEvents(
   } = {},
 ): Promise<void> {
   const response = await fetch(
-    `${API_BASE_URL}/api/jobs/${encodeURIComponent(jobId)}/events`,
+    buildApiUrl(`/api/jobs/${encodeURIComponent(jobId)}/events`),
     {
       headers: {
         Accept: "text/event-stream",

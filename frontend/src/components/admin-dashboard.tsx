@@ -92,7 +92,7 @@ const IDLE_PROGRESS: AdminTaskProgressState = {
 
 function backendErrorMessage(error: BackendApiError) {
   if (error.status === 0) {
-    return "无法连接 FastAPI 后端，请确认 http://localhost:8000 已启动。";
+    return "无法连接后端 API，请确认 FastAPI 或 Nginx 网关已启动。";
   }
   return error.message;
 }

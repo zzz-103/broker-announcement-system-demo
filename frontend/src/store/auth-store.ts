@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthState>((set) => {
         const message =
           error instanceof BackendApiError
             ? error.status === 0
-              ? "无法连接 FastAPI 后端，请确认 http://localhost:8000 已启动"
+              ? "无法连接后端 API，请确认 FastAPI 或 Nginx 网关已启动"
               : error.message
             : "Cannot connect to backend service";
         set({ error: message });
