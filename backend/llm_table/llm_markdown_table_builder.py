@@ -28,6 +28,8 @@ PROJECT_ROOT = ROOT_DIR.parent
 DEFAULT_INPUT_DIR = ROOT_DIR / "documents" / "markdown"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "documents" / "structured_announcements"
 DEFAULT_LLM_CONFIG_PATH = ROOT_DIR / "config" / "llm_api_config.json"
+DEFAULT_RESULT_INPUT_DIR = ROOT_DIR / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices"
+DEFAULT_RESULT_OUTPUT_DIR = ROOT_DIR / "data" / "staging" / "result"
 
 BROKER_ALIAS_HINTS: dict[str, tuple[str, ...]] = {
     "boci_securities": ("boci", "bc"),
@@ -79,6 +81,29 @@ TABLE_FIELDS = [
     "delivery_period_days",  # 明确的整体交付或实施周期，统一换算为天
 
     "winning_supplier",     # 中标/成交供应商 (看谁赚了钱，招标阶段为 null)
+]
+
+RESULT_TABLE_FIELDS = [
+    "broker_folder",
+    "markdown_file",
+    "document_sha1",
+    "processed_at",
+    "raw_json_path",
+    "notice_id",
+    "notice_type",
+    "title",
+    "publish_date",
+    "project_name",
+    "project_number",
+    "purchaser",
+    "package_number",
+    "result_type",
+    "winner",
+    "winner_candidates",
+    "winning_amount",
+    "result_status",
+    "source_url",
+    "source_file",
 ]
 
 SYSTEM_PROMPT = """你是一个专为 BI 数据看板准备底层数据的数据工程师。
@@ -218,6 +243,48 @@ USER_PROMPT_TEMPLATE = """请严格按照 JSON Array 格式提取以下公告。
 MARKDOWN
 """
 
+RESULT_SYSTEM_PROMPT = """你是一个专门处理券商采购结果公告的数据抽取助手。
+你的任务是阅读 Markdown 公告，抽取结果公告的结构化字段，并输出严格 JSON 数组。
+
+【硬性规则】
+1. 只输出 JSON 数组，禁止解释文字和 Markdown 代码块。
+2. 每个包件、标段或明确独立结果输出一个对象；没有多包件时输出一个对象。
+3. notice_type 固定输出 "result"。
+4. result_type 只能从以下枚举中选择：
+   ["candidate", "winning", "transaction", "failed", "terminated", "cancelled", "other"]
+5. result_status 只能从以下中文值中选择：
+   ["候选人公示", "已中标", "已成交", "流标", "废标", "终止", "取消", "未知"]
+6. 必须区分候选人与最终中标/成交：
+   - 标题或正文为“中标候选人公示”“成交候选人公示”时，winner 必须为空字符串。
+   - 候选人名单写入 winner_candidates。
+   - 只有“中标结果公告”“成交结果公告”“中标公告”“成交公告”等明确最终结果，才填写 winner。
+7. 区分中标、成交、流标、废标、终止、取消；不得根据标题之外的信息臆造结果。
+8. project_name 应去除公告类型后缀，例如“中标候选人公示”“成交候选人公示”“中标结果公告”“成交结果公告”“流标公告”“废标公告”“终止公告”“取消公告”，但不要删除项目名称中的年份、包号、标段名称或“第二次”等有效信息。
+9. winning_amount 统一换算为人民币元数字；无法确认金额时输出 null；多包件金额不得相加成项目总金额。
+10. winner_candidates 可以输出数组；无法确定的字段输出空字符串、null 或 "unknown"，不要猜测。
+11. source_file 必须填写传入的 markdown_file。
+
+【输出字段】
+[
+  {
+    "notice_id": "string",
+    "notice_type": "result",
+    "title": "string",
+    "publish_date": "YYYY-MM-DD|string",
+    "project_name": "string",
+    "project_number": "string",
+    "purchaser": "string",
+    "package_number": "string",
+    "result_type": "candidate | winning | transaction | failed | terminated | cancelled | other",
+    "winner": "string",
+    "winner_candidates": "array|string",
+    "winning_amount": "number|null",
+    "result_status": "候选人公示 | 已中标 | 已成交 | 流标 | 废标 | 终止 | 取消 | 未知",
+    "source_url": "string",
+    "source_file": "string"
+  }
+]"""
+
 
 @dataclass(slots=True)
 class FileExtractionResult:
@@ -284,16 +351,51 @@ class LLMApiConfig:
             raise ValueError("llm_api_config.json 缺少 model")
 
 
+@dataclass(frozen=True, slots=True)
+class NoticeTypeRuntime:
+    notice_type: str
+    default_input_dir: Path
+    default_output_dir: Path
+    table_fields: list[str]
+    system_prompt: str
+    output_stem: str
+    write_broker_outputs: bool = True
+
+
+NOTICE_TYPE_RUNTIMES = {
+    "procurement": NoticeTypeRuntime(
+        notice_type="procurement",
+        default_input_dir=DEFAULT_INPUT_DIR,
+        default_output_dir=DEFAULT_OUTPUT_DIR,
+        table_fields=TABLE_FIELDS,
+        system_prompt=SYSTEM_PROMPT,
+        output_stem="announcement_table",
+        write_broker_outputs=True,
+    ),
+    "result": NoticeTypeRuntime(
+        notice_type="result",
+        default_input_dir=DEFAULT_RESULT_INPUT_DIR,
+        default_output_dir=DEFAULT_RESULT_OUTPUT_DIR,
+        table_fields=RESULT_TABLE_FIELDS,
+        system_prompt=RESULT_SYSTEM_PROMPT,
+        output_stem="result_table",
+        write_broker_outputs=False,
+    ),
+}
+
+
 class OpenAICompatibleClient:
     def __init__(
         self,
         config: LLMApiConfig,
+        system_prompt: str = SYSTEM_PROMPT,
     ) -> None:
         if OpenAI is None:
             raise ImportError(
                 "缺少 openai 依赖，请先执行 `uv pip install openai` 或在当前环境中安装 openai。"
             )
         self.config = config
+        self.system_prompt = system_prompt
         self.client = OpenAI(
             base_url=self.config.base_url,
             api_key=self.config.api_key,
@@ -302,7 +404,7 @@ class OpenAICompatibleClient:
 
     def extract(self, markdown: str, metadata: dict[str, str]) -> Any:
         messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": self.system_prompt},
             {
                 "role": "user",
                 "content": USER_PROMPT_TEMPLATE.format(
@@ -464,6 +566,98 @@ def discover_broker_folders(input_dir: Path) -> list[str]:
     return sorted(folders)
 
 
+def read_markdown_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8-sig")
+
+
+def normalized_markdown_body(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def extract_markdown_title(markdown: str) -> str:
+    for line in markdown.splitlines():
+        match = re.match(r"^#\s+(.+?)\s*$", line)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def load_processed_sha256_state(state_path: Path | None) -> set[str]:
+    if state_path is None or not state_path.exists():
+        return set()
+    try:
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    values = payload.get("processed_sha256") if isinstance(payload, dict) else payload
+    if not isinstance(values, list):
+        return set()
+    return {str(value) for value in values if isinstance(value, str) and value}
+
+
+def save_processed_sha256_state(state_path: Path | None, values: set[str]) -> None:
+    if state_path is None:
+        return
+    payload = {
+        "processed_sha256": sorted(values),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    atomic_write_text(state_path, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def validate_external_markdown_files(
+    files: list[Path],
+    processed_sha256: set[str],
+) -> tuple[list[Path], dict[tuple[str, str], str], int]:
+    valid_files: list[Path] = []
+    file_hashes: dict[tuple[str, str], str] = {}
+    skipped_count = 0
+    seen_sha256: set[str] = set()
+
+    for path in files:
+        if path.suffix.lower() != ".md":
+            print(f"[external] 跳过非 Markdown 文件: {path}", file=sys.stderr)
+            skipped_count += 1
+            continue
+        try:
+            markdown = normalized_markdown_body(read_markdown_text(path))
+        except UnicodeDecodeError as exc:
+            print(f"[external] 跳过无法按 UTF-8 读取的文件: {path}: {exc}", file=sys.stderr)
+            skipped_count += 1
+            continue
+        except OSError as exc:
+            print(f"[external] 跳过无法读取的文件: {path}: {exc}", file=sys.stderr)
+            skipped_count += 1
+            continue
+        if not markdown:
+            print(f"[external] 跳过空 Markdown 文件: {path}", file=sys.stderr)
+            skipped_count += 1
+            continue
+        title = extract_markdown_title(markdown)
+        if not title:
+            print(f"[external] 跳过缺少一级标题的文件: {path}", file=sys.stderr)
+            skipped_count += 1
+            continue
+        document_sha256 = sha256_text(markdown)
+        if document_sha256 in processed_sha256:
+            print(f"[external] 跳过已成功处理过的重复正文: {path}")
+            skipped_count += 1
+            continue
+        if document_sha256 in seen_sha256:
+            print(f"[external] 跳过本批次重复正文: {path}")
+            skipped_count += 1
+            continue
+        seen_sha256.add(document_sha256)
+        valid_files.append(path)
+        file_hashes[path_file_key(path)] = document_sha256
+
+    return valid_files, file_hashes, skipped_count
+
+
 def read_jsonl_rows(jsonl_path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not jsonl_path.exists():
@@ -478,25 +672,30 @@ def read_jsonl_rows(jsonl_path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def read_csv_rows(csv_path: Path) -> list[dict[str, Any]]:
+def read_csv_rows(csv_path: Path, table_fields: list[str]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     if not csv_path.exists():
         return rows
     with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         for row in reader:
-            rows.append({field: row.get(field, "") for field in TABLE_FIELDS})
+            rows.append({field: row.get(field, "") for field in table_fields})
     return rows
 
 
-def load_existing_output_rows(output_dir: Path) -> list[dict[str, Any]]:
-    jsonl_path = output_dir / "announcement_table.jsonl"
-    csv_path = output_dir / "announcement_table.csv"
+def load_existing_output_rows(
+    output_dir: Path,
+    table_fields: list[str] | None = None,
+    output_stem: str = "announcement_table",
+) -> list[dict[str, Any]]:
+    active_fields = table_fields or TABLE_FIELDS
+    jsonl_path = output_dir / f"{output_stem}.jsonl"
+    csv_path = output_dir / f"{output_stem}.csv"
 
     rows = read_jsonl_rows(jsonl_path)
     if not rows:
-        rows = read_csv_rows(csv_path)
-    return [normalize_row_fields(row) for row in rows]
+        rows = read_csv_rows(csv_path, active_fields)
+    return [normalize_row_fields(row, active_fields) for row in rows]
 
 
 def row_file_key(row: dict[str, Any]) -> tuple[str, str]:
@@ -529,6 +728,8 @@ def select_files_for_processing(
     output_dir: Path,
     incremental: bool,
     overwrite: bool,
+    table_fields: list[str] | None = None,
+    output_stem: str = "announcement_table",
 ) -> IncrementalSelectionResult:
     if not incremental:
         return IncrementalSelectionResult(
@@ -541,7 +742,7 @@ def select_files_for_processing(
             changed_files=[],
         )
 
-    existing_rows = load_existing_output_rows(output_dir)
+    existing_rows = load_existing_output_rows(output_dir, table_fields, output_stem)
     existing_sha1_map = build_existing_sha1_map(existing_rows)
     plans: list[FileProcessingPlan] = []
     skipped_files: list[Path] = []
@@ -554,7 +755,7 @@ def select_files_for_processing(
             changed_files.append(path)
             continue
 
-        markdown = path.read_text(encoding="utf-8").strip()
+        markdown = normalized_markdown_body(read_markdown_text(path))
         current_sha1 = sha1_text(markdown)
         existing_sha1 = existing_sha1_map.get(path_file_key(path))
 
@@ -692,12 +893,160 @@ def normalize_candidate_suppliers(value: Any) -> str:
     return str(value)
 
 
+def parse_markdown_front_matter(markdown: str) -> dict[str, str]:
+    match = re.match(r"\A---\n(?P<body>.*?)\n---\n", markdown, re.DOTALL)
+    if not match:
+        return {}
+    data: dict[str, str] = {}
+    for line in match.group("body").splitlines():
+        if ":" not in line:
+            continue
+        key, raw_value = line.split(":", 1)
+        key = key.strip()
+        if not key:
+            continue
+        value = raw_value.strip()
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            parsed = value.strip("\"'")
+        data[key] = normalize_scalar(parsed)
+    return data
+
+
+RESULT_TYPE_VALUES = {
+    "candidate",
+    "winning",
+    "transaction",
+    "failed",
+    "terminated",
+    "cancelled",
+    "other",
+}
+
+RESULT_STATUS_VALUES = {
+    "候选人公示",
+    "已中标",
+    "已成交",
+    "流标",
+    "废标",
+    "终止",
+    "取消",
+    "未知",
+}
+
+
+def normalize_result_type(value: Any, title: str) -> str:
+    text = normalize_scalar(value).lower()
+    if text in RESULT_TYPE_VALUES:
+        return text
+    title_text = title or ""
+    if "候选人" in title_text:
+        return "candidate"
+    if "成交" in title_text:
+        return "transaction"
+    if "中标" in title_text:
+        return "winning"
+    if "流标" in title_text or "失败" in title_text:
+        return "failed"
+    if "废标" in title_text:
+        return "failed"
+    if "终止" in title_text:
+        return "terminated"
+    if "取消" in title_text:
+        return "cancelled"
+    return "other"
+
+
+def normalize_result_status(value: Any, result_type: str, title: str) -> str:
+    text = normalize_scalar(value)
+    if text in RESULT_STATUS_VALUES:
+        return text
+    title_text = title or ""
+    if "候选人" in title_text or result_type == "candidate":
+        return "候选人公示"
+    if "成交" in title_text or result_type == "transaction":
+        return "已成交"
+    if "中标" in title_text or result_type == "winning":
+        return "已中标"
+    if "流标" in title_text:
+        return "流标"
+    if "废标" in title_text:
+        return "废标"
+    if "终止" in title_text or result_type == "terminated":
+        return "终止"
+    if "取消" in title_text or result_type == "cancelled":
+        return "取消"
+    return "未知"
+
+
+def normalize_result_amount(value: Any) -> int | float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    text = normalize_scalar(value).replace(",", "")
+    if not text or text.lower() in {"null", "none", "unknown"}:
+        return None
+    match = re.search(r"(-?\d+(?:\.\d+)?)", text)
+    if not match:
+        return None
+    number = float(match.group(1))
+    if "亿元" in text or "亿" in text:
+        number *= 100000000
+    elif "万元" in text or "万" in text:
+        number *= 10000
+    return int(number) if number.is_integer() else number
+
+
+def normalize_result_candidates(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        cleaned = [item for item in value if normalize_scalar(item)]
+        return json.dumps(cleaned, ensure_ascii=False)
+    if isinstance(value, dict):
+        return json.dumps(value, ensure_ascii=False)
+    return normalize_scalar(value)
+
+
+def strip_result_suffix(project_name: str, title: str) -> str:
+    value = normalize_scalar(project_name) or normalize_scalar(title)
+    suffixes = [
+        "中标候选人公示",
+        "成交候选人公示",
+        "中标结果公告",
+        "成交结果公告",
+        "采购结果公告",
+        "结果公告",
+        "中标公告",
+        "成交公告",
+        "流标公告",
+        "废标公告",
+        "终止公告",
+        "取消公告",
+    ]
+    changed = True
+    while changed:
+        changed = False
+        for suffix in suffixes:
+            if value.endswith(suffix):
+                value = value[: -len(suffix)].strip(" -_（）()[]【】")
+                changed = True
+    return value
+
+
 def flatten_payload(
     payload: Any,
     metadata: dict[str, str],
     raw_json_path: str,
     processed_at: str,
+    notice_type: str = "procurement",
+    table_fields: list[str] | None = None,
 ) -> list[dict[str, Any]]:
+    if notice_type == "result":
+        return flatten_result_payload(payload, metadata, raw_json_path, processed_at, table_fields or RESULT_TABLE_FIELDS)
+
     records: list[dict[str, Any]] = []
     confidence = ""
 
@@ -763,8 +1112,74 @@ def flatten_payload(
             "raw_json_path": raw_json_path,
             "processed_at": processed_at,
         }
-        rows.append(normalize_row_fields(row))
+        rows.append(normalize_row_fields(row, table_fields or TABLE_FIELDS))
 
+    return rows
+
+
+def flatten_result_payload(
+    payload: Any,
+    metadata: dict[str, str],
+    raw_json_path: str,
+    processed_at: str,
+    table_fields: list[str],
+) -> list[dict[str, Any]]:
+    front_matter = metadata.get("front_matter")
+    if isinstance(front_matter, str):
+        try:
+            front_matter_data = json.loads(front_matter)
+        except json.JSONDecodeError:
+            front_matter_data = {}
+    elif isinstance(front_matter, dict):
+        front_matter_data = front_matter
+    else:
+        front_matter_data = {}
+
+    if isinstance(payload, list):
+        records = [item for item in payload if isinstance(item, dict)]
+    elif isinstance(payload, dict):
+        legacy_records = payload.get("records")
+        if isinstance(legacy_records, list):
+            records = [item for item in legacy_records if isinstance(item, dict)]
+        else:
+            records = [payload]
+    else:
+        records = []
+
+    if not records:
+        records = [{}]
+
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        title = first_non_empty(record.get("title"), front_matter_data.get("title"))
+        result_type = normalize_result_type(record.get("result_type"), title)
+        result_status = normalize_result_status(record.get("result_status"), result_type, title)
+        winner = normalize_scalar(record.get("winner"))
+        if result_type == "candidate":
+            winner = ""
+        row = {
+            "broker_folder": metadata["broker_folder"],
+            "markdown_file": metadata["markdown_file"],
+            "document_sha1": metadata["document_sha1"],
+            "processed_at": processed_at,
+            "raw_json_path": raw_json_path,
+            "notice_id": first_non_empty(record.get("notice_id"), front_matter_data.get("notice_id")),
+            "notice_type": "result",
+            "title": title,
+            "publish_date": first_non_empty(record.get("publish_date"), front_matter_data.get("publish_date")),
+            "project_name": strip_result_suffix(first_non_empty(record.get("project_name"), title), title),
+            "project_number": first_non_empty(record.get("project_number"), record.get("procurement_number")),
+            "purchaser": first_non_empty(record.get("purchaser"), front_matter_data.get("purchaser")),
+            "package_number": first_non_empty(record.get("package_number"), record.get("section_number")),
+            "result_type": result_type,
+            "winner": winner,
+            "winner_candidates": normalize_result_candidates(record.get("winner_candidates")),
+            "winning_amount": normalize_result_amount(record.get("winning_amount")),
+            "result_status": result_status,
+            "source_url": first_non_empty(record.get("source_url"), front_matter_data.get("source_url")),
+            "source_file": first_non_empty(record.get("source_file"), metadata["markdown_file"]),
+        }
+        rows.append(normalize_row_fields(row, table_fields))
     return rows
 
 
@@ -788,6 +1203,7 @@ NUMERIC_FIELDS = {
     "budget_amount_yuan",
     "ceiling_price_yuan",
     "winning_amount_yuan",
+    "winning_amount",
     "service_period_months",
     "delivery_period_days",
 }
@@ -828,9 +1244,10 @@ def normalize_boolean(value: Any) -> str:
     return ""
 
 
-def normalize_row_fields(row: dict[str, Any]) -> dict[str, Any]:
+def normalize_row_fields(row: dict[str, Any], table_fields: list[str] | None = None) -> dict[str, Any]:
+    active_fields = table_fields or TABLE_FIELDS
     normalized = {}
-    for field in TABLE_FIELDS:
+    for field in active_fields:
         val = row.get(field)
         if field in NUMERIC_FIELDS:
             normalized[field] = normalize_numeric(val)
@@ -932,12 +1349,14 @@ def process_markdown_file(
     request_start_lock: threading.Lock | None,
     next_allowed_call_at: list[float],
     request_log_interval_seconds: float,
+    notice_type: str = "procurement",
+    table_fields: list[str] | None = None,
 ) -> FileExtractionResult:
     relative_path = path.relative_to(input_dir)
     raw_json_path = output_dir / "raw_json" / relative_path.with_suffix(".json")
     raw_json_path.parent.mkdir(parents=True, exist_ok=True)
 
-    markdown = path.read_text(encoding="utf-8").strip()
+    markdown = normalized_markdown_body(read_markdown_text(path))
     if not markdown:
         return FileExtractionResult(rows=[], raw_payload=None, error=f"Empty markdown: {path}")
 
@@ -946,13 +1365,21 @@ def process_markdown_file(
         "markdown_file": path.name,
         "relative_path": str(relative_path),
         "document_sha1": sha1_text(markdown),
+        "front_matter": json.dumps(parse_markdown_front_matter(markdown), ensure_ascii=False),
     }
     raw_json_reference = portable_path(raw_json_path)
     processed_at = datetime.now(timezone.utc).isoformat()
 
     if raw_json_path.exists() and not force_refresh:
         cached_payload = json.loads(raw_json_path.read_text(encoding="utf-8"))
-        rows = flatten_payload(cached_payload, metadata, raw_json_reference, processed_at)
+        rows = flatten_payload(
+            cached_payload,
+            metadata,
+            raw_json_reference,
+            processed_at,
+            notice_type=notice_type,
+            table_fields=table_fields,
+        )
         return FileExtractionResult(rows=rows, raw_payload=cached_payload)
 
     with request_semaphore:
@@ -1059,20 +1486,28 @@ def process_markdown_file(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    rows = flatten_payload(payload, metadata, raw_json_reference, processed_at)
+    rows = flatten_payload(
+        payload,
+        metadata,
+        raw_json_reference,
+        processed_at,
+        notice_type=notice_type,
+        table_fields=table_fields,
+    )
     return FileExtractionResult(rows=rows, raw_payload=payload)
 
 
-def write_csv(rows: list[dict[str, Any]], csv_path: Path) -> None:
+def write_csv(rows: list[dict[str, Any]], csv_path: Path, table_fields: list[str] | None = None) -> None:
+    active_fields = table_fields or TABLE_FIELDS
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = atomic_temp_path(csv_path)
     try:
         with temp_path.open("w", encoding="utf-8-sig", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=TABLE_FIELDS)
+            writer = csv.DictWriter(file, fieldnames=active_fields)
             writer.writeheader()
             csv_rows = []
             for row in rows:
-                csv_rows.append({k: ("" if v is None else v) for k, v in row.items()})
+                csv_rows.append({k: ("" if row.get(k) is None else row.get(k)) for k in active_fields})
             writer.writerows(csv_rows)
         os.replace(temp_path, csv_path)
     finally:
@@ -1095,13 +1530,17 @@ def write_failures_jsonl(failures: list[dict[str, Any]], jsonl_path: Path) -> No
     atomic_write_text(jsonl_path, content, encoding="utf-8")
 
 
-def maybe_export_xlsx(rows: list[dict[str, Any]], xlsx_path: Path) -> str | None:
+def maybe_export_xlsx(
+    rows: list[dict[str, Any]],
+    xlsx_path: Path,
+    table_fields: list[str] | None = None,
+) -> str | None:
     try:
         import pandas as pd
     except ImportError:
         return None
 
-    dataframe = pd.DataFrame(rows, columns=TABLE_FIELDS)
+    dataframe = pd.DataFrame(rows, columns=table_fields or TABLE_FIELDS)
     xlsx_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = atomic_temp_path(xlsx_path)
     try:
@@ -1159,15 +1598,18 @@ def write_output_bundle(
     output_dir: Path,
     summary_path: Path,
     summary_payload: dict[str, Any],
+    table_fields: list[str] | None = None,
+    output_stem: str = "announcement_table",
 ) -> dict[str, str | None]:
-    csv_path = output_dir / "announcement_table.csv"
-    jsonl_path = output_dir / "announcement_table.jsonl"
-    xlsx_path = output_dir / "announcement_table.xlsx"
+    active_fields = table_fields or TABLE_FIELDS
+    csv_path = output_dir / f"{output_stem}.csv"
+    jsonl_path = output_dir / f"{output_stem}.jsonl"
+    xlsx_path = output_dir / f"{output_stem}.xlsx"
 
     sorted_rows = sort_rows(rows)
-    write_csv(sorted_rows, csv_path)
+    write_csv(sorted_rows, csv_path, active_fields)
     write_jsonl(sorted_rows, jsonl_path)
-    xlsx_exported = maybe_export_xlsx(sorted_rows, xlsx_path)
+    xlsx_exported = maybe_export_xlsx(sorted_rows, xlsx_path, active_fields)
 
     atomic_write_text(
         summary_path,
@@ -1186,8 +1628,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="调用大模型 API，将 Markdown 招投标公告抽取为结构化 JSON 和汇总表。",
     )
-    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--notice-type",
+        choices=sorted(NOTICE_TYPE_RUNTIMES),
+        default="procurement",
+        help="公告类型，procurement=采购公告，result=结果公告，默认：procurement",
+    )
+    parser.add_argument("--input-dir", type=Path, default=None)
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--llm-config", type=Path, default=DEFAULT_LLM_CONFIG_PATH)
     parser.add_argument(
         "--broker-folders",
@@ -1238,6 +1686,22 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="忽略现有总表索引，重新处理当前匹配到的全部 Markdown",
     )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="允许 input-dir 不存在待处理 Markdown 时成功退出",
+    )
+    parser.add_argument(
+        "--require-title-heading",
+        action="store_true",
+        help="处理前校验 Markdown 必须包含非空一级标题",
+    )
+    parser.add_argument(
+        "--processed-sha256-state",
+        type=Path,
+        default=None,
+        help="记录外来 Markdown 正文 SHA256 的状态文件，用于跳过重复正文",
+    )
     parser.set_defaults(incremental=True)
     return parser
 
@@ -1245,10 +1709,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_argument_parser()
     args = parser.parse_args()
+    runtime = NOTICE_TYPE_RUNTIMES[args.notice_type]
 
-    input_dir = args.input_dir.resolve()
-    output_dir = args.output_dir.resolve()
+    input_dir = (args.input_dir or runtime.default_input_dir).resolve()
+    output_dir = (args.output_dir or runtime.default_output_dir).resolve()
     llm_config_path = args.llm_config.resolve()
+    processed_sha256_state_path = (
+        args.processed_sha256_state.resolve() if args.processed_sha256_state else None
+    )
 
     if args.list_brokers:
         print_available_brokers(input_dir)
@@ -1259,6 +1727,49 @@ def main() -> int:
         broker_folders = resolve_broker_folders(args.broker_folders, available_broker_folders)
     except ValueError as exc:
         parser.error(str(exc))
+
+    discovered_files = discover_markdown_files(input_dir, broker_folders)
+    if args.max_files is not None:
+        discovered_files = discovered_files[: args.max_files]
+
+    processed_sha256 = load_processed_sha256_state(processed_sha256_state_path)
+    external_file_sha256: dict[tuple[str, str], str] = {}
+    skipped_external_files = 0
+    if args.require_title_heading or processed_sha256_state_path is not None:
+        discovered_files, external_file_sha256, skipped_external_files = validate_external_markdown_files(
+            discovered_files,
+            processed_sha256,
+        )
+
+    if not discovered_files:
+        message = "未找到待处理的 Markdown 文件。"
+        if skipped_external_files:
+            message = f"未找到待处理的 Markdown 文件，已跳过 {skipped_external_files} 个无效或重复文件。"
+        if args.allow_empty:
+            emit_progress("completed", 100, message)
+            summary = {
+                "input_dir": portable_path(input_dir),
+                "output_dir": portable_path(output_dir),
+                "notice_type": runtime.notice_type,
+                "broker_output_root": portable_path(output_dir / "brokers") if runtime.write_broker_outputs else "",
+                "llm_config_path": portable_path(llm_config_path),
+                "incremental": args.incremental,
+                "discovered_files": 0,
+                "llm_requested_files": 0,
+                "cache_reused_files": 0,
+                "processed_files": 0,
+                "skipped_external_files": skipped_external_files,
+                "success_files": 0,
+                "failed_files": 0,
+                "output_rows": len(load_existing_output_rows(output_dir, runtime.table_fields, runtime.output_stem)),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "message": message,
+            }
+            print(message)
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+            return 0
+        print(message, file=sys.stderr)
+        return 1
 
     if not llm_config_path.exists():
         parser.error(f"未找到 LLM 配置文件: {llm_config_path}")
@@ -1274,20 +1785,14 @@ def main() -> int:
         return 1
     llm_config.validate()
 
-    discovered_files = discover_markdown_files(input_dir, broker_folders)
-    if args.max_files is not None:
-        discovered_files = discovered_files[: args.max_files]
-
-    if not discovered_files:
-        print("未找到待处理的 Markdown 文件。", file=sys.stderr)
-        return 1
-
-    existing_rows = load_existing_output_rows(output_dir)
+    existing_rows = load_existing_output_rows(output_dir, runtime.table_fields, runtime.output_stem)
     selection = select_files_for_processing(
         discovered_files,
         output_dir=output_dir,
         incremental=args.incremental,
         overwrite=args.overwrite,
+        table_fields=runtime.table_fields,
+        output_stem=runtime.output_stem,
     )
     plans = selection.plans
     cache_reused_files = sum(
@@ -1299,11 +1804,15 @@ def main() -> int:
     llm_requested_files = len(plans) - cache_reused_files
 
     if not plans and args.incremental:
+        if external_file_sha256:
+            processed_sha256.update(external_file_sha256.values())
+            save_processed_sha256_state(processed_sha256_state_path, processed_sha256)
         emit_progress("completed", 100, "没有新增或变更文件，沿用现有候选结果。")
         summary = {
             "input_dir": portable_path(input_dir),
             "output_dir": portable_path(output_dir),
-            "broker_output_root": portable_path(output_dir / "brokers"),
+            "notice_type": runtime.notice_type,
+            "broker_output_root": portable_path(output_dir / "brokers") if runtime.write_broker_outputs else "",
             "llm_config_path": portable_path(llm_config_path),
             "model": llm_config.model,
             "api_base_url": llm_config.base_url,
@@ -1312,6 +1821,7 @@ def main() -> int:
             "llm_requested_files": 0,
             "cache_reused_files": 0,
             "processed_files": 0,
+            "skipped_external_files": skipped_external_files,
             "skipped_unchanged_files": len(selection.skipped_files),
             "new_files": 0,
             "changed_files": 0,
@@ -1325,7 +1835,7 @@ def main() -> int:
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
 
-    client = OpenAICompatibleClient(config=llm_config)
+    client = OpenAICompatibleClient(config=llm_config, system_prompt=runtime.system_prompt)
 
     all_rows: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -1339,6 +1849,7 @@ def main() -> int:
     print(f"cache_reused_files={cache_reused_files}")
 
     print(f"扫描到 Markdown 文件数: {len(discovered_files)}")
+    print(f"公告类型: {runtime.notice_type}")
     print(f"本次待处理文件数: {len(plans)}")
     if args.incremental:
         print(f"增量跳过未变更文件数: {len(selection.skipped_files)}")
@@ -1370,6 +1881,8 @@ def main() -> int:
                 request_start_lock,
                 next_allowed_call_at,
                 max(0.0, args.request_log_interval_seconds),
+                runtime.notice_type,
+                runtime.table_fields,
             ): plan
             for plan in plans
         }
@@ -1392,6 +1905,9 @@ def main() -> int:
                     continue
                 all_rows.extend(result.rows)
                 successful_file_keys.add(path_file_key(path))
+                document_sha256 = external_file_sha256.get(path_file_key(path))
+                if document_sha256:
+                    processed_sha256.add(document_sha256)
                 print(
                     f"[{index}/{len(plans)}] OK {path} -> {len(result.rows)} rows "
                     f"({plan.reason})"
@@ -1426,6 +1942,8 @@ def main() -> int:
 
     failure_path = output_dir / "failed_files.jsonl"
     write_failures_jsonl(failures, failure_path)
+    if processed_sha256_state_path is not None:
+        save_processed_sha256_state(processed_sha256_state_path, processed_sha256)
     emit_progress("writing", 95, "正在写入候选 CSV...", current=N, total=N)
 
     output_rows = (
@@ -1434,41 +1952,46 @@ def main() -> int:
         else all_rows
     )
 
-    broker_output_root = output_dir / "brokers"
-    files_by_broker = count_files_by_broker([plan.path for plan in plans])
-    failures_by_broker = count_failures_by_broker(failures)
-    rows_by_broker = group_rows_by_broker(output_rows)
     broker_summaries: dict[str, dict[str, Any]] = {}
+    broker_output_root = output_dir / "brokers"
 
-    for broker_folder in sorted(set(files_by_broker) | set(rows_by_broker) | set(failures_by_broker)):
-        broker_rows = rows_by_broker.get(broker_folder, [])
-        broker_output_dir = broker_output_root / broker_folder
-        broker_summary = {
-            "broker_folder": broker_folder,
-            "output_dir": portable_path(broker_output_dir),
-            "processed_files": files_by_broker.get(broker_folder, 0),
-            "failed_files": failures_by_broker.get(broker_folder, 0),
-            "success_files": files_by_broker.get(broker_folder, 0) - failures_by_broker.get(broker_folder, 0),
-            "output_rows": len(broker_rows),
-            "finished_at": datetime.now(timezone.utc).isoformat(),
-        }
-        broker_paths = write_output_bundle(
-            broker_rows,
-            broker_output_dir,
-            broker_output_dir / "run_summary.json",
-            broker_summary,
-        )
-        broker_summary.update(broker_paths)
-        (broker_output_dir / "run_summary.json").write_text(
-            json.dumps(broker_summary, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        broker_summaries[broker_folder] = broker_summary
+    if runtime.write_broker_outputs:
+        files_by_broker = count_files_by_broker([plan.path for plan in plans])
+        failures_by_broker = count_failures_by_broker(failures)
+        rows_by_broker = group_rows_by_broker(output_rows)
+
+        for broker_folder in sorted(set(files_by_broker) | set(rows_by_broker) | set(failures_by_broker)):
+            broker_rows = rows_by_broker.get(broker_folder, [])
+            broker_output_dir = broker_output_root / broker_folder
+            broker_summary = {
+                "broker_folder": broker_folder,
+                "output_dir": portable_path(broker_output_dir),
+                "processed_files": files_by_broker.get(broker_folder, 0),
+                "failed_files": failures_by_broker.get(broker_folder, 0),
+                "success_files": files_by_broker.get(broker_folder, 0) - failures_by_broker.get(broker_folder, 0),
+                "output_rows": len(broker_rows),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+            }
+            broker_paths = write_output_bundle(
+                broker_rows,
+                broker_output_dir,
+                broker_output_dir / "run_summary.json",
+                broker_summary,
+                runtime.table_fields,
+                runtime.output_stem,
+            )
+            broker_summary.update(broker_paths)
+            (broker_output_dir / "run_summary.json").write_text(
+                json.dumps(broker_summary, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            broker_summaries[broker_folder] = broker_summary
 
     summary = {
         "input_dir": portable_path(input_dir),
         "output_dir": portable_path(output_dir),
-        "broker_output_root": portable_path(broker_output_root),
+        "notice_type": runtime.notice_type,
+        "broker_output_root": portable_path(broker_output_root) if runtime.write_broker_outputs else "",
         "llm_config_path": portable_path(llm_config_path),
         "model": llm_config.model,
         "api_base_url": llm_config.base_url,
@@ -1477,6 +2000,7 @@ def main() -> int:
         "llm_requested_files": llm_requested_files,
         "cache_reused_files": cache_reused_files,
         "processed_files": len(plans),
+        "skipped_external_files": skipped_external_files,
         "skipped_unchanged_files": len(selection.skipped_files),
         "new_files": len(selection.new_files),
         "changed_files": len(selection.changed_files),
@@ -1492,6 +2016,8 @@ def main() -> int:
         output_dir,
         output_dir / "run_summary.json",
         summary,
+        runtime.table_fields,
+        runtime.output_stem,
     )
     summary.update(master_paths)
     (output_dir / "run_summary.json").write_text(
