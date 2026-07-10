@@ -12,6 +12,7 @@ manual_test/
 .tmp/
 # Runtime generated data (keep .gitkeep for directory structure)
 backend/data/announcement_table.csv
+backend/data/announcement_table-*.backup.csv
 backend/data/announcement_table.jsonl
 backend/data/announcement_table.xlsx
 backend/data/ai-analysis.json
@@ -19,6 +20,10 @@ backend/data/run_summary.json
 backend/data/failed_files.jsonl
 backend/data/staging/*.csv
 backend/data/staging/*.jsonl
+backend/data/supplemental/*
+!backend/data/supplemental/.gitkeep
+backend/data/supplemental-test/*
+!backend/data/supplemental-test/.gitkeep
 runtime/
 # Python virtual environment and cache
 .venv/

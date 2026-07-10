@@ -23,6 +23,12 @@ from .ai_analysis import (
     to_http_exception,
 )
 from .job_manager import JobConflictError, JobManager, JobNotFoundError, format_sse
+from .supplemental_seed import (
+    CANONICAL_FIELDS,
+    SupplementalDataError,
+    merge_for_publication,
+    supplemental_data_dir,
+)
 from .user_store import (
     DuplicateUserError,
     InvalidUserCredentialsError,
@@ -101,16 +107,8 @@ class LlmJobRequest(BaseModel):
 
 job_manager = JobManager()
 session_tokens: dict[str, dict[str, str | bool]] = {}
-BROKER_PROJECT_HEADER = "is_broker_project"
 QUALIFICATION_NOT_FOUND_MESSAGE = "\u672a\u627e\u5230\u5339\u914d\u8d44\u683c\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
 QUALIFICATION_SERVICE_UNAVAILABLE_MESSAGE = "\u8d44\u683c\u670d\u52a1\u6682\u4e0d\u53ef\u7528\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
-ANNOUNCEMENT_REQUIRED_HEADERS = {
-    "broker_name",
-    BROKER_PROJECT_HEADER,
-    "project_name",
-    "publish_date",
-}
-PUBLISH_MIN_RETAIN_RATIO = 0.5
 
 
 @dataclass
@@ -198,125 +196,11 @@ def read_announcement_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     return fieldnames, records
 
 
-def broker_project_classification(value: str | None) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized == "true":
-        return "true"
-    if normalized == "false":
-        return "false"
-    return "empty"
-
-
-def publish_min_retain_ratio() -> float:
-    raw = os.getenv("PUBLISH_MIN_RETAIN_RATIO", str(PUBLISH_MIN_RETAIN_RATIO)).strip()
-    try:
-        value = float(raw)
-    except ValueError:
-        return PUBLISH_MIN_RETAIN_RATIO
-    if value <= 0 or value > 1:
-        return PUBLISH_MIN_RETAIN_RATIO
-    return value
-
-
 def count_csv_records(path: Path) -> int:
     if not path.exists():
         return 0
     _, records = read_announcement_csv(path)
     return len([row for row in records if any(str(value or "").strip() for value in row.values())])
-
-
-def validate_publishable_csv(path: Path, previous_count: int) -> PublishPlan:
-    try:
-        with path.open("r", encoding="utf-8-sig", newline="") as file:
-            reader = csv.DictReader(file)
-            fieldnames = [name.strip() for name in (reader.fieldnames or []) if name and name.strip()]
-            if not fieldnames:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="staging announcement CSV is missing headers",
-                )
-            missing_headers = sorted(ANNOUNCEMENT_REQUIRED_HEADERS - set(fieldnames))
-            if missing_headers:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail="staging announcement CSV is missing required headers",
-                )
-            records = [
-                row
-                for row in reader
-                if any(str(value or "").strip() for value in row.values())
-            ]
-    except csv.Error as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="staging announcement CSV is invalid",
-        ) from exc
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="failed to read staging announcement CSV",
-        ) from exc
-
-    staging_count = len(records)
-    if not records:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="staging announcement CSV does not contain valid records",
-        )
-
-    true_records: list[dict[str, str]] = []
-    false_count = 0
-    empty_count = 0
-    for row in records:
-        classification = broker_project_classification(row.get(BROKER_PROJECT_HEADER))
-        if classification == "true":
-            true_records.append(row)
-        elif classification == "false":
-            false_count += 1
-        else:
-            empty_count += 1
-
-    publishable_records = true_records
-    meta: dict[str, object] = {
-        "staging_count": staging_count,
-        "source_count": staging_count,
-        "true_count": len(true_records),
-        "false_count": false_count,
-        "empty_count": empty_count,
-        "previous_count": previous_count,
-        "published_count": len(publishable_records),
-        "excluded_count": false_count,
-    }
-
-    if empty_count:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "staging announcement CSV contains unclassified broker project records",
-                "meta": meta,
-            },
-        )
-    if not publishable_records:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={
-                "message": "staging announcement CSV does not contain broker project records",
-                "meta": meta,
-            },
-        )
-
-    min_retain_ratio = publish_min_retain_ratio()
-    if previous_count > 0 and len(publishable_records) < previous_count * min_retain_ratio:
-        meta["min_retain_ratio"] = min_retain_ratio
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "message": "published record count dropped too much; refusing to overwrite official CSV",
-                "meta": meta,
-            },
-        )
-
-    return PublishPlan(fieldnames=fieldnames, records=publishable_records, meta=meta)
 
 
 def publish_csv_atomically(
@@ -589,7 +473,22 @@ def publish_announcements() -> dict[str, object]:
             )
 
         previous_count = count_csv_records(target_path)
-        publish_plan = validate_publishable_csv(staging_path, previous_count)
+        try:
+            merge_result = merge_for_publication(staging_path, supplemental_data_dir(PROJECT_ROOT))
+        except SupplementalDataError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        publish_plan = PublishPlan(
+            fieldnames=CANONICAL_FIELDS,
+            records=merge_result.records,
+            meta={
+                **merge_result.meta,
+                "previous_count": previous_count,
+                "source_count": merge_result.meta["staging_count"],
+            },
+        )
         backup_name = backup_csv_atomically(target_path)
         publish_csv_atomically(publish_plan.fieldnames, publish_plan.records, target_path)
 
@@ -598,6 +497,7 @@ def publish_announcements() -> dict[str, object]:
         meta = {
             **publish_plan.meta,
             "count": len(publish_plan.records),
+            "published_count": len(publish_plan.records),
             "published_at": published_at,
             "updated_at": updated_at,
             "backup_file": backup_name,
