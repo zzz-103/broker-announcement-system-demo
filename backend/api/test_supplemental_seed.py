@@ -7,8 +7,10 @@ from pathlib import Path
 from backend.api.supplemental_seed import (
     CANONICAL_FIELDS,
     SupplementalDataError,
+    canonical_csv_sha256,
     import_temporary_seed,
     merge_for_publication,
+    sha256_file,
     write_csv_atomically,
 )
 
@@ -107,6 +109,44 @@ class SupplementalSeedTests(unittest.TestCase):
         result = merge_for_publication(staging_path, supplemental_dir)
         self.assertEqual(len(result.records), 1)
         self.assertFalse(result.meta["temporary_seed_active"])
+
+    def test_legacy_byte_hash_migrates_after_newline_conversion(self) -> None:
+        root = test_workspace("legacy-newlines")
+        staging_path = root / "staging.csv"
+        source_path = root / "source.csv"
+        supplemental_dir = root / "supplemental"
+        write_csv_atomically(staging_path, CANONICAL_FIELDS, [make_row("stage", "project-one")])
+        write_csv_atomically(source_path, CANONICAL_FIELDS, [make_row("seed", "project-two")])
+        import_temporary_seed(source_path, supplemental_dir)
+        seed_path = supplemental_dir / "temporary_seed.csv"
+        manifest_path = supplemental_dir / "temporary_seed_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["sha256"] = sha256_file(seed_path)
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        seed_path.write_bytes(seed_path.read_bytes().replace(b"\r\n", b"\n"))
+
+        result = merge_for_publication(staging_path, supplemental_dir)
+        migrated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(len(result.records), 2)
+        self.assertEqual(migrated_manifest["sha256"], canonical_csv_sha256(result.records[1:]))
+
+    def test_changed_seed_content_is_rejected_even_when_source_archive_exists(self) -> None:
+        root = test_workspace("changed-seed")
+        staging_path = root / "staging.csv"
+        source_path = root / "source.csv"
+        supplemental_dir = root / "supplemental"
+        write_csv_atomically(staging_path, CANONICAL_FIELDS, [make_row("stage", "project-one")])
+        write_csv_atomically(source_path, CANONICAL_FIELDS, [make_row("seed", "project-two")])
+        import_temporary_seed(source_path, supplemental_dir)
+        write_csv_atomically(
+            supplemental_dir / "temporary_seed.csv",
+            CANONICAL_FIELDS,
+            [make_row("changed", "project-three")],
+        )
+
+        with self.assertRaisesRegex(SupplementalDataError, "checksum"):
+            merge_for_publication(staging_path, supplemental_dir)
 
 
 if __name__ == "__main__":

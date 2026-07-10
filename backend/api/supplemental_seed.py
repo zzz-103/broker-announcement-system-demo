@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 import os
 import shutil
@@ -198,6 +199,22 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def canonical_csv_sha256(rows: Iterable[dict[str, str]]) -> str:
+    """Hash canonical CSV content so deployment newline conversion does not break a seed."""
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=CANONICAL_FIELDS, lineterminator="\n", extrasaction="ignore")
+    writer.writeheader()
+    writer.writerows(rows)
+    return hashlib.sha256(output.getvalue().encode("utf-8")).hexdigest()
+
+
+def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
+    _write_bytes_atomically(
+        path,
+        json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
+    )
+
+
 def import_temporary_seed(source_path: Path, destination_dir: Path) -> dict[str, object]:
     source_path = source_path.resolve()
     if not source_path.exists():
@@ -218,13 +235,10 @@ def import_temporary_seed(source_path: Path, destination_dir: Path) -> dict[str,
         "batch_id": batch_id,
         "active": True,
         "row_count": len(imported.rows),
-        "sha256": sha256_file(seed_path),
+        "sha256": canonical_csv_sha256(imported.rows),
         "imported_at": imported_at,
     }
-    _write_bytes_atomically(
-        destination_dir / "temporary_seed_manifest.json",
-        json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"),
-    )
+    _write_manifest(destination_dir / "temporary_seed_manifest.json", manifest)
     return {
         **manifest,
         "source_archive": str(archive_path),
@@ -253,12 +267,33 @@ def _load_active_seed(destination_dir: Path) -> CsvData | None:
     seed_path = destination_dir / "temporary_seed.csv"
     if not seed_path.exists():
         raise SupplementalDataError("active temporary seed CSV is missing")
-    if sha256_file(seed_path).lower() != manifest["sha256"].lower():
-        raise SupplementalDataError("active temporary seed CSV checksum does not match its manifest")
     seed = _canonicalize_rows(seed_path, allow_legacy_without_flag=False, source_label="temporary seed")
     if len(seed.rows) != manifest["row_count"]:
         raise SupplementalDataError("active temporary seed CSV row count does not match its manifest")
-    return seed
+    canonical_hash = canonical_csv_sha256(seed.rows)
+    if canonical_hash.lower() == manifest["sha256"].lower():
+        return seed
+
+    # Manifests created before canonical hashing stored a byte-level hash. Migrate them
+    # when the current file is unchanged, or when its normalized content matches the
+    # archived source preserved at import time.
+    if sha256_file(seed_path).lower() == manifest["sha256"].lower():
+        manifest["sha256"] = canonical_hash
+        _write_manifest(manifest_path, manifest)
+        return seed
+
+    archive_matches = list((destination_dir / "source").glob(f"{manifest['batch_id']}_*.csv"))
+    for archive_path in archive_matches:
+        archive = _canonicalize_rows(
+            archive_path,
+            allow_legacy_without_flag=True,
+            source_label="temporary seed source archive",
+        )
+        if canonical_csv_sha256(archive.rows) == canonical_hash:
+            manifest["sha256"] = canonical_hash
+            _write_manifest(manifest_path, manifest)
+            return seed
+    raise SupplementalDataError("active temporary seed CSV checksum does not match its manifest")
 
 
 def _project_line_key(row: dict[str, str]) -> str:
