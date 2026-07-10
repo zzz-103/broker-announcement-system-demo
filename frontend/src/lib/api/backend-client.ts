@@ -159,6 +159,37 @@ export interface ApplyUserResponse {
   initial_password: string;
 }
 
+export type FeedbackCategory = "broker_request" | "data_issue" | "product_suggestion";
+export type FeedbackStatus = "pending" | "processed";
+
+export interface FeedbackRecord {
+  id: number;
+  category: FeedbackCategory;
+  broker_name: string;
+  message: string;
+  related_context: string;
+  reporter_username: string;
+  reporter_name: string;
+  status: FeedbackStatus;
+  created_at: string;
+  processed_at: string | null;
+}
+
+export interface FeedbackCreateInput {
+  category: FeedbackCategory;
+  broker_name?: string;
+  message?: string;
+  related_context?: string;
+}
+
+export interface FeedbackResponse {
+  feedback: FeedbackRecord;
+}
+
+export interface AdminFeedbackResponse {
+  feedback: FeedbackRecord[];
+}
+
 export class BackendApiError extends Error {
   status: number;
 
@@ -239,6 +270,14 @@ export function applyForUser(input: ApplyUserInput): Promise<ApplyUserResponse> 
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function submitFeedback(token: string, input: FeedbackCreateInput): Promise<FeedbackResponse> {
+  return requestJson<FeedbackResponse>(
+    "/api/feedback",
+    { method: "POST", body: JSON.stringify(input) },
+    token,
+  );
 }
 
 export function startScraperJob(token: string): Promise<StartJobResponse> {
@@ -324,6 +363,22 @@ export function deleteAdminUser(token: string, userId: number): Promise<{ delete
   return requestJson<{ deleted: boolean }>(
     `/api/admin/users/${encodeURIComponent(String(userId))}`,
     { method: "DELETE" },
+    token,
+  );
+}
+
+export function getAdminFeedback(token: string): Promise<AdminFeedbackResponse> {
+  return requestJson<AdminFeedbackResponse>("/api/admin/feedback", {}, token);
+}
+
+export function updateAdminFeedbackStatus(
+  token: string,
+  feedbackId: number,
+  feedbackStatus: FeedbackStatus,
+): Promise<FeedbackResponse> {
+  return requestJson<FeedbackResponse>(
+    `/api/admin/feedback/${encodeURIComponent(String(feedbackId))}/status`,
+    { method: "POST", body: JSON.stringify({ status: feedbackStatus }) },
     token,
   );
 }

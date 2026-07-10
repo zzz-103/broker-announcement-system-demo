@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { applyForUser, BackendApiError } from "@/lib/api/backend-client";
 import { useAuthStore } from "@/store/auth-store";
 import {
   ArrowLeft,
+  AlertTriangle,
   CheckCircle2,
   Clipboard,
   Eye,
@@ -14,6 +15,14 @@ import {
   User,
   UserPlus,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type LoginMode = "login" | "apply" | "success";
 
@@ -24,6 +33,21 @@ const FIELD_NORMAL_CLASS =
   "border-[#D0D5DD] focus:border-[#2563EB] focus:ring-[#2563EB]/10";
 const FIELD_ERROR_CLASS =
   "border-red-300 focus:border-red-500 focus:ring-red-500/10";
+const EMAIL_DOMAINS = ["csco.com.cn", "qq.com", "126.com", "163.com", "sina.com"] as const;
+
+function validateEmailParts(prefix: string, domain: string): string | null {
+  const normalizedPrefix = prefix.trim();
+  if (!normalizedPrefix) return "请输入邮箱前缀。";
+  if (normalizedPrefix.length < 2 || normalizedPrefix.length > 30) return "邮箱前缀长度需为 2 至 30 个字符。";
+  if (!/^[A-Za-z0-9_.-]+$/.test(normalizedPrefix)) return "邮箱前缀仅支持字母、数字、下划线、点和短横线。";
+  if (/^[.-]|[.-]$/.test(normalizedPrefix)) return "邮箱前缀不能以点或短横线开头、结尾。";
+  if (/\.\./.test(normalizedPrefix)) return "邮箱前缀不能包含连续两个点。";
+  if (!domain) return "请输入邮箱域名。";
+  if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(domain)) {
+    return "请输入有效的邮箱域名。";
+  }
+  return null;
+}
 
 export function LoginPageWithApply() {
   const [mode, setMode] = useState<LoginMode>("login");
@@ -35,7 +59,11 @@ export function LoginPageWithApply() {
   const [applyLoading, setApplyLoading] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [applyName, setApplyName] = useState("");
-  const [applyEmail, setApplyEmail] = useState("");
+  const [applyEmailPrefix, setApplyEmailPrefix] = useState("");
+  const [applyEmailDomain, setApplyEmailDomain] = useState<(typeof EMAIL_DOMAINS)[number] | "other">("csco.com.cn");
+  const [customEmailDomain, setCustomEmailDomain] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [showExternalEmailConfirm, setShowExternalEmailConfirm] = useState(false);
   const [applyDepartment, setApplyDepartment] = useState("");
   const [createdCredential, setCreatedCredential] = useState<{
     username: string;
@@ -46,6 +74,7 @@ export function LoginPageWithApply() {
   const [isHovered, setIsHovered] = useState(false);
   const [btnCoords, setBtnCoords] = useState({ x: 0, y: 0 });
   const [btnHovered, setBtnHovered] = useState(false);
+  const applySubmittingRef = useRef(false);
 
   const login = useAuthStore((s) => s.login);
   const authError = useAuthStore((s) => s.error);
@@ -73,15 +102,26 @@ export function LoginPageWithApply() {
     setLoading(false);
   };
 
-  const handleApply = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const getNormalizedEmail = () => {
+    const prefix = applyEmailPrefix.trim();
+    const domain = (applyEmailDomain === "other" ? customEmailDomain : applyEmailDomain)
+      .trim()
+      .replace(/^@+/, "")
+      .toLowerCase();
+    return { prefix, domain, email: `${prefix}@${domain}` };
+  };
+
+  const submitApplication = async () => {
+    if (applySubmittingRef.current) return;
+    applySubmittingRef.current = true;
+    const { email } = getNormalizedEmail();
     setError("");
     setCopyState("idle");
     setApplyLoading(true);
     try {
       const result = await applyForUser({
         name: applyName,
-        email: applyEmail,
+        email,
         department: applyDepartment,
       });
       setCreatedCredential({
@@ -89,8 +129,11 @@ export function LoginPageWithApply() {
         password: result.initial_password,
       });
       setApplyName("");
-      setApplyEmail("");
+      setApplyEmailPrefix("");
+      setApplyEmailDomain("csco.com.cn");
+      setCustomEmailDomain("");
       setApplyDepartment("");
+      setShowExternalEmailConfirm(false);
       transitionToMode("success", true);
     } catch (error) {
       const message =
@@ -101,8 +144,22 @@ export function LoginPageWithApply() {
           : "申请失败，请稍后重试";
       setError(message);
     } finally {
+      applySubmittingRef.current = false;
       setApplyLoading(false);
     }
+  };
+
+  const handleApply = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const { prefix, domain } = getNormalizedEmail();
+    const validationError = validateEmailParts(prefix, domain);
+    setEmailError(validationError ?? "");
+    if (validationError) return;
+    if (domain !== "csco.com.cn") {
+      setShowExternalEmailConfirm(true);
+      return;
+    }
+    await submitApplication();
   };
 
   const copyText = async (value: string, target: "username" | "password") => {
@@ -211,7 +268,7 @@ export function LoginPageWithApply() {
         </div>
 
         <div className="w-full md:w-[48%] p-6 sm:p-8 md:p-12 flex flex-col justify-center bg-white">
-          <div className="relative w-full max-w-[420px] mx-auto h-[410px] sm:h-[430px] max-h-[calc(100vh-7rem)] overflow-hidden">
+          <div className="relative w-full max-w-[420px] mx-auto h-[470px] sm:h-[490px] max-h-[calc(100vh-7rem)] overflow-hidden">
             <div className={getPanelClass("login")} aria-hidden={mode !== "login"}>
               <div className="space-y-5">
                 <div className="space-y-1">
@@ -330,14 +387,54 @@ export function LoginPageWithApply() {
                 </div>
                 <form onSubmit={handleApply} className="space-y-3.5">
                   <TextField label="姓名" value={applyName} onChange={setApplyName} placeholder="示例：张三" hasError={Boolean(error)} />
-                  <TextField
-                    label="工作邮箱"
-                    value={applyEmail}
-                    onChange={setApplyEmail}
-                    placeholder="示例：example@csco.com.cn"
-                    type="email"
-                    hasError={Boolean(error)}
-                  />
+                  <div className="group">
+                    <label className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">工作邮箱</label>
+                    <div className={`flex h-11 min-w-0 overflow-hidden rounded-lg border bg-white transition-all focus-within:ring-2 ${emailError ? "border-red-300 focus-within:border-red-500 focus-within:ring-red-500/10" : "border-[#D0D5DD] focus-within:border-[#2563EB] focus-within:ring-[#2563EB]/10"}`}>
+                      <input
+                        value={applyEmailPrefix}
+                        onChange={(event) => {
+                          setApplyEmailPrefix(event.target.value);
+                          if (emailError) setEmailError("");
+                        }}
+                        placeholder="请输入邮箱前缀"
+                        className="min-w-0 flex-1 border-0 bg-transparent px-3 text-sm text-[#172033] placeholder:text-[#98A2B3] outline-none"
+                        aria-invalid={Boolean(emailError)}
+                      />
+                      <span className="flex w-7 shrink-0 items-center justify-center text-sm font-medium text-[#98A2B3]">@</span>
+                      {applyEmailDomain === "other" ? (
+                        <div className="flex min-w-0 w-[148px] shrink-0 items-center border-l border-[#EAECF0] bg-[#F8FAFC]">
+                          <input
+                            value={customEmailDomain}
+                            onChange={(event) => {
+                              setCustomEmailDomain(event.target.value.replace(/^@+/, "").trim().toLowerCase());
+                              if (emailError) setEmailError("");
+                            }}
+                            placeholder="请输入邮箱域名"
+                            className="min-w-0 flex-1 border-0 bg-transparent px-2.5 text-sm text-[#172033] placeholder:text-[#98A2B3] outline-none"
+                            aria-label="自定义邮箱域名"
+                          />
+                          <button type="button" onClick={() => setApplyEmailDomain("csco.com.cn")} className="shrink-0 px-2 text-[11px] font-semibold text-[#2563EB] hover:text-blue-700">预设</button>
+                        </div>
+                      ) : (
+                        <select
+                          value={applyEmailDomain}
+                          onChange={(event) => {
+                            setApplyEmailDomain(event.target.value as (typeof EMAIL_DOMAINS)[number] | "other");
+                            if (emailError) setEmailError("");
+                          }}
+                          className="w-[148px] shrink-0 border-l border-[#EAECF0] bg-[#F8FAFC] px-2.5 text-sm font-medium text-[#475467] outline-none"
+                          aria-label="邮箱域名"
+                        >
+                          {EMAIL_DOMAINS.map((domain) => <option key={domain} value={domain}>{domain}</option>)}
+                          <option value="other">其他（自定义）</option>
+                        </select>
+                      )}
+                    </div>
+                    <p className={`mt-1.5 flex items-start gap-1.5 text-xs leading-relaxed ${applyEmailDomain === "csco.com.cn" ? "text-[#667085]" : "text-amber-700"}`}>
+                      {applyEmailDomain === "csco.com.cn" ? "当前仅开放世纪证券内部邮箱申请，请使用 @csco.com.cn 工作邮箱。" : <><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />当前体验仅对世纪证券内部开放，使用非 @csco.com.cn 邮箱可能无法通过资格审核。</>}
+                    </p>
+                    {emailError && <p className="mt-1.5 text-xs font-medium text-red-600">{emailError}</p>}
+                  </div>
                   <TextField
                     label="部门"
                     value={applyDepartment}
@@ -348,7 +445,7 @@ export function LoginPageWithApply() {
                   {error && <ErrorMessage message={error} />}
                   <button
                     type="submit"
-                    disabled={applyLoading}
+                    disabled={applyLoading || isTransitioning}
                     onMouseMove={handleBtnMouseMove}
                     onMouseEnter={() => setBtnHovered(true)}
                     onMouseLeave={() => setBtnHovered(false)}
@@ -426,6 +523,19 @@ export function LoginPageWithApply() {
           </div>
         </div>
       </div>
+      <Dialog open={showExternalEmailConfirm} onOpenChange={(open) => !applyLoading && setShowExternalEmailConfirm(open)}>
+        <DialogContent className="border-[#D9E2EC] bg-white sm:max-w-md" showCloseButton={!applyLoading}>
+          <DialogHeader>
+            <DialogTitle className="text-[#172033]">确认提交申请</DialogTitle>
+            <DialogDescription className="text-[#667085]">您使用的是非世纪证券内部邮箱，当前体验优先审核 @csco.com.cn 邮箱申请。确定要使用该邮箱提交吗？</DialogDescription>
+          </DialogHeader>
+          {error && <ErrorMessage message={error} />}
+          <DialogFooter>
+            <button type="button" disabled={applyLoading} onClick={() => setShowExternalEmailConfirm(false)} className="h-10 rounded-lg border border-[#D0D5DD] px-4 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-60">取消</button>
+            <button type="button" disabled={applyLoading} onClick={() => void submitApplication()} className="h-10 rounded-lg bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">{applyLoading ? "正在提交..." : "确认提交"}</button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

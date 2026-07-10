@@ -20,6 +20,8 @@ interface RawCsvRow {
   procurement_method?: string;
   winning_supplier?: string;
   winning_amount_yuan?: string;
+  source?: string;
+  data_source?: string;
 }
 
 export class DataNotGeneratedError extends Error {
@@ -47,6 +49,7 @@ export interface ProcessedRecord {
   procurement_method: string;
   winning_supplier_raw: string;
   winning_amount_yuan: number | null;
+  sourceName: string;
 
   // derived fields
   validBrokerName: string;
@@ -58,6 +61,28 @@ export interface ProcessedRecord {
   primaryDomain: string;
   topicTags: string[];
   isFinTech: boolean;
+}
+
+export const SUPPORTED_SOURCES = ["金采网"] as const;
+
+export interface BrokerActivityDistribution {
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export interface DashboardStatistics {
+  brokerCount: number;
+  brokerNames: string[];
+  brokerActivity: BrokerActivityDistribution;
+  sources: string[];
+  sourceCount: number;
+  institutionBreakdown: null;
+}
+
+export interface LoadedAnnouncementData {
+  records: ProcessedRecord[];
+  updatedAt: string | null;
 }
 
 // ─── Domain classification ───
@@ -286,6 +311,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       category
     );
     const topicTags = generateTags(projectNameRaw, subcategory);
+    const sourceName = (row.source ?? row.data_source ?? "").trim();
 
     return {
       broker_folder: row.broker_folder?.trim() ?? "",
@@ -303,6 +329,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       procurement_method: row.procurement_method?.trim() ?? "",
       winning_supplier_raw: supplierRaw,
       winning_amount_yuan: winningAmount,
+      sourceName,
       validBrokerName,
       validPublishDate,
       normalizedProjectName,
@@ -339,11 +366,13 @@ export function getValidBrokerName(record: ProcessedRecord): string | null {
   return brokerName;
 }
 
-export async function loadAndProcessData(token: string): Promise<ProcessedRecord[]> {
+export async function loadAndProcessData(token: string): Promise<LoadedAnnouncementData> {
   try {
     const data = await fetchAnnouncements(token);
-    if (data.records.length === 0) return [];
-    return processRecords(data.records as RawCsvRow[]);
+    return {
+      records: data.records.length === 0 ? [] : processRecords(data.records as RawCsvRow[]),
+      updatedAt: data.meta.updated_at,
+    };
   } catch (error) {
     if (error instanceof BackendApiError && error.status === 404) {
       throw new DataNotGeneratedError();
@@ -353,6 +382,37 @@ export async function loadAndProcessData(token: string): Promise<ProcessedRecord
     }
     throw error;
   }
+}
+
+export function getDashboardStatistics(records: ProcessedRecord[]): DashboardStatistics {
+  const brokerCounts = new Map<string, number>();
+  const sourceNames = new Set<string>();
+
+  for (const record of records) {
+    const brokerName = getValidBrokerName(record);
+    if (brokerName) {
+      brokerCounts.set(brokerName, (brokerCounts.get(brokerName) ?? 0) + 1);
+    }
+    if (record.sourceName) sourceNames.add(record.sourceName);
+  }
+
+  const brokerActivity: BrokerActivityDistribution = { high: 0, medium: 0, low: 0 };
+  for (const count of brokerCounts.values()) {
+    if (count > 50) brokerActivity.high += 1;
+    else if (count >= 10) brokerActivity.medium += 1;
+    else brokerActivity.low += 1;
+  }
+
+  const sources = sourceNames.size > 0 ? Array.from(sourceNames) : [...SUPPORTED_SOURCES];
+  return {
+    brokerCount: brokerCounts.size,
+    brokerNames: Array.from(brokerCounts.keys()),
+    brokerActivity,
+    sources,
+    sourceCount: sources.length,
+    // The current CSV has no reliable institution type field, so no client-side inference is made.
+    institutionBreakdown: null,
+  };
 }
 
 // ─── Derived analytics helpers ───

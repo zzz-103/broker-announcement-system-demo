@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Search, RotateCcw } from "lucide-react";
+import { MessageSquarePlus, Search, RotateCcw } from "lucide-react";
 import { HoverSelect } from "./hover-select";
 import { MultiHoverSelect } from "./multi-hover-select";
 import type { TimeRange } from "@/store/filter-store";
@@ -25,6 +25,9 @@ interface DashboardFiltersProps {
   hasFilters: boolean;
   resetAll: () => void;
   brokerOptions: string[];
+  allBrokerOptions: string[];
+  onMissingBrokerSearch?: (name: string) => void;
+  onOpenFeedback: () => void;
   methodOptions: string[];
   sortedBrokers: string[];
   visibleBrokerCount: number;
@@ -65,6 +68,9 @@ export function DashboardFilters({
   hasFilters,
   resetAll,
   brokerOptions,
+  allBrokerOptions,
+  onMissingBrokerSearch,
+  onOpenFeedback,
   methodOptions,
   sortedBrokers,
   visibleBrokerCount,
@@ -83,8 +89,17 @@ export function DashboardFilters({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索项目、券商、供应商或方式..."
-            className="w-full pl-10 pr-4 h-[38px] text-[13px] border border-[#E4EAF2] rounded-lg bg-[#F8FAFC] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:ring-4 focus:ring-[#2563EB]/10 focus:border-[#2563EB] focus:bg-white transition-all"
+            className="w-full h-[38px] pl-10 pr-11 text-[13px] border border-[#E4EAF2] rounded-lg bg-[#F8FAFC] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:ring-4 focus:ring-[#2563EB]/10 focus:border-[#2563EB] focus:bg-white transition-all"
           />
+          <button
+            type="button"
+            onClick={onOpenFeedback}
+            title="提交反馈"
+            aria-label="提交反馈"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex size-7 items-center justify-center rounded-md text-[#667085] transition-colors hover:bg-blue-50 hover:text-[#2563EB]"
+          >
+            <MessageSquarePlus className="size-4" />
+          </button>
         </div>
 
         {/* Time Range */}
@@ -106,8 +121,12 @@ export function DashboardFilters({
           onChange={setBrokerNames}
           onToggle={toggleBrokerName}
           options={brokerOptions.map((b) => ({ value: b, label: b }))}
+          knownOptions={allBrokerOptions.map((b) => ({ value: b, label: b }))}
           placeholder="全部券商"
           maxHeight={240}
+          searchable
+          searchPlaceholder="搜索券商名称"
+          onMissingSearch={onMissingBrokerSearch}
         />
 
         {/* Domain */}

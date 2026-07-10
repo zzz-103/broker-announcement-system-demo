@@ -30,6 +30,10 @@ class UserNotFoundError(UserStoreError):
     pass
 
 
+class FeedbackNotFoundError(UserStoreError):
+    pass
+
+
 class InvalidUserCredentialsError(UserStoreError):
     pass
 
@@ -59,6 +63,34 @@ class ApprovedUser:
             "department": self.department,
             "username": self.username,
             "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class FeedbackEntry:
+    id: int
+    category: str
+    broker_name: str
+    message: str
+    related_context: str
+    reporter_username: str
+    reporter_name: str
+    status: str
+    created_at: str
+    processed_at: str | None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "id": self.id,
+            "category": self.category,
+            "broker_name": self.broker_name,
+            "message": self.message,
+            "related_context": self.related_context,
+            "reporter_username": self.reporter_username,
+            "reporter_name": self.reporter_name,
+            "status": self.status,
+            "created_at": self.created_at,
+            "processed_at": self.processed_at,
         }
 
 
@@ -155,6 +187,28 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS feedback_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT NOT NULL,
+            broker_name TEXT NOT NULL DEFAULT '',
+            message TEXT NOT NULL DEFAULT '',
+            related_context TEXT NOT NULL DEFAULT '',
+            reporter_username TEXT NOT NULL,
+            reporter_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            processed_at TEXT
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_feedback_entries_status_created_at
+        ON feedback_entries (status, created_at DESC)
+        """
+    )
     connection.commit()
 
 
@@ -167,6 +221,103 @@ def row_to_user(row: sqlite3.Row) -> ApprovedUser:
         username=str(row["username"]),
         created_at=str(row["created_at"]),
     )
+
+
+def row_to_feedback(row: sqlite3.Row) -> FeedbackEntry:
+    return FeedbackEntry(
+        id=int(row["id"]),
+        category=str(row["category"]),
+        broker_name=str(row["broker_name"]),
+        message=str(row["message"]),
+        related_context=str(row["related_context"]),
+        reporter_username=str(row["reporter_username"]),
+        reporter_name=str(row["reporter_name"]),
+        status=str(row["status"]),
+        created_at=str(row["created_at"]),
+        processed_at=str(row["processed_at"]) if row["processed_at"] is not None else None,
+    )
+
+
+def create_feedback(
+    category: str,
+    broker_name: str,
+    message: str,
+    related_context: str,
+    reporter_username: str,
+    reporter_name: str,
+) -> FeedbackEntry:
+    created_at = datetime.now(timezone.utc).isoformat()
+    try:
+        with _connect() as connection:
+            ensure_schema(connection)
+            cursor = connection.execute(
+                """
+                INSERT INTO feedback_entries
+                    (category, broker_name, message, related_context, reporter_username, reporter_name, status, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+                """,
+                (category, broker_name, message, related_context, reporter_username, reporter_name, created_at),
+            )
+            connection.commit()
+            row = connection.execute(
+                """
+                SELECT id, category, broker_name, message, related_context, reporter_username,
+                       reporter_name, status, created_at, processed_at
+                FROM feedback_entries WHERE id = ?
+                """,
+                (cursor.lastrowid,),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to create feedback") from exc
+    if row is None:
+        raise UserStoreError("failed to create feedback")
+    return row_to_feedback(row)
+
+
+def list_feedback() -> list[FeedbackEntry]:
+    try:
+        with _connect() as connection:
+            ensure_schema(connection)
+            rows = connection.execute(
+                """
+                SELECT id, category, broker_name, message, related_context, reporter_username,
+                       reporter_name, status, created_at, processed_at
+                FROM feedback_entries
+                ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC
+                """
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to list feedback") from exc
+    return [row_to_feedback(row) for row in rows]
+
+
+def update_feedback_status(feedback_id: int, feedback_status: str) -> FeedbackEntry:
+    processed_at = datetime.now(timezone.utc).isoformat() if feedback_status == "processed" else None
+    try:
+        with _connect() as connection:
+            ensure_schema(connection)
+            cursor = connection.execute(
+                "UPDATE feedback_entries SET status = ?, processed_at = ? WHERE id = ?",
+                (feedback_status, processed_at, feedback_id),
+            )
+            connection.commit()
+            if cursor.rowcount == 0:
+                raise FeedbackNotFoundError("feedback not found")
+            row = connection.execute(
+                """
+                SELECT id, category, broker_name, message, related_context, reporter_username,
+                       reporter_name, status, created_at, processed_at
+                FROM feedback_entries WHERE id = ?
+                """,
+                (feedback_id,),
+            ).fetchone()
+    except FeedbackNotFoundError:
+        raise
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to update feedback") from exc
+    if row is None:
+        raise FeedbackNotFoundError("feedback not found")
+    return row_to_feedback(row)
 
 
 def _fetch_user_by_email_or_username(

@@ -15,6 +15,10 @@ interface MultiHoverSelectProps {
   options: Option[];
   placeholder?: string;
   maxHeight?: number;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  knownOptions?: Option[];
+  onMissingSearch?: (query: string) => void;
 }
 
 // Global event to close other dropdowns
@@ -27,12 +31,17 @@ export function MultiHoverSelect({
   options,
   placeholder = "请选择",
   maxHeight = 280,
+  searchable = false,
+  searchPlaceholder = "搜索...",
+  knownOptions = options,
+  onMissingSearch,
 }: MultiHoverSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [panelWidth, setPanelWidth] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current) {
@@ -88,6 +97,14 @@ export function MultiHoverSelect({
     }
   };
 
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const visibleOptions = normalizedQuery
+    ? options.filter((option) => option.label.toLowerCase().includes(normalizedQuery))
+    : options;
+  const hasKnownMatch = normalizedQuery
+    ? knownOptions.some((option) => option.label.toLowerCase().includes(normalizedQuery))
+    : true;
+
   const displayLabel =
     values.length === 0
       ? placeholder
@@ -134,21 +151,34 @@ export function MultiHoverSelect({
         style={{ minWidth: panelWidth, maxHeight: maxHeight + 8 }}
       >
         <div className="py-1 overflow-y-auto" style={{ maxHeight }}>
+          {searchable && (
+            <div className="px-2 pb-2">
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder={searchPlaceholder}
+                className="h-8 w-full rounded-md border border-[#E4E9F0] bg-[#F8FAFC] px-2.5 text-[12px] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/10"
+              />
+            </div>
+          )}
           {/* Clear all option */}
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className={`
-              w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2
-              transition-colors duration-100
-              ${values.length === 0 ? "bg-[#2563EB]/8 text-[#2563EB] font-medium" : "text-[#667085] hover:bg-[#F8FAFC]"}
-            `}
-          >
-            <span className="w-4 h-4 shrink-0" />
-            <span>全部券商</span>
-          </button>
+          {!normalizedQuery && (
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className={`
+                w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2
+                transition-colors duration-100
+                ${values.length === 0 ? "bg-[#2563EB]/8 text-[#2563EB] font-medium" : "text-[#667085] hover:bg-[#F8FAFC]"}
+              `}
+            >
+              <span className="w-4 h-4 shrink-0" />
+              <span>全部券商</span>
+            </button>
+          )}
 
-          {options.map((opt) => {
+          {visibleOptions.map((opt) => {
             const isSelected = values.includes(opt.value);
             return (
               <button
@@ -174,6 +204,26 @@ export function MultiHoverSelect({
               </button>
             );
           })}
+          {normalizedQuery && visibleOptions.length === 0 && (
+            <div className="px-3 py-3 text-[12px] text-[#667085]">
+              {hasKnownMatch ? (
+                <p>当前筛选条件下暂无匹配券商。</p>
+              ) : (
+                <>
+                  <p>当前公开来源未检索到“{searchQuery.trim()}”的采购公告。</p>
+                  {onMissingSearch && (
+                    <button
+                      type="button"
+                      onClick={() => onMissingSearch(searchQuery.trim())}
+                      className="mt-2 inline-flex h-8 items-center rounded-md bg-[#2563EB] px-2.5 text-[12px] font-semibold text-white hover:bg-blue-700 transition-colors"
+                    >
+                      登记需求
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

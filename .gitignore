@@ -25,9 +25,11 @@ backend/data/supplemental/*
 backend/data/supplemental-test/*
 !backend/data/supplemental-test/.gitkeep
 runtime/
+backend/data-save/
 # Python virtual environment and cache
 .venv/
 venv/
 __pycache__/
 *.pyc
 .DS_Store
+**/.DS_Store

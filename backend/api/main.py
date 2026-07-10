@@ -31,6 +31,7 @@ from .supplemental_seed import (
 )
 from .user_store import (
     DuplicateUserError,
+    FeedbackNotFoundError,
     InvalidUserCredentialsError,
     QualificationNotFoundError,
     QualificationServiceUnavailableError,
@@ -39,9 +40,12 @@ from .user_store import (
     apply_for_user,
     authenticate_user,
     create_user,
+    create_feedback,
     delete_user,
     list_users,
+    list_feedback,
     normalize_email,
+    update_feedback_status,
     username_from_email,
 )
 
@@ -97,6 +101,17 @@ class UserApplyRequest(BaseModel):
     department: str
 
 
+class FeedbackCreateRequest(BaseModel):
+    category: str
+    broker_name: str = ""
+    message: str = ""
+    related_context: str = ""
+
+
+class FeedbackStatusUpdateRequest(BaseModel):
+    status: str
+
+
 class LlmJobRequest(BaseModel):
     mode: str = "incremental"
     overwrite: bool = False
@@ -109,6 +124,8 @@ job_manager = JobManager()
 session_tokens: dict[str, dict[str, str | bool]] = {}
 QUALIFICATION_NOT_FOUND_MESSAGE = "\u672a\u627e\u5230\u5339\u914d\u8d44\u683c\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
 QUALIFICATION_SERVICE_UNAVAILABLE_MESSAGE = "\u8d44\u683c\u670d\u52a1\u6682\u4e0d\u53ef\u7528\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
+FEEDBACK_CATEGORIES = {"broker_request", "data_issue", "product_suggestion"}
+FEEDBACK_STATUSES = {"pending", "processed"}
 
 
 @dataclass
@@ -146,6 +163,16 @@ def require_admin_token(authorization: Annotated[str | None, Header()] = None) -
     session = get_session(authorization)
     if session.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin privileges required")
+
+
+def normalize_feedback_text(value: str, limit: int, field: str) -> str:
+    normalized = value.strip()
+    if len(normalized) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field} is too long",
+        )
+    return normalized
 
 
 @app.get("/api/health")
@@ -356,6 +383,41 @@ def apply_user(payload: UserApplyRequest) -> dict[str, object]:
     }
 
 
+@app.post("/api/feedback")
+def post_feedback(
+    payload: FeedbackCreateRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    session = get_session(authorization)
+    category = payload.category.strip()
+    if category not in FEEDBACK_CATEGORIES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="feedback category is invalid")
+
+    broker_name = normalize_feedback_text(payload.broker_name, 100, "broker name")
+    message = normalize_feedback_text(payload.message, 1000, "message")
+    related_context = normalize_feedback_text(payload.related_context, 200, "related context")
+    if category == "broker_request" and not broker_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="broker name is required")
+    if category in {"data_issue", "product_suggestion"} and not message:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="message is required")
+
+    try:
+        feedback = create_feedback(
+            category=category,
+            broker_name=broker_name,
+            message=message,
+            related_context=related_context,
+            reporter_username=str(session.get("username") or ""),
+            reporter_name=str(session.get("name") or session.get("username") or ""),
+        )
+    except UserStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to submit feedback",
+        ) from exc
+    return {"feedback": feedback.to_dict()}
+
+
 @app.post("/api/jobs/scraper", dependencies=[Depends(require_admin_token)])
 def start_scraper() -> dict[str, str]:
     try:
@@ -520,6 +582,38 @@ def get_admin_users() -> dict[str, object]:
             detail="failed to load approved users",
         ) from exc
     return {"users": users}
+
+
+@app.get("/api/admin/feedback", dependencies=[Depends(require_admin_token)])
+def get_admin_feedback() -> dict[str, object]:
+    try:
+        feedback = [entry.to_dict() for entry in list_feedback()]
+    except UserStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to load feedback",
+        ) from exc
+    return {"feedback": feedback}
+
+
+@app.post("/api/admin/feedback/{feedback_id}/status", dependencies=[Depends(require_admin_token)])
+def post_admin_feedback_status(
+    feedback_id: int,
+    payload: FeedbackStatusUpdateRequest,
+) -> dict[str, object]:
+    feedback_status = payload.status.strip()
+    if feedback_status not in FEEDBACK_STATUSES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="feedback status is invalid")
+    try:
+        feedback = update_feedback_status(feedback_id, feedback_status)
+    except FeedbackNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="feedback not found") from exc
+    except UserStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to update feedback",
+        ) from exc
+    return {"feedback": feedback.to_dict()}
 
 
 @app.post("/api/admin/users", dependencies=[Depends(require_admin_token)])

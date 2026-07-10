@@ -17,6 +17,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  CalendarDays,
+  BadgeDollarSign,
+  Rows3,
 } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate, formatAmount } from "@/lib/announcement-data";
@@ -239,50 +242,49 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
             共 {sortedData.length} 条符合当前筛选条件
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Sort Mode Selector with Sliding Indicator */}
-          <div className="relative inline-flex bg-[#F0F2F5] rounded-lg p-1 h-[36px] items-center">
-            {/* Sliding Indicator */}
-            <div
-              className="absolute top-1 bottom-1 rounded-md bg-[#102847] shadow-sm transition-all duration-300 ease-[cubic-bezier(0.25,1,0.3,1)]"
-              style={{
-                left: sortMode === "date" ? "4px" : "50%",
-                width: "calc(50% - 4px)",
-              }}
-            />
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="inline-flex items-center rounded-xl border border-[#E4EAF2] bg-[#F8FAFC] p-1 shadow-[0_1px_2px_rgba(16,40,71,0.03)]">
             <button
               onClick={() => setSortMode("date")}
-              className={`relative z-10 min-w-[72px] h-[28px] px-3 text-[12px] font-bold rounded-md text-center whitespace-nowrap transition-colors duration-200 ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
                 sortMode === "date"
-                  ? "text-white"
+                  ? "bg-white text-[#172033] shadow-[0_1px_3px_rgba(16,40,71,0.12)]"
                   : "text-[#667085] hover:text-[#172033]"
               }`}
             >
+              <CalendarDays className="h-3.5 w-3.5" />
               按日期
             </button>
             <button
               onClick={() => setSortMode("amount")}
-              className={`relative z-10 min-w-[72px] h-[28px] px-3 text-[12px] font-bold rounded-md text-center whitespace-nowrap transition-colors duration-200 ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
                 sortMode === "amount"
-                  ? "text-white"
+                  ? "bg-white text-[#172033] shadow-[0_1px_3px_rgba(16,40,71,0.12)]"
                   : "text-[#667085] hover:text-[#172033]"
               }`}
             >
+              <BadgeDollarSign className="h-3.5 w-3.5" />
               有金额优先
             </button>
           </div>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              table.setPageSize(Number(e.target.value));
-            }}
-            className="text-[12px] h-[36px] border border-[#E4EAF2] rounded-lg px-2.5 text-[#475467] bg-[#F8FAFC] focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-semibold"
-          >
-            <option value={20}>20条/页</option>
-            <option value={50}>50条/页</option>
-            <option value={100}>100条/页</option>
-          </select>
+          <label className="relative flex h-10 items-center gap-1.5 rounded-xl border border-[#E4EAF2] bg-white pl-3 pr-8 text-[12px] text-[#667085] shadow-[0_1px_2px_rgba(16,40,71,0.03)] transition-colors focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/10">
+            <Rows3 className="h-3.5 w-3.5 text-[#98A2B3]" />
+            <span className="font-medium">每页</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                table.setPageSize(Number(e.target.value));
+              }}
+              aria-label="每页显示数量"
+              className="appearance-none bg-transparent pr-1 font-semibold text-[#344054] outline-none"
+            >
+              <option value={20}>20 条</option>
+              <option value={50}>50 条</option>
+              <option value={100}>100 条</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-[#98A2B3]" />
+          </label>
         </div>
       </div>
 

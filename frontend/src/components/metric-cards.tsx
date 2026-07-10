@@ -1,107 +1,87 @@
 "use client";
 
-import { useMemo } from "react";
-import type { ProcessedRecord } from "@/lib/announcement-data";
-import {
-  getDataBaseline,
-  getValidBrokerName,
-  uniqueCount,
-} from "@/lib/announcement-data";
+import { useMemo, useState } from "react";
+import { Info } from "lucide-react";
+import type { DashboardStatistics, ProcessedRecord } from "@/lib/announcement-data";
+import { getDataBaseline, uniqueCount } from "@/lib/announcement-data";
 import { useFilterStore } from "@/store/filter-store";
 
 interface MetricCardsProps {
   data: ProcessedRecord[];
   allData: ProcessedRecord[];
+  statistics: DashboardStatistics;
+  updatedAt: string | null;
 }
 
-export function MetricCards({ data, allData }: MetricCardsProps) {
-  const { setDetailFilter } = useFilterStore();
+function formatUpdatedAt(value: string | null): string {
+  if (!value) return "更新时间待确认";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "更新时间待确认";
+  return `更新于 ${date.toLocaleDateString("zh-CN")}`;
+}
 
+export function MetricCards({ data, allData, statistics, updatedAt }: MetricCardsProps) {
+  const { setDetailFilter } = useFilterStore();
+  const [showBrokerDetails, setShowBrokerDetails] = useState(false);
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
 
   const metrics = useMemo(() => {
     const totalRecords = data.length;
-    const coveredBrokers = uniqueCount(
-      data
-        .map((r) => getValidBrokerName(r))
-        .filter((name): name is string => name !== null)
+    const uniqueProjects = uniqueCount(data.map((record) => record.projectKey));
+    const thirtyDaysAgo = baseline ? new Date(baseline.getTime() - 30 * 86400000) : null;
+    const recentProjects = uniqueCount(
+      (thirtyDaysAgo
+        ? data.filter((record) => record.validPublishDate && record.validPublishDate >= thirtyDaysAgo)
+        : []
+      ).map((record) => record.projectKey)
     );
-    const uniqueProjects = uniqueCount(data.map((r) => r.projectKey));
-
-    // Recent 30 days
-    const thirtyDaysAgo = baseline
-      ? new Date(baseline.getTime() - 30 * 86400000)
-      : null;
-    const recentRecords = thirtyDaysAgo
-      ? data.filter(
-          (r) => r.validPublishDate && r.validPublishDate >= thirtyDaysAgo
-        )
-      : [];
-    const recentProjects = uniqueCount(recentRecords.map((r) => r.projectKey));
-
-    // Result announced projects
-    const resultRecords = data.filter(
-      (r) => r.announcement_stage === "结果公示"
-    );
-    const resultProjects = uniqueCount(resultRecords.map((r) => r.projectKey));
-
-    // Supplier disclosed
-    const supplierRecords = data.filter(
-      (r) =>
-        r.announcement_stage === "结果公示" && r.normalizedSupplier !== ""
+    const resultProjects = uniqueCount(
+      data.filter((record) => record.announcement_stage === "结果公示").map((record) => record.projectKey)
     );
     const supplierProjects = uniqueCount(
-      supplierRecords.map((r) => r.projectKey)
+      data
+        .filter((record) => record.announcement_stage === "结果公示" && record.normalizedSupplier !== "")
+        .map((record) => record.projectKey)
     );
-
-    // Price samples
-    const priceRecords = data.filter((r) => r.priceSampleKey !== null);
     const priceSamples = uniqueCount(
-      priceRecords.map((r) => r.priceSampleKey!)
+      data.filter((record) => record.priceSampleKey !== null).map((record) => record.priceSampleKey!)
     );
 
     return [
       {
-        label: "采集券商",
-        value: `${coveredBrokers.toLocaleString()} 家`,
-        hint: `当前筛选覆盖 ${coveredBrokers.toLocaleString()} 家`,
-        onClick: null,
-        color: "#2563EB",
-        featured: true,
+        label: "已接入数据源",
+        value: `${statistics.sourceCount.toLocaleString()} 个`,
+        hint: `${statistics.sources.join("、")} · 持续增量更新 · ${formatUpdatedAt(updatedAt)}`,
+        color: "#0F9F8F",
       },
       {
         label: "公告结构化记录",
         value: totalRecords.toLocaleString(),
         hint: "当前筛选后的CSV行数",
-        onClick: null,
         color: "#64748B",
       },
       {
         label: "去重项目线索",
         value: uniqueProjects.toLocaleString(),
         hint: "按主体+标准化项目名去重",
-        onClick: null,
         color: "#6366F1",
       },
       {
         label: "近30日新增线索",
         value: recentProjects.toLocaleString(),
         hint: "以数据最新日期为基准",
-        onClick: null,
         color: "#7C3AED",
       },
       {
         label: "结果公示项目",
         value: resultProjects.toLocaleString(),
         hint: "公告阶段为结果公示的去重线索",
-        onClick: null,
         color: "#0F9F8F",
       },
       {
         label: "披露供应商项目",
         value: supplierProjects.toLocaleString(),
         hint: "结果公示且供应商非空的去重线索",
-        onClick: null,
         color: "#16A36A",
       },
       {
@@ -112,48 +92,56 @@ export function MetricCards({ data, allData }: MetricCardsProps) {
         color: "#F59E0B",
       },
     ];
-  }, [data, baseline, setDetailFilter]);
+  }, [data, baseline, setDetailFilter, statistics.sourceCount, statistics.sources, updatedAt]);
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3.5 sm:gap-4">
-      {metrics.map((m) => {
-        const featuredClass = m.featured
-          ? "border-[#B8CCF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F9FF_100%)] shadow-[0_4px_14px_rgba(37,99,235,0.08)]"
-          : "border-[#E4EAF2] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]";
+    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3.5 sm:gap-4">
+      <div className="relative rounded-xl border border-[#B8CCF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F9FF_100%)] p-4 shadow-[0_4px_14px_rgba(37,99,235,0.08)] h-[108px] flex flex-col justify-between">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-[#2563EB] rounded-t-xl" />
+        <div className="text-[12px] font-medium leading-none text-[#2563EB] whitespace-nowrap">活跃券商覆盖</div>
+        <div className="text-[29px] sm:text-[31px] font-bold text-[#172033] tabular-nums leading-none mt-1 py-1 flex-grow flex items-center">
+          {statistics.brokerCount.toLocaleString()} 家
+        </div>
+        <button
+          type="button"
+          aria-expanded={showBrokerDetails}
+          aria-controls="broker-coverage-details"
+          onClick={() => setShowBrokerDetails((open) => !open)}
+          className="inline-flex items-center gap-1 self-start text-[11px] leading-none text-[#667085] hover:text-[#2563EB] transition-colors"
+        >
+          <Info className="h-3.5 w-3.5" />
+          查看统计说明
+        </button>
+        {showBrokerDetails && (
+          <div id="broker-coverage-details" className="absolute left-0 top-[calc(100%+8px)] z-30 w-[min(320px,calc(100vw-2rem))] rounded-xl border border-[#D9E2EC] bg-white p-3.5 text-[12px] text-[#475467] shadow-[0_12px_28px_rgba(15,32,56,0.16)]">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <p><span className="block font-bold text-[#172033]">{statistics.brokerActivity.high} 家</span>高活跃</p>
+              <p><span className="block font-bold text-[#172033]">{statistics.brokerActivity.medium} 家</span>中活跃</p>
+              <p><span className="block font-bold text-[#172033]">{statistics.brokerActivity.low} 家</span>低活跃</p>
+            </div>
+            <div className="mt-3 border-t border-[#EEF2F6] pt-3">
+              <p className="font-semibold text-[#172033]">为什么没有覆盖全部持牌券商？</p>
+              <p className="mt-1 leading-relaxed">本平台仅统计在当前已接入公开来源中检索到采购披露记录的证券公司。部分机构可能采用内部采购系统、集团统一采购、框架协议或线下邀标等方式，未在公开渠道披露，因此不会计入当前覆盖数量。</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {metrics.map((metric) => {
         const content = (
           <>
-            <div 
-              className={`absolute top-0 left-0 right-0 pointer-events-none ${m.featured ? "h-1" : "h-[3px]"}`}
-              style={{ backgroundColor: m.color }}
-            />
-            <div className={`text-[12px] font-medium leading-none ${m.featured ? "text-[#2563EB]" : "text-[#718096]"}`}>
-              {m.label}
-            </div>
-            <div className={`${m.featured ? "text-[29px] sm:text-[31px]" : "text-[26px] sm:text-[28px]"} font-bold text-[#172033] tabular-nums leading-none mt-1 py-1 flex-grow flex items-center`}>
-              {m.value}
-            </div>
-            <div className={`text-[11px] leading-none ${m.featured ? "text-[#667085]" : "text-[#98A2B3]"}`}>
-              {m.hint}
-            </div>
+            <div className="absolute top-0 left-0 right-0 h-[3px] pointer-events-none" style={{ backgroundColor: metric.color }} />
+            <div className="text-[12px] font-medium leading-none text-[#718096]">{metric.label}</div>
+            <div className="text-[26px] sm:text-[28px] font-bold text-[#172033] tabular-nums leading-none mt-1 py-1 flex-grow flex items-center">{metric.value}</div>
+            <div className="text-[11px] leading-none text-[#98A2B3] truncate" title={metric.hint}>{metric.hint}</div>
           </>
         );
-
-        return m.onClick ? (
-          <button
-            key={m.label}
-            onClick={m.onClick}
-            className={`relative overflow-hidden rounded-xl border p-4 text-left transition-all duration-200 motion-reduce:transition-none motion-reduce:transform-none hover:border-blue-500/35 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)] h-[108px] flex flex-col justify-between group cursor-pointer ${featuredClass}`}
-          >
+        const className = "relative overflow-hidden rounded-xl border border-[#E4EAF2] bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 text-left h-[108px] flex flex-col justify-between";
+        return metric.onClick ? (
+          <button key={metric.label} onClick={metric.onClick} className={`${className} cursor-pointer transition-all duration-200 hover:border-blue-500/35 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)]`}>
             {content}
           </button>
-        ) : (
-          <div
-            key={m.label}
-            className={`relative overflow-hidden rounded-xl border p-4 text-left h-[108px] flex flex-col justify-between select-none ${featuredClass}`}
-          >
-            {content}
-          </div>
-        );
+        ) : <div key={metric.label} className={className}>{content}</div>;
       })}
     </div>
   );

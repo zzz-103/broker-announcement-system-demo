@@ -1,84 +1,36 @@
 "use client";
 
-import React from "react";
-
 interface DashboardTabsProps {
   activeTab: "ai" | "overview" | "table";
   setActiveTab: (tab: "ai" | "overview" | "table") => void;
   filteredCount: number;
   headerHeight: number;
-  tabContainerRef: React.RefObject<HTMLDivElement | null>;
-  aiTabRef: React.RefObject<HTMLButtonElement | null>;
-  overviewTabRef: React.RefObject<HTMLButtonElement | null>;
-  tableTabRef: React.RefObject<HTMLButtonElement | null>;
-  indicatorPos: { left: string; width: string };
 }
 
-export function DashboardTabs({
-  activeTab,
-  setActiveTab,
-  filteredCount,
-  headerHeight,
-  tabContainerRef,
-  aiTabRef,
-  overviewTabRef,
-  tableTabRef,
-  indicatorPos,
-}: DashboardTabsProps) {
+export function DashboardTabs({ activeTab, setActiveTab, filteredCount, headerHeight }: DashboardTabsProps) {
+  const tabClass = (tab: "ai" | "overview" | "table") => `
+    inline-flex h-9 items-center rounded-lg px-3.5 text-[14px] font-semibold transition-all duration-200 motion-reduce:transition-none
+    ${activeTab === tab
+      ? "border border-[#D7E5FF] bg-white text-[#2563EB] shadow-[0_1px_3px_rgba(16,40,71,0.08)]"
+      : "border border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
+    }
+  `;
+
   return (
     <div
-      className="sticky z-30 bg-[#F4F7FB] -mx-3 sm:-mx-8 px-3 sm:px-8 py-2 border-b border-[#E4EAF2]"
+      className="sticky z-30 -mx-3 border-b border-[#E4EAF2] bg-[#F4F7FB]/95 px-3 py-2 backdrop-blur-sm sm:-mx-8 sm:px-8"
       style={{ top: `${headerHeight}px` }}
     >
-      <div className="relative flex items-center gap-1.5" ref={tabContainerRef}>
-        {/* Liquid Glass Indicator with animated background */}
-        <div
-          className="absolute top-1/2 -translate-y-1/2 pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.25,1,0.3,1)] motion-reduce:transition-none"
-          style={{
-            left: indicatorPos.left,
-            width: indicatorPos.width,
-            height: "36px",
-          }}
-        >
-          <div className="absolute inset-0 rounded-lg bg-[#102847] shadow-[0_4px_16px_rgba(16,40,71,0.18)]" />
-          {/* Subtle bottom highlighted purple-blue bar */}
-          <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-gradient-to-r from-blue-500 via-purple-500 to-teal-400" />
-        </div>
-
-        <button
-          ref={aiTabRef}
-          onClick={() => setActiveTab("ai")}
-          className={`
-            relative z-10 px-5 py-2 text-[14px] font-semibold rounded-lg transition-colors duration-200
-            ${activeTab === "ai" ? "text-white" : "text-[#4A5568] hover:text-[#172033] hover:bg-slate-200/40"}
-          `}
-        >
+      <div className="flex items-center gap-1.5" aria-label="看板内容切换">
+        <button type="button" onClick={() => setActiveTab("ai")} className={tabClass("ai")}>
           智能洞察
         </button>
-        <button
-          ref={overviewTabRef}
-          onClick={() => setActiveTab("overview")}
-          className={`
-            relative z-10 px-5 py-2 text-[14px] font-semibold rounded-lg transition-colors duration-200
-            ${activeTab === "overview" ? "text-white" : "text-[#4A5568] hover:text-[#172033] hover:bg-slate-200/40"}
-          `}
-        >
+        <button type="button" onClick={() => setActiveTab("overview")} className={tabClass("overview")}>
           情报总览
         </button>
-        <button
-          ref={tableTabRef}
-          onClick={() => setActiveTab("table")}
-          className={`
-            relative z-10 px-5 py-2 text-[14px] font-semibold rounded-lg transition-colors duration-200 flex items-center gap-1.5
-            ${activeTab === "table" ? "text-white" : "text-[#4A5568] hover:text-[#172033] hover:bg-slate-200/40"}
-          `}
-        >
+        <button type="button" onClick={() => setActiveTab("table")} className={`${tabClass("table")} gap-1.5`}>
           <span>项目明细</span>
-          <span
-            className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium transition-colors ${
-              activeTab === "table" ? "bg-white/15 text-white/90" : "bg-slate-200/60 text-[#4A5568]"
-            }`}
-          >
+          <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${activeTab === "table" ? "bg-[#EAF2FF] text-[#2563EB]" : "bg-[#E8EDF3] text-[#667085]"}`}>
             {filteredCount}
           </span>
         </button>

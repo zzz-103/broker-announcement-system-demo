@@ -6,9 +6,9 @@ import {
   DataNotGeneratedError,
   loadAndProcessData,
   getDataBaseline,
+  getDashboardStatistics,
   getValidBrokerName,
   exportCsv,
-  uniqueCount,
   type ProcessedRecord,
 } from "@/lib/announcement-data";
 import { useFilterStore, type TimeRange } from "@/store/filter-store";
@@ -20,6 +20,8 @@ import { DashboardTabs } from "@/components/dashboard-tabs";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
+import { FeedbackDialog } from "@/components/feedback-dialog";
+import type { FeedbackCategory } from "@/lib/api/backend-client";
 
 // ─── Dynamic imports for heavy components (code splitting) ───
 const AdminDashboard = dynamic(
@@ -95,6 +97,10 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"ai" | "overview" | "table">("overview");
   const [showDashboard, setShowDashboard] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
+  const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
+  const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
 
   // Auth state
   const { isLoggedIn, isAdmin, username, logout, token, clearAuth } = useAuthStore();
@@ -107,13 +113,6 @@ export default function Dashboard() {
   // Header height measurement for sticky tab bar positioning
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(72);
-
-  // Tab indicator refs and measurement
-  const tabContainerRef = useRef<HTMLDivElement>(null);
-  const aiTabRef = useRef<HTMLButtonElement>(null);
-  const overviewTabRef = useRef<HTMLButtonElement>(null);
-  const tableTabRef = useRef<HTMLButtonElement>(null);
-  const [indicatorPos, setIndicatorPos] = useState({ left: "0px", width: "0px" });
 
   // Broker tags: limit to 2 rows, sorted by data volume
   const brokerTagsRef = useRef<HTMLDivElement>(null);
@@ -152,8 +151,9 @@ export default function Dashboard() {
     setDataStatus("loading");
     setDataMessage(null);
     loadAndProcessData(token)
-      .then((records) => {
+      .then(({ records, updatedAt }) => {
         setAllData(records);
+        setDataUpdatedAt(updatedAt);
         setDataStatus(records.length === 0 ? "empty" : "ready");
         setDataMessage(
           records.length === 0
@@ -169,10 +169,12 @@ export default function Dashboard() {
         }
         if (err instanceof DataNotGeneratedError) {
           setAllData([]);
+          setDataUpdatedAt(null);
           setDataStatus("empty");
           setDataMessage(err.message);
         } else {
           setAllData([]);
+          setDataUpdatedAt(null);
           setDataStatus("error");
           setDataMessage(err instanceof Error ? err.message : "数据加载失败");
         }
@@ -181,6 +183,7 @@ export default function Dashboard() {
   }, [clearAuth, dataVersion, isLoggedIn, token]);
 
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
+  const dashboardStatistics = useMemo(() => getDashboardStatistics(allData), [allData]);
 
   const methodOptions = useMemo(() => {
     const set = new Set<string>();
@@ -266,6 +269,11 @@ export default function Dashboard() {
     return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
   }, [dataBeforeBrokerFilter]);
 
+  const allBrokerOptions = useMemo(
+    () => [...dashboardStatistics.brokerNames].sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
+    [dashboardStatistics.brokerNames]
+  );
+
   useEffect(() => {
     if (brokerNames.length === 0) return;
     const validOptions = new Set(brokerOptions);
@@ -330,20 +338,6 @@ export default function Dashboard() {
     return () => observer.disconnect();
   }, [sortedBrokers, showAllBrokers]);
 
-  // Measure tab indicator position after render
-  useLayoutEffect(() => {
-    const container = tabContainerRef.current;
-    const activeBtn = activeTab === "ai" ? aiTabRef.current : activeTab === "overview" ? overviewTabRef.current : tableTabRef.current;
-    if (container && activeBtn) {
-      const containerRect = container.getBoundingClientRect();
-      const btnRect = activeBtn.getBoundingClientRect();
-      setIndicatorPos({
-        left: `${btnRect.left - containerRect.left}px`,
-        width: `${btnRect.width}px`,
-      });
-    }
-  }, [activeTab, filteredData.length]);
-
   const hasFilters = Boolean(
     search ||
     brokerNames.length > 0 ||
@@ -355,15 +349,11 @@ export default function Dashboard() {
     detailFilter
   );
 
-  const totalBrokers = useMemo(
-    () =>
-      uniqueCount(
-        allData
-          .map((r) => getValidBrokerName(r))
-          .filter((name): name is string => name !== null)
-      ),
-    [allData]
-  );
+  const openFeedback = useCallback((category?: FeedbackCategory, brokerName = "") => {
+    setFeedbackCategory(category);
+    setFeedbackBrokerName(brokerName);
+    setFeedbackOpen(true);
+  }, []);
 
   // Show login page if not logged in
   if (!isLoggedIn) {
@@ -385,7 +375,7 @@ export default function Dashboard() {
       {/* ─── Top Navigation ─── */}
       <DashboardHeader
         username={username}
-        totalBrokers={totalBrokers}
+        totalBrokers={dashboardStatistics.brokerCount}
         baseline={baseline}
         filteredData={filteredData}
         isAdmin={isAdmin}
@@ -432,6 +422,9 @@ export default function Dashboard() {
           hasFilters={hasFilters}
           resetAll={resetAll}
           brokerOptions={brokerOptions}
+          allBrokerOptions={allBrokerOptions}
+          onMissingBrokerSearch={dataStatus === "ready" && !search.trim() ? (brokerName) => openFeedback("broker_request", brokerName) : undefined}
+          onOpenFeedback={() => openFeedback()}
           methodOptions={methodOptions}
           sortedBrokers={sortedBrokers}
           visibleBrokerCount={visibleBrokerCount}
@@ -446,11 +439,6 @@ export default function Dashboard() {
           setActiveTab={setActiveTab}
           filteredCount={filteredData.length}
           headerHeight={headerHeight}
-          tabContainerRef={tabContainerRef}
-          aiTabRef={aiTabRef}
-          overviewTabRef={overviewTabRef}
-          tableTabRef={tableTabRef}
-          indicatorPos={indicatorPos}
         />
 
         {/* Tab Content */}
@@ -459,7 +447,7 @@ export default function Dashboard() {
         ) : activeTab === "overview" ? (
           <>
             {/* Metric Cards */}
-            <MetricCards data={filteredData} allData={allData} />
+            <MetricCards data={filteredData} allData={allData} statistics={dashboardStatistics} updatedAt={dataUpdatedAt} />
 
             {/* Executive Summary */}
             <ExecutiveSummary data={filteredData} allData={allData} />
@@ -504,6 +492,13 @@ export default function Dashboard() {
       <DataDefinitionModal
         open={showModal}
         onClose={() => setShowModal(false)}
+      />
+
+      <FeedbackDialog
+        open={feedbackOpen}
+        onOpenChange={setFeedbackOpen}
+        initialCategory={feedbackCategory}
+        initialBrokerName={feedbackBrokerName}
       />
     </div>
   );
