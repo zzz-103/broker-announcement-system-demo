@@ -288,7 +288,35 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         </div>
       </div>
 
-      <div className="overflow-x-auto relative">
+      <div className="space-y-3 p-3 md:hidden">
+        {table.getRowModel().rows.length === 0 ? (
+          <p className="py-10 text-center text-[13px] font-medium text-[#98A2B3]">暂无数据</p>
+        ) : table.getRowModel().rows.map((row) => {
+          const record = row.original;
+          const stage = record.announcement_stage || "待确认";
+          return (
+            <article key={row.id} className="rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <h4 className="min-w-0 text-sm font-bold leading-relaxed text-[#172033]">{record.normalizedProjectName}</h4>
+                <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-bold ${STAGE_STYLES[stage] || STAGE_STYLES["待确认"]}`}>{stage}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[#667085]">
+                <p><span className="text-[#98A2B3]">券商：</span>{record.validBrokerName}</p>
+                <p><span className="text-[#98A2B3]">日期：</span>{formatDate(record.validPublishDate)}</p>
+                <p className="col-span-2"><span className="text-[#98A2B3]">采购方式：</span>{record.procurement_method || "方式未识别"}</p>
+                <p className="col-span-2"><span className="text-[#98A2B3]">中标信息：</span>{record.normalizedSupplier || "未披露"}{record.winning_amount_yuan !== null ? ` · ${formatAmount(record.winning_amount_yuan)}` : ""}</p>
+              </div>
+              <details className="mt-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
+                <summary className="cursor-pointer font-medium text-[#2563EB]">展开次要字段</summary>
+                <div className="mt-2 space-y-1.5"><p>方向：{record.primaryDomain || "未识别"}</p><p>标签：{record.topicTags.join("、") || "无"}</p></div>
+              </details>
+              <button type="button" onClick={() => onSelectProject(record)} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 text-xs font-semibold text-[#2563EB] hover:bg-blue-50"><Eye className="size-3.5" />查看详情</button>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="relative hidden overflow-x-auto md:block">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 z-10 bg-[#F4F7FB] border-b border-[#E4EAF2]">
             {table.getHeaderGroups().map((hg) => (
@@ -370,8 +398,8 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between px-5 py-4 border-t border-[#F0F2F5] bg-white">
-        <span className="text-[12px] text-[#98A2B3] font-semibold">
+      <div className="flex items-center justify-between gap-2 px-4 py-4 sm:px-5 border-t border-[#F0F2F5] bg-white">
+        <span className="min-w-0 truncate text-[12px] text-[#98A2B3] font-semibold">
           共 {sortedData.length} 条，第 {currentPage}/{pageCount} 页
         </span>
         <div className="flex items-center gap-1.5">
@@ -383,7 +411,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-          {Array.from(
+          <div className="hidden items-center gap-1.5 sm:flex">{Array.from(
             { length: Math.min(5, pageCount) },
             (_, i) => {
               const start = Math.max(0, currentPage - 3);
@@ -403,7 +431,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               >
                 {pageIndex + 1}
               </button>
-            ))}
+            ))}</div>
           <button
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}

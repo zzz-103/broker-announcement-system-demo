@@ -154,8 +154,8 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="col-span-1 min-w-0 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[14px] font-bold text-[#172033]">
           公开招采趋势
         </h3>
@@ -163,8 +163,8 @@ export function ProcurementTrendChart({ data, allData }: ChartsProps) {
           趋势受历史采集覆盖范围影响
         </span>
       </div>
-      <div className="relative h-[220px]">
-        <div ref={chartRef} className="h-full" />
+      <div className="relative h-[260px] sm:h-[220px]">
+        <div ref={chartRef} className="h-full w-full" />
         {data.length === 0 && <EmptyChartState />}
       </div>
     </div>
@@ -263,12 +263,12 @@ export function DomainDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         金融科技方向
       </h3>
-      <div className="relative h-[220px]">
-        <div ref={chartRef} className="h-full" />
+      <div className="relative h-[260px] sm:h-[220px]">
+        <div ref={chartRef} className="h-full w-full" />
         {data.length === 0 && <EmptyChartState />}
       </div>
     </div>
@@ -358,12 +358,12 @@ export function StageDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         公告阶段
       </h3>
-      <div className="relative h-[220px]">
-        <div ref={chartRef} className="h-full" />
+      <div className="relative h-[260px] sm:h-[220px]">
+        <div ref={chartRef} className="h-full w-full" />
         {data.length === 0 && <EmptyChartState />}
       </div>
     </div>

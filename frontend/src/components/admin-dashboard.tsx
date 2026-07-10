@@ -23,6 +23,7 @@ import {
 } from "@/components/admin-task-progress";
 import { UserApprovalManager } from "@/components/user-approval-manager";
 import { FeedbackManager } from "@/components/feedback-manager";
+import { AuditRecordsManager } from "@/components/audit-records-manager";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -1251,6 +1252,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         </div>
 
         <UserApprovalManager />
+        <AuditRecordsManager />
         <FeedbackManager />
       </main>
 

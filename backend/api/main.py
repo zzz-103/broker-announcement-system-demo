@@ -5,13 +5,15 @@ import csv
 import os
 import secrets
 import shutil
+import threading
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -22,6 +24,7 @@ from .ai_analysis import (
     load_cached_analysis,
     to_http_exception,
 )
+from .audit_store import AuditStoreError, EVENT_TYPES as AUDIT_EVENT_TYPES, get_today_summary, list_events, record_event
 from .job_manager import JobConflictError, JobManager, JobNotFoundError, format_sse
 from .supplemental_seed import (
     CANONICAL_FIELDS,
@@ -79,6 +82,8 @@ else:
 class LoginRequest(BaseModel):
     username: str
     password: str
+    visitor_id: str | None = None
+    source: str | None = None
 
 
 class LoginResponse(BaseModel):
@@ -99,6 +104,18 @@ class UserApplyRequest(BaseModel):
     name: str
     email: str
     department: str
+    visitor_id: str | None = None
+    source: str | None = None
+
+
+class QrVisitRequest(BaseModel):
+    visitor_id: str
+    source: str
+
+
+class DashboardViewRequest(BaseModel):
+    visitor_id: str | None = None
+    source: str | None = None
 
 
 class FeedbackCreateRequest(BaseModel):
@@ -121,11 +138,13 @@ class LlmJobRequest(BaseModel):
 
 
 job_manager = JobManager()
-session_tokens: dict[str, dict[str, str | bool]] = {}
+session_tokens: dict[str, dict[str, object]] = {}
+session_tokens_lock = threading.Lock()
 QUALIFICATION_NOT_FOUND_MESSAGE = "\u672a\u627e\u5230\u5339\u914d\u8d44\u683c\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
 QUALIFICATION_SERVICE_UNAVAILABLE_MESSAGE = "\u8d44\u683c\u670d\u52a1\u6682\u4e0d\u53ef\u7528\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
 FEEDBACK_CATEGORIES = {"broker_request", "data_issue", "product_suggestion"}
 FEEDBACK_STATUSES = {"pending", "processed"}
+AUDIT_SOURCES = {"qr", "qr_poster"}
 
 
 @dataclass
@@ -145,7 +164,7 @@ app.add_middleware(
 )
 
 
-def get_session(authorization: Annotated[str | None, Header()] = None) -> dict[str, str | bool]:
+def get_session(authorization: Annotated[str | None, Header()] = None) -> dict[str, object]:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
     token = authorization.removeprefix("Bearer ").strip()
@@ -163,6 +182,44 @@ def require_admin_token(authorization: Annotated[str | None, Header()] = None) -
     session = get_session(authorization)
     if session.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="admin privileges required")
+
+
+def normalize_audit_context(visitor_id: str | None, source: str | None) -> tuple[str | None, str | None]:
+    normalized_visitor_id: str | None = None
+    if visitor_id:
+        try:
+            normalized_visitor_id = str(uuid.UUID(visitor_id.strip()))
+        except (AttributeError, ValueError):
+            pass
+    normalized_source = source.strip() if source else ""
+    return normalized_visitor_id, normalized_source if normalized_source in AUDIT_SOURCES else None
+
+
+def masked_request_ip(request: Request) -> str:
+    raw_ip = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    if not raw_ip and request.client is not None:
+        raw_ip = request.client.host
+    if not raw_ip:
+        return "unknown"
+    if ":" in raw_ip:
+        parts = raw_ip.split(":")
+        return ":".join(parts[:4] + ["xxxx", "xxxx", "xxxx", "xxxx"])
+    parts = raw_ip.split(".")
+    return f"{'.'.join(parts[:3])}.xxx" if len(parts) == 4 else "unknown"
+
+
+def request_user_agent(request: Request) -> str | None:
+    value = request.headers.get("user-agent", "").strip()
+    return value[:512] if value else None
+
+
+def write_audit_event_safely(**kwargs: object) -> bool:
+    try:
+        _, recorded = record_event(**kwargs)  # type: ignore[arg-type]
+        return recorded
+    except AuditStoreError:
+        print("Audit event write failed")
+        return False
 
 
 def normalize_feedback_text(value: str, limit: int, field: str) -> str:
@@ -290,7 +347,7 @@ def backup_csv_atomically(target_path: Path) -> str | None:
 
 
 @app.post("/api/login", response_model=LoginResponse)
-def login(payload: LoginRequest) -> LoginResponse:
+def login(payload: LoginRequest, request: Request) -> LoginResponse:
     expected_username = os.getenv("ADMIN_USERNAME", "admin")
     expected_password = os.getenv("ADMIN_PASSWORD")
     username = payload.username.strip()
@@ -309,7 +366,19 @@ def login(payload: LoginRequest) -> LoginResponse:
             "name": expected_username,
             "role": "admin",
             "is_admin": True,
+            "user_id": None,
+            "dashboard_view_recorded": False,
         }
+        visitor_id, source = normalize_audit_context(payload.visitor_id, payload.source)
+        write_audit_event_safely(
+            event_type="login_success",
+            visitor_id=visitor_id,
+            username=expected_username,
+            role="admin",
+            source=source,
+            ip_masked=masked_request_ip(request),
+            user_agent=request_user_agent(request),
+        )
         return LoginResponse(
             token=token,
             username=expected_username,
@@ -334,7 +403,20 @@ def login(payload: LoginRequest) -> LoginResponse:
         "name": user.name,
         "role": "user",
         "is_admin": False,
+        "user_id": user.id,
+        "dashboard_view_recorded": False,
     }
+    visitor_id, source = normalize_audit_context(payload.visitor_id, payload.source)
+    write_audit_event_safely(
+        event_type="login_success",
+        visitor_id=visitor_id,
+        user_id=user.id,
+        username=user.username,
+        role="user",
+        source=source,
+        ip_masked=masked_request_ip(request),
+        user_agent=request_user_agent(request),
+    )
     return LoginResponse(
         token=token,
         username=user.username,
@@ -345,42 +427,106 @@ def login(payload: LoginRequest) -> LoginResponse:
 
 
 @app.post("/api/users/apply")
-def apply_user(payload: UserApplyRequest) -> dict[str, object]:
+def apply_user(payload: UserApplyRequest, request: Request) -> dict[str, object]:
     name = payload.name.strip()
     email = normalize_email(payload.email)
     department = payload.department.strip()
-
-    if not name or not email or not department:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=QUALIFICATION_NOT_FOUND_MESSAGE,
-        )
-
-
+    visitor_id, source = normalize_audit_context(payload.visitor_id, payload.source)
+    audit_result = "invalid_request"
+    user = None
     try:
+        if not name or not email or not department:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=QUALIFICATION_NOT_FOUND_MESSAGE,
+            )
         user, initial_password = apply_for_user(name, email, department)
+        audit_result = "success"
+        return {
+            "user": user.to_dict(),
+            "username": user.username,
+            "initial_password": initial_password,
+        }
     except QualificationServiceUnavailableError as exc:
+        audit_result = "service_unavailable"
         print(f"Qualification service unavailable: {exc.__class__.__name__}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=QUALIFICATION_SERVICE_UNAVAILABLE_MESSAGE,
         ) from exc
     except QualificationNotFoundError as exc:
+        audit_result = "qualification_not_found"
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=QUALIFICATION_NOT_FOUND_MESSAGE,
         ) from exc
     except UserStoreError as exc:
+        audit_result = "internal_error"
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="failed to apply for user account",
         ) from exc
+    finally:
+        write_audit_event_safely(
+            event_type="qualification_application",
+            visitor_id=visitor_id,
+            user_id=user.id if user is not None else None,
+            username=user.username if user is not None else None,
+            role="user" if user is not None else None,
+            source=source,
+            ip_masked=masked_request_ip(request),
+            user_agent=request_user_agent(request),
+            metadata={
+                "name": name[:100],
+                "email": email[:254],
+                "department": department[:100],
+                "result": audit_result,
+            },
+        )
 
-    return {
-        "user": user.to_dict(),
-        "username": user.username,
-        "initial_password": initial_password,
-    }
+
+@app.post("/api/audit/qr-visit")
+def post_qr_visit(payload: QrVisitRequest, request: Request) -> dict[str, bool]:
+    visitor_id, source = normalize_audit_context(payload.visitor_id, payload.source)
+    if visitor_id is None or source is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="audit context is invalid")
+    try:
+        _, recorded = record_event(
+            event_type="qr_visit",
+            visitor_id=visitor_id,
+            source=source,
+            ip_masked=masked_request_ip(request),
+            user_agent=request_user_agent(request),
+        )
+    except AuditStoreError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="audit service is unavailable") from exc
+    return {"recorded": recorded}
+
+
+@app.post("/api/audit/dashboard-view")
+def post_dashboard_view(
+    payload: DashboardViewRequest,
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, bool]:
+    session = get_session(authorization)
+    visitor_id, source = normalize_audit_context(payload.visitor_id, payload.source)
+    with session_tokens_lock:
+        if bool(session.get("dashboard_view_recorded")):
+            return {"recorded": False}
+        recorded = write_audit_event_safely(
+            event_type="dashboard_view",
+            visitor_id=visitor_id,
+            user_id=int(session["user_id"]) if isinstance(session.get("user_id"), int) else None,
+            username=str(session.get("username") or "") or None,
+            role=str(session.get("role") or "") or None,
+            source=source,
+            ip_masked=masked_request_ip(request),
+            user_agent=request_user_agent(request),
+        )
+        if recorded:
+            session["dashboard_view_recorded"] = True
+    return {"recorded": recorded}
 
 
 @app.post("/api/feedback")
@@ -582,6 +728,35 @@ def get_admin_users() -> dict[str, object]:
             detail="failed to load approved users",
         ) from exc
     return {"users": users}
+
+
+@app.get("/api/admin/audit/summary", dependencies=[Depends(require_admin_token)])
+def get_admin_audit_summary() -> dict[str, object]:
+    try:
+        return {"timezone": "Asia/Shanghai", **get_today_summary()}
+    except AuditStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to load audit summary",
+        ) from exc
+
+
+@app.get("/api/admin/audit/events", dependencies=[Depends(require_admin_token)])
+def get_admin_audit_events(
+    event_type: str | None = Query(default=None, alias="type"),
+    limit: int = Query(default=100, ge=1, le=100),
+) -> dict[str, object]:
+    normalized_type = event_type.strip() if event_type else None
+    if normalized_type and normalized_type not in AUDIT_EVENT_TYPES:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="audit event type is invalid")
+    try:
+        events = [event.to_dict() for event in list_events(normalized_type, limit)]
+    except AuditStoreError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to load audit events",
+        ) from exc
+    return {"events": events, "meta": {"type": normalized_type, "limit": limit, "count": len(events)}}
 
 
 @app.get("/api/admin/feedback", dependencies=[Depends(require_admin_token)])

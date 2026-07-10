@@ -21,6 +21,40 @@ export interface LoginResponse {
   is_admin: boolean;
 }
 
+export type AuditEventType = "qr_visit" | "qualification_application" | "login_success" | "dashboard_view";
+
+export interface AuditContextInput {
+  visitor_id?: string;
+  source?: "qr" | "qr_poster";
+}
+
+export interface AuditEventRecord {
+  id: number;
+  event_type: AuditEventType;
+  visitor_id: string | null;
+  user_id: number | null;
+  username: string | null;
+  role: string | null;
+  source: string | null;
+  ip_masked: string | null;
+  user_agent: string | null;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface AuditSummaryResponse {
+  timezone: string;
+  today_qr_visits: number;
+  today_qualification_applicants: number;
+  today_login_users: number;
+  today_dashboard_users: number;
+}
+
+export interface AuditEventsResponse {
+  events: AuditEventRecord[];
+  meta: { type: AuditEventType | null; limit: number; count: number };
+}
+
 export interface StartJobResponse {
   job_id: string;
   job_type: JobType;
@@ -258,18 +292,34 @@ async function requestJson<T>(
 export function loginAdmin(
   username: string,
   password: string,
+  auditContext: AuditContextInput = {},
 ): Promise<LoginResponse> {
   return requestJson<LoginResponse>("/api/login", {
     method: "POST",
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, ...auditContext }),
   });
 }
 
-export function applyForUser(input: ApplyUserInput): Promise<ApplyUserResponse> {
+export function applyForUser(input: ApplyUserInput & AuditContextInput): Promise<ApplyUserResponse> {
   return requestJson<ApplyUserResponse>("/api/users/apply", {
     method: "POST",
     body: JSON.stringify(input),
   });
+}
+
+export function recordQrVisit(context: Required<AuditContextInput>): Promise<{ recorded: boolean }> {
+  return requestJson<{ recorded: boolean }>("/api/audit/qr-visit", {
+    method: "POST",
+    body: JSON.stringify(context),
+  });
+}
+
+export function recordDashboardView(token: string, context: AuditContextInput): Promise<{ recorded: boolean }> {
+  return requestJson<{ recorded: boolean }>(
+    "/api/audit/dashboard-view",
+    { method: "POST", body: JSON.stringify(context) },
+    token,
+  );
 }
 
 export function submitFeedback(token: string, input: FeedbackCreateInput): Promise<FeedbackResponse> {
@@ -343,6 +393,18 @@ export function publishAnnouncements(token: string, signal?: AbortSignal): Promi
 
 export function getAdminUsers(token: string): Promise<AdminUsersResponse> {
   return requestJson<AdminUsersResponse>("/api/admin/users", {}, token);
+}
+
+export function getAdminAuditSummary(token: string): Promise<AuditSummaryResponse> {
+  return requestJson<AuditSummaryResponse>("/api/admin/audit/summary", {}, token);
+}
+
+export function getAdminAuditEvents(
+  token: string,
+  eventType: AuditEventType | "",
+): Promise<AuditEventsResponse> {
+  const query = eventType ? `?type=${encodeURIComponent(eventType)}&limit=100` : "?limit=100";
+  return requestJson<AuditEventsResponse>(`/api/admin/audit/events${query}`, {}, token);
 }
 
 export function createAdminUser(

@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { applyForUser, BackendApiError } from "@/lib/api/backend-client";
+import Image from "next/image";
+import { applyForUser, BackendApiError, recordQrVisit } from "@/lib/api/backend-client";
+import {
+  clearQrVisitMarker,
+  getAuditContext,
+  hasRecordedQrVisit,
+  markQrVisitRecorded,
+} from "@/lib/audit-context";
 import { useAuthStore } from "@/store/auth-store";
 import {
   ArrowLeft,
@@ -12,6 +19,9 @@ import {
   EyeOff,
   Lock,
   LogIn,
+  BrainCircuit,
+  LayoutDashboard,
+  ScanLine,
   User,
   UserPlus,
 } from "lucide-react";
@@ -80,6 +90,15 @@ export function LoginPageWithApply() {
   const authError = useAuthStore((s) => s.error);
 
   useEffect(() => {
+    const context = getAuditContext();
+    if (!context.source || !context.visitor_id || hasRecordedQrVisit()) return;
+    markQrVisitRecorded();
+    void recordQrVisit({ visitor_id: context.visitor_id, source: context.source }).catch(() => {
+      clearQrVisitMarker();
+    });
+  }, []);
+
+  useEffect(() => {
     if (!isTransitioning) return;
     const timer = window.setTimeout(() => setIsTransitioning(false), ANIMATION_MS);
     return () => window.clearTimeout(timer);
@@ -123,6 +142,7 @@ export function LoginPageWithApply() {
         name: applyName,
         email,
         department: applyDepartment,
+        ...getAuditContext(),
       });
       setCreatedCredential({
         username: result.username,
@@ -208,19 +228,23 @@ export function LoginPageWithApply() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F5F7FA] p-4 sm:p-6 md:p-8 relative">
+    <div
+      translate="no"
+      className="notranslate relative flex min-h-dvh items-start justify-center overflow-x-hidden bg-[#F5F7FA] px-3 py-3 sm:p-6 md:items-center md:p-8"
+    >
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[10%] right-[15%] w-[45vw] h-[45vw] max-w-[600px] bg-blue-100/40 rounded-full opacity-60 blur-3xl" />
         <div className="absolute bottom-[10%] left-[10%] w-[40vw] h-[40vw] max-w-[500px] bg-indigo-100/50 rounded-full opacity-60 blur-3xl" />
       </div>
-      <div className="relative w-full max-w-[1080px] min-h-[560px] bg-white rounded-[20px] shadow-xl border border-[#E4E9F0] overflow-hidden flex flex-col md:flex-row">
+      <div className="relative flex w-full max-w-[1160px] flex-col overflow-hidden rounded-[20px] border border-[#E4E9F0] bg-white shadow-[0_24px_70px_rgba(15,32,56,0.16)] md:min-h-[640px] md:flex-row">
         <div
           onMouseMove={handleMouseMove}
           onMouseEnter={() => setIsHovered(true)}
           onMouseLeave={() => setIsHovered(false)}
-          className="w-full md:w-[52%] bg-gradient-to-br from-[#0F2038] via-[#162B49] to-[#2563EB] p-8 md:p-12 text-white flex flex-col justify-start relative overflow-hidden shrink-0"
+          className="relative flex w-full shrink-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_84%_20%,rgba(49,130,246,0.32),transparent_30%),linear-gradient(145deg,#071a38_0%,#0c2a58_52%,#0e4bb5_100%)] p-6 text-white md:w-[55%] md:p-12"
         >
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff0d_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0d_1px,transparent_1px)] bg-[size:28px_28px] opacity-60" />
+          <div className="pointer-events-none absolute inset-x-[-12%] bottom-[-18%] h-[52%] rotate-[-8deg] bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.72)_0%,rgba(37,99,235,0.16)_34%,transparent_68%)] blur-xl" />
           {isHovered && (
             <div
               className="absolute pointer-events-none rounded-full bg-white/[0.15] blur-[70px] transition-opacity duration-300"
@@ -241,34 +265,33 @@ export function LoginPageWithApply() {
             className="absolute -bottom-20 -right-20 w-60 h-60 bg-indigo-500/22 rounded-full blur-3xl pointer-events-none transition-transform duration-700 ease-out"
             style={{ transform: `translate3d(${-circleX}px, ${-circleY}px, 0)` }}
           />
-          <div className="relative z-10 max-w-md space-y-6 md:mt-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 md:w-[72px] md:h-[72px] rounded-2xl bg-white/15 backdrop-blur-lg border border-white/25 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
-              <Lock className="w-10 h-10 text-white" />
+          <div className="relative z-10 flex h-full flex-col">
+            <div className="flex items-center gap-3">
+              <Image src="/brand/company-icon.png" alt="世纪证券" width={52} height={52} className="size-11 rounded-xl shadow-[0_8px_18px_rgba(0,0,0,0.22)] md:size-[52px]" priority />
+              <div className="leading-tight"><p className="text-lg font-semibold tracking-[0.12em] text-white">世纪证券</p><p className="mt-0.5 text-[10px] font-medium tracking-[0.18em] text-blue-100/80">CENTURY SECURITIES</p></div>
             </div>
-            <div>
-              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white leading-tight">
-                券商金融科技招采情报平台
-              </h1>
-              <p className="text-sm md:text-base text-white/80 mt-3 font-normal max-w-sm">
-                聚合采购公告、智能结构化处理与情报分析
-              </p>
+            <div className="mt-10 max-w-[440px] md:mt-20">
+              <h1 className="text-[32px] font-bold leading-[1.25] tracking-tight text-white md:text-[46px]">世纪证券<br className="hidden md:block" />招采情报平台</h1>
+              <p className="mt-4 max-w-md text-sm leading-relaxed text-blue-100/85 md:text-base">聚合采购公告、智能结构化处理与情报分析</p>
             </div>
-            <div className="flex flex-wrap gap-2.5 pt-1">
-              {["自动采集", "智能分析", "数据看板"].map((item) => (
-                <div
-                  key={item}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/15 border border-white/25 text-xs font-semibold text-white shadow-sm backdrop-blur-md"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                  {item}
+            <div className="mt-8 grid grid-cols-3 gap-2.5 md:mt-auto md:gap-5">
+              {[
+                { label: "自动采集", detail: "全网公告实时抓取", Icon: ScanLine },
+                { label: "智能分析", detail: "AI结构化处理", Icon: BrainCircuit },
+                { label: "数据看板", detail: "多维情报洞察", Icon: LayoutDashboard },
+              ].map(({ label, detail, Icon }) => (
+                <div key={label} className="min-w-0 border-t border-white/20 pt-3 md:pt-4">
+                  <span className="flex size-8 items-center justify-center rounded-lg border border-blue-200/55 bg-white/10 text-blue-50 backdrop-blur-sm md:size-10"><Icon className="size-4 md:size-5" /></span>
+                  <p className="mt-2 text-xs font-bold text-white md:text-sm">{label}</p>
+                  <p className="mt-1 hidden text-[11px] leading-relaxed text-blue-100/70 md:block">{detail}</p>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="w-full md:w-[48%] p-6 sm:p-8 md:p-12 flex flex-col justify-center bg-white">
-          <div className="relative w-full max-w-[420px] mx-auto h-[470px] sm:h-[490px] max-h-[calc(100vh-7rem)] overflow-hidden">
+        <div className="flex w-full flex-col justify-center bg-white px-5 py-8 sm:px-8 md:w-[45%] md:px-12 md:py-12">
+          <div className="relative mx-auto h-[470px] w-full max-w-[390px] overflow-hidden sm:h-[490px]">
             <div className={getPanelClass("login")} aria-hidden={mode !== "login"}>
               <div className="space-y-5">
                 <div className="space-y-1">
@@ -402,7 +425,7 @@ export function LoginPageWithApply() {
                       />
                       <span className="flex w-7 shrink-0 items-center justify-center text-sm font-medium text-[#98A2B3]">@</span>
                       {applyEmailDomain === "other" ? (
-                        <div className="flex min-w-0 w-[148px] shrink-0 items-center border-l border-[#EAECF0] bg-[#F8FAFC]">
+                        <div className="flex w-[42%] max-w-[148px] min-w-0 shrink-0 items-center border-l border-[#EAECF0] bg-[#F8FAFC]">
                           <input
                             value={customEmailDomain}
                             onChange={(event) => {
@@ -422,7 +445,7 @@ export function LoginPageWithApply() {
                             setApplyEmailDomain(event.target.value as (typeof EMAIL_DOMAINS)[number] | "other");
                             if (emailError) setEmailError("");
                           }}
-                          className="w-[148px] shrink-0 border-l border-[#EAECF0] bg-[#F8FAFC] px-2.5 text-sm font-medium text-[#475467] outline-none"
+                          className="w-[42%] max-w-[148px] shrink-0 border-l border-[#EAECF0] bg-[#F8FAFC] px-2.5 text-sm font-medium text-[#475467] outline-none"
                           aria-label="邮箱域名"
                         >
                           {EMAIL_DOMAINS.map((domain) => <option key={domain} value={domain}>{domain}</option>)}

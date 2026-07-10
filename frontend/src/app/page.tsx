@@ -13,7 +13,8 @@ import {
 } from "@/lib/announcement-data";
 import { useFilterStore, type TimeRange } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
-import { BackendApiError } from "@/lib/api/backend-client";
+import { BackendApiError, recordDashboardView } from "@/lib/api/backend-client";
+import { getAuditContext } from "@/lib/audit-context";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardFilters } from "@/components/dashboard-filters";
 import { DashboardTabs } from "@/components/dashboard-tabs";
@@ -109,6 +110,15 @@ export default function Dashboard() {
   useEffect(() => {
     restoreSession();
   }, [restoreSession]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !token || showDashboard) return;
+    void recordDashboardView(token, getAuditContext()).catch((error: unknown) => {
+      if (error instanceof BackendApiError && error.status === 401) {
+        clearAuth("登录已失效，请重新登录");
+      }
+    });
+  }, [clearAuth, isLoggedIn, showDashboard, token]);
 
   // Header height measurement for sticky tab bar positioning
   const headerRef = useRef<HTMLElement>(null);
@@ -371,7 +381,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F7FB]">
+    <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
       {/* ─── Top Navigation ─── */}
       <DashboardHeader
         username={username}
@@ -387,7 +397,7 @@ export default function Dashboard() {
       />
 
       {/* ─── Main Content ─── */}
-      <main className="max-w-[1600px] mx-auto px-3 sm:px-8 py-4 sm:py-5 space-y-4">
+      <main className="mx-auto max-w-[1600px] min-w-0 px-3 py-4 space-y-4 sm:px-8 sm:py-5">
         {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
           <div
             className={`rounded-[10px] border px-4 py-3 text-[13px] ${

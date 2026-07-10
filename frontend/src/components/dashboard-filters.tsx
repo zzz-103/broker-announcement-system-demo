@@ -80,9 +80,9 @@ export function DashboardFilters({
 }: DashboardFiltersProps) {
   return (
     <div className="bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5">
-      <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
+      <div className="grid grid-cols-2 items-center gap-2.5 sm:flex sm:flex-wrap sm:gap-4">
         {/* Search */}
-        <div className="relative w-full sm:w-[32%] sm:min-w-[240px] group">
+        <div className="relative col-span-2 w-full group sm:w-[32%] sm:min-w-[240px]">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#98A2B3] group-focus-within:text-[#2563EB] transition-colors" />
           <input
             type="text"
@@ -113,6 +113,7 @@ export function DashboardFilters({
             { value: "all", label: "全部时间" },
           ]}
           placeholder="时间范围"
+          className="w-full sm:w-auto"
         />
 
         {/* Broker - Multi Select */}
@@ -127,6 +128,7 @@ export function DashboardFilters({
           searchable
           searchPlaceholder="搜索券商名称"
           onMissingSearch={onMissingBrokerSearch}
+          className="w-full sm:w-auto"
         />
 
         {/* Domain */}
@@ -139,6 +141,7 @@ export function DashboardFilters({
           ]}
           placeholder="全部方向"
           maxHeight={280}
+          className="w-full sm:w-auto"
         />
 
         {/* Stage */}
@@ -152,6 +155,7 @@ export function DashboardFilters({
             { value: "流标废标", label: "流标废标" },
           ]}
           placeholder="全部阶段"
+          className="w-full sm:w-auto"
         />
 
         {/* Method */}
@@ -164,10 +168,11 @@ export function DashboardFilters({
           ]}
           placeholder="全部方式"
           maxHeight={240}
+          className="w-full sm:w-auto"
         />
 
         {/* FinTech Toggle */}
-        <label className="flex items-center gap-2 text-[12px] text-[#475467] hover:text-[#172033] cursor-pointer select-none whitespace-nowrap transition-colors">
+        <label className="flex min-w-0 items-center gap-2 text-[12px] text-[#475467] hover:text-[#172033] cursor-pointer select-none whitespace-nowrap transition-colors">
           <input
             type="checkbox"
             checked={finTechOnly}
@@ -191,7 +196,7 @@ export function DashboardFilters({
 
       {/* All Broker Tags - max 2 rows */}
       {sortedBrokers.length > 0 && (
-        <div className="flex items-start gap-3 mt-4 pt-4 border-t border-[#F0F2F5]">
+        <div className="mt-4 flex flex-col gap-2 border-t border-[#F0F2F5] pt-4 sm:flex-row sm:items-start sm:gap-3">
           <span className="text-[12px] font-semibold text-[#475467] shrink-0 mt-1">券商标签</span>
           {brokerNames.length > 0 && (
             <button
@@ -203,7 +208,7 @@ export function DashboardFilters({
           )}
           <div
             ref={brokerTagsRef}
-            className="flex items-center gap-1.5 flex-wrap overflow-hidden"
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-hidden sm:pb-0"
             style={{ maxHeight: showAllBrokers ? "none" : "76px" }}
           >
             {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {

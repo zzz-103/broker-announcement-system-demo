@@ -6,6 +6,7 @@ backend/config/llm_api_config.json
 backend/data/csco_contacts_output.csv
 backend/data/raw_json
 backend/data/users.db
+backend/data/audit.db
 backend/data/brokers
 backend/data/staging/
 manual_test/

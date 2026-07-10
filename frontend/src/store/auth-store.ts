@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { BackendApiError, loginAdmin } from "@/lib/api/backend-client";
+import { getAuditContext } from "@/lib/audit-context";
 
 const TOKEN_KEY = "adminSessionToken";
 const USERNAME_KEY = "adminUsername";
@@ -27,7 +28,7 @@ export const useAuthStore = create<AuthState>((set) => {
 
     login: async (username: string, password: string) => {
       try {
-        const data = await loginAdmin(username, password);
+        const data = await loginAdmin(username, password, getAuditContext());
         window.sessionStorage.setItem(TOKEN_KEY, data.token);
         window.sessionStorage.setItem(USERNAME_KEY, data.username || username);
         window.sessionStorage.setItem(ROLE_KEY, data.role);

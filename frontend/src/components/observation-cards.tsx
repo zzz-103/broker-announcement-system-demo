@@ -89,7 +89,7 @@ export function BrokerActivityCard({ data, allData }: ObservationProps) {
                 className="absolute bottom-0 left-8 h-[2px] bg-blue-500/10 rounded-full transition-all duration-300 motion-reduce:transition-none"
                 style={{ width: `calc(${(b.count / maxCount) * 100}% - 32px)` }}
               />
-              <div className="flex items-center gap-3 text-[13px] relative z-10">
+              <div className="relative z-10 flex min-w-0 items-center gap-2 text-[13px] sm:gap-3">
                 <span className="w-5 text-[11px] text-[#98A2B3] tabular-nums text-right font-medium">
                   {i + 1}
                 </span>
@@ -99,10 +99,10 @@ export function BrokerActivityCard({ data, allData }: ObservationProps) {
                 <span className="text-[#2563EB] font-bold tabular-nums w-8 text-right">
                   {b.count}
                 </span>
-                <span className="text-[11px] text-[#667085] w-28 truncate" title={b.topDomain}>
+                <span className="hidden w-28 truncate text-[11px] text-[#667085] sm:inline" title={b.topDomain}>
                   {b.topDomain}
                 </span>
-                <span className="text-[11px] text-[#98A2B3] w-20 text-right tabular-nums">
+                <span className="hidden w-20 text-right text-[11px] tabular-nums text-[#98A2B3] sm:inline">
                   {b.latestDate}
                 </span>
               </div>
@@ -181,7 +181,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
                 className="absolute bottom-0 left-8 h-[2px] bg-teal-500/10 rounded-full transition-all duration-300 motion-reduce:transition-none"
                 style={{ width: `calc(${(s.projectCount / maxCount) * 100}% - 32px)` }}
               />
-              <div className="flex items-center gap-3 text-[13px] relative z-10">
+              <div className="relative z-10 flex min-w-0 items-center gap-2 text-[13px] sm:gap-3">
                 <span className="w-5 text-[11px] text-[#98A2B3] tabular-nums text-right font-medium">
                   {i + 1}
                 </span>
@@ -194,7 +194,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
                 <span className="text-[11px] text-[#667085] w-12 text-right">
                   {s.brokerCount}家
                 </span>
-                <span className="text-[11px] text-[#667085] w-24 truncate" title={s.topDomain}>
+                <span className="hidden w-24 truncate text-[11px] text-[#667085] sm:inline" title={s.topDomain}>
                   {s.topDomain}
                 </span>
               </div>

@@ -19,6 +19,7 @@ interface MultiHoverSelectProps {
   searchPlaceholder?: string;
   knownOptions?: Option[];
   onMissingSearch?: (query: string) => void;
+  className?: string;
 }
 
 // Global event to close other dropdowns
@@ -35,6 +36,7 @@ export function MultiHoverSelect({
   searchPlaceholder = "搜索...",
   knownOptions = options,
   onMissingSearch,
+  className = "",
 }: MultiHoverSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -115,7 +117,7 @@ export function MultiHoverSelect({
   return (
     <div
       ref={containerRef}
-      className="relative"
+      className={`relative min-w-0 ${className}`}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -123,7 +125,7 @@ export function MultiHoverSelect({
         ref={triggerRef}
         type="button"
         className={`
-          flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px]
+          w-full flex items-center justify-between gap-1.5 px-3 py-1.5 rounded-md text-[13px]
           border transition-all duration-150 whitespace-nowrap
           ${
             values.length > 0

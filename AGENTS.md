@@ -809,6 +809,9 @@ Codex 必须遵守：
 - 独立定时任务调度进程（Scheduler），基于 APScheduler 实现 CRON 调度，持有 `X-Scheduler-Token` 安全头进行内部验证触发
 - 任务取消机制：通过 `POST /api/jobs/{job_id}/cancel` 支持中止运行中的子进程或流水线
 - 采购公告与结果公告规则匹配器（`backend/matching/project_matcher.py`），输出匹配、候选分数、未匹配结果和运行摘要
+- 用户访问与登录审计（二维码访问、资格申请、成功登录、进入看板及管理员查看）
+- 世纪证券品牌 Logo、浏览器图标与页面标题接入
+- 看板、登录页和项目明细的移动端可读性优化
 
 待完成或待最终验收：
 
