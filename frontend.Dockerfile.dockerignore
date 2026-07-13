@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+**/.venv
+**/node_modules
+**/.next
+**/out
+**/__pycache__
+*.pyc
+*.log
