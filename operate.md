@@ -92,8 +92,8 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ## 4. Docker 备用部署
 
 ```powershell
-docker build -f backend.Dockerfile -t broker-backend:1.3.0 .
-$env:BROKER_IMAGE="broker-backend:1.3.0"
+docker build -f backend.Dockerfile -t broker-backend:1.3.1 .
+$env:BROKER_IMAGE="broker-backend:1.3.1"
 docker compose up -d
 ```
 
