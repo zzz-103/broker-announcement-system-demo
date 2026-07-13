@@ -62,13 +62,17 @@ function Set-EnvValue {
         $content += "$newLine`r`n"
     }
 
-    $temporaryPath = "$Path.$([guid]::NewGuid().ToString('N')).tmp"
+    $replacementId = [guid]::NewGuid().ToString('N')
+    $temporaryPath = "$Path.$replacementId.tmp"
+    $backupPath = "$Path.$replacementId.bak"
     [System.IO.File]::WriteAllText($temporaryPath, $content, (New-Object System.Text.UTF8Encoding($false)))
     try {
-        [System.IO.File]::Replace($temporaryPath, $Path, $null)
+        [System.IO.File]::Replace($temporaryPath, $Path, $backupPath)
+        Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
     }
     catch {
         if (Test-Path $temporaryPath) { Remove-Item -LiteralPath $temporaryPath -Force }
+        if (Test-Path $backupPath) { Remove-Item -LiteralPath $backupPath -Force }
         throw
     }
 }
