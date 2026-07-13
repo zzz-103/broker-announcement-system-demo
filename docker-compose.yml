@@ -1,6 +1,6 @@
 services:
   backend-api:
-    image: ${BROKER_IMAGE:-broker-backend:1.2.5}
+    image: ${BROKER_IMAGE:-broker-backend:1.3.0}
     ports:
       - "5000:8000"
     restart: unless-stopped
@@ -27,7 +27,7 @@ services:
         max-file: "5"
 
   backend-scheduler:
-    image: ${BROKER_IMAGE:-broker-backend:1.2.5}
+    image: ${BROKER_IMAGE:-broker-backend:1.3.0}
     command: python -m backend.api.scheduler
     restart: unless-stopped
     env_file:
