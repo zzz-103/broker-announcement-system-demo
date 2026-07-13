@@ -338,20 +338,45 @@ def _fetch_user_by_email_or_username(
     return row_to_user(row) if row is not None else None
 
 
-def list_users() -> list[ApprovedUser]:
+def list_users(page: int, page_size: int, query: str | None = None) -> tuple[list[ApprovedUser], int, int]:
+    normalized_query = query.strip() if query else ""
+    where_clause = ""
+    parameters: list[object] = []
+    if normalized_query:
+        escaped_query = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
+        where_clause = """
+            WHERE name LIKE ? ESCAPE '\\'
+               OR email LIKE ? ESCAPE '\\'
+               OR department LIKE ? ESCAPE '\\'
+               OR username LIKE ? ESCAPE '\\'
+        """
+        parameters.extend([pattern, pattern, pattern, pattern])
     try:
         with _connect() as connection:
             ensure_schema(connection)
+            total = int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM approved_users {where_clause}",
+                    parameters,
+                ).fetchone()[0]
+            )
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            effective_page = min(page, total_pages)
+            offset = (effective_page - 1) * page_size
             rows = connection.execute(
-                """
+                f"""
                 SELECT id, name, email, department, username, created_at
                 FROM approved_users
+                {where_clause}
                 ORDER BY id DESC
-                """
+                LIMIT ? OFFSET ?
+                """,
+                [*parameters, page_size, offset],
             ).fetchall()
     except sqlite3.Error as exc:
         raise UserStoreError("failed to list users") from exc
-    return [row_to_user(row) for row in rows]
+    return [row_to_user(row) for row in rows], total, effective_page
 
 
 def create_user(name: str, email: str, department: str) -> tuple[ApprovedUser, str]:

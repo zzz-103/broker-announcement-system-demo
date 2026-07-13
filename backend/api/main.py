@@ -808,15 +808,28 @@ def publish_announcements() -> dict[str, object]:
 
 
 @app.get("/api/admin/users", dependencies=[Depends(require_admin_token)])
-def get_admin_users() -> dict[str, object]:
+def get_admin_users(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=4, ge=1, le=100),
+    query: str | None = Query(default=None, alias="q", max_length=100),
+) -> dict[str, object]:
     try:
-        users = [user.to_dict() for user in list_users()]
+        users, total, effective_page = list_users(page, page_size, query)
     except UserStoreError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="failed to load approved users",
         ) from exc
-    return {"users": users}
+    return {
+        "users": [user.to_dict() for user in users],
+        "meta": {
+            "page": effective_page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "q": query.strip() if query else "",
+        },
+    }
 
 
 @app.get("/api/admin/audit/summary", dependencies=[Depends(require_admin_token)])
@@ -833,19 +846,32 @@ def get_admin_audit_summary() -> dict[str, object]:
 @app.get("/api/admin/audit/events", dependencies=[Depends(require_admin_token)])
 def get_admin_audit_events(
     event_type: str | None = Query(default=None, alias="type"),
-    limit: int = Query(default=100, ge=1, le=100),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    query: str | None = Query(default=None, alias="q", max_length=100),
 ) -> dict[str, object]:
     normalized_type = event_type.strip() if event_type else None
     if normalized_type and normalized_type not in AUDIT_EVENT_TYPES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="audit event type is invalid")
     try:
-        events = [event.to_dict() for event in list_events(normalized_type, limit)]
+        events, total, effective_page = list_events(normalized_type, page, page_size, query)
     except AuditStoreError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="failed to load audit events",
         ) from exc
-    return {"events": events, "meta": {"type": normalized_type, "limit": limit, "count": len(events)}}
+    return {
+        "events": [event.to_dict() for event in events],
+        "meta": {
+            "type": normalized_type,
+            "page": effective_page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": max(1, (total + page_size - 1) // page_size),
+            "q": query.strip() if query else "",
+            "count": len(events),
+        },
+    }
 
 
 @app.get("/api/admin/feedback", dependencies=[Depends(require_admin_token)])

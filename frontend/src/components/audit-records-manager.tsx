@@ -1,16 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Activity, LogIn, QrCode, RefreshCw, UserCheck, UsersRound } from "lucide-react";
+import { Activity, ChevronLeft, ChevronRight, LogIn, QrCode, RefreshCw, Search, UserCheck, UsersRound } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import {
   type AuditEventRecord,
   type AuditEventType,
+  type AdminListMeta,
   BackendApiError,
   getAdminAuditEvents,
   getAdminAuditSummary,
   type AuditSummaryResponse,
 } from "@/lib/api/backend-client";
+
+const AUDIT_PAGE_SIZE = 20;
+const EMPTY_META: AdminListMeta = { page: 1, page_size: AUDIT_PAGE_SIZE, total: 0, total_pages: 1, q: "" };
 
 const EVENT_LABELS: Record<AuditEventType, string> = {
   qr_visit: "二维码访问",
@@ -46,21 +50,27 @@ export function AuditRecordsManager() {
   const { token, clearAuth } = useAuthStore();
   const [summary, setSummary] = useState<AuditSummaryResponse | null>(null);
   const [events, setEvents] = useState<AuditEventRecord[]>([]);
+  const [meta, setMeta] = useState<AdminListMeta>(EMPTY_META);
   const [eventType, setEventType] = useState<AuditEventType | "">("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const loadRecords = useCallback(async () => {
+  const loadRecords = useCallback(async (requestedPage = page, query = searchQuery) => {
     if (!token) return;
     setIsLoading(true);
     setError("");
     try {
       const [nextSummary, nextEvents] = await Promise.all([
         getAdminAuditSummary(token),
-        getAdminAuditEvents(token, eventType),
+        getAdminAuditEvents(token, eventType, { page: requestedPage, pageSize: AUDIT_PAGE_SIZE, query }),
       ]);
       setSummary(nextSummary);
       setEvents(nextEvents.events);
+      setMeta(nextEvents.meta);
+      if (nextEvents.meta.page !== page) setPage(nextEvents.meta.page);
     } catch (reason) {
       if (reason instanceof BackendApiError && reason.status === 401) {
         clearAuth("登录已失效，请重新登录");
@@ -70,11 +80,19 @@ export function AuditRecordsManager() {
     } finally {
       setIsLoading(false);
     }
-  }, [clearAuth, eventType, token]);
+  }, [clearAuth, eventType, page, searchQuery, token]);
 
   useEffect(() => {
     void loadRecords();
   }, [loadRecords]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   const cards = [
     { label: "今日二维码访问", value: summary?.today_qr_visits ?? 0, icon: QrCode, color: "text-orange-600 bg-orange-50" },
@@ -98,7 +116,10 @@ export function AuditRecordsManager() {
         <div className="flex items-center gap-2">
           <select
             value={eventType}
-            onChange={(event) => setEventType(event.target.value as AuditEventType | "")}
+            onChange={(event) => {
+              setEventType(event.target.value as AuditEventType | "");
+              setPage(1);
+            }}
             className="h-8 min-w-0 rounded-lg border border-[#E4E9F0] bg-white px-2 text-xs text-[#475467] outline-none focus:border-[#2563EB]"
             aria-label="筛选访问记录类型"
           >
@@ -122,6 +143,15 @@ export function AuditRecordsManager() {
 
       <div className="border-t border-[#F0F2F5] px-4 pb-4 pt-3 sm:px-5">
         {error && <p className="mb-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
+        <div className="relative mb-3">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#98A2B3]" />
+          <input
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="搜索人员、账号、来源、IP 或申请信息"
+            className="h-9 w-full rounded-lg border border-[#E4E9F0] bg-[#F8FAFC] pl-9 pr-3 text-xs text-[#172033] outline-none transition-all placeholder:text-[#98A2B3] focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10"
+          />
+        </div>
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-left text-xs"><thead className="border-b border-[#F0F2F5] text-[#98A2B3]"><tr><th className="px-2 py-2">类型</th><th className="px-2 py-2">人员</th><th className="px-2 py-2">详情</th><th className="px-2 py-2">时间</th></tr></thead><tbody className="divide-y divide-[#F5F7FA] text-[#475467]">
             {events.map((event) => <tr key={event.id}><td className="px-2 py-2.5 font-medium text-[#172033]">{EVENT_LABELS[event.event_type]}</td><td className="max-w-[220px] truncate px-2 py-2.5" title={eventIdentity(event)}>{eventIdentity(event)}</td><td className="max-w-[260px] truncate px-2 py-2.5" title={eventDetail(event)}>{eventDetail(event)}</td><td className="whitespace-nowrap px-2 py-2.5 text-[#98A2B3]">{formatTime(event.created_at)}</td></tr>)}
@@ -130,7 +160,16 @@ export function AuditRecordsManager() {
         <div className="space-y-2 md:hidden">
           {events.map((event) => <div key={event.id} className="rounded-lg border border-[#EEF2F6] p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#172033]">{EVENT_LABELS[event.event_type]}</span><span className="shrink-0 text-[10px] text-[#98A2B3]">{formatTime(event.created_at)}</span></div><p className="mt-1 truncate text-xs font-medium text-[#475467]">{eventIdentity(event)}</p><p className="mt-1 text-[11px] text-[#98A2B3]">{eventDetail(event)}</p></div>)}
         </div>
-        {!isLoading && events.length === 0 && <p className="py-6 text-center text-xs text-[#98A2B3]">暂无访问记录</p>}
+        {!isLoading && events.length === 0 && <p className="py-6 text-center text-xs text-[#98A2B3]">{searchQuery ? "未找到匹配的访问记录" : "暂无访问记录"}</p>}
+        {meta.total > 0 && (
+          <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
+            <span>共 {meta.total} 条 · 第 {meta.page} / {meta.total_pages} 页</span>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={isLoading || meta.page <= 1} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50"><ChevronLeft className="size-3.5" />上一页</button>
+              <button type="button" onClick={() => setPage((current) => Math.min(meta.total_pages, current + 1))} disabled={isLoading || meta.page >= meta.total_pages} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50">下一页<ChevronRight className="size-3.5" /></button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

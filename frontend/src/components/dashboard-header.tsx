@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import Image from "next/image";
-import { Download, Settings, LogOut, Sparkles, ArrowLeft, HelpCircle } from "lucide-react";
+import { Download, Settings, LogOut, Sparkles, ArrowLeft, HelpCircle, MessageSquarePlus } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate } from "@/lib/announcement-data";
 
@@ -15,6 +15,7 @@ interface DashboardHeaderProps {
   showDashboard: boolean;
   onShowModal: () => void;
   onExport: () => void;
+  onOpenFeedback: () => void;
   onShowDashboard: (show: boolean) => void;
   onLogout: () => void;
 }
@@ -28,6 +29,7 @@ export function DashboardHeader({
   showDashboard,
   onShowModal,
   onExport,
+  onOpenFeedback,
   onShowDashboard,
   onLogout,
 }: DashboardHeaderProps) {
@@ -105,6 +107,14 @@ export function DashboardHeader({
           >
             <HelpCircle className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">数据口径</span><span className="sm:hidden">口径</span>
+          </button>
+          <button
+            onClick={onOpenFeedback}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-sky-300/40 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white active:scale-[0.98] transition-all whitespace-nowrap"
+            title="补充券商、反馈数据问题或提出产品建议"
+          >
+            <MessageSquarePlus className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">提交反馈</span><span className="sm:hidden">反馈</span>
           </button>
           <button
             onClick={onExport}

@@ -4,6 +4,7 @@ import os
 import csv
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -91,6 +92,67 @@ class RouteOwnershipTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["role"], "user")
+
+    def test_admin_user_and_audit_lists_support_search_and_pagination(self) -> None:
+        headers = self._admin_headers()
+        marker = uuid.uuid4().hex
+        for index in range(5):
+            main.create_user(
+                f"Pagination User {index}",
+                f"pagination-{marker}-{index}@csco.com.cn",
+                "Pagination Department",
+            )
+
+        users_page_one = self.client.get(
+            f"/api/admin/users?q=pagination-{marker}&page=1&page_size=4",
+            headers=headers,
+        )
+        self.assertEqual(users_page_one.status_code, 200)
+        self.assertEqual(users_page_one.json()["meta"]["total"], 5)
+        self.assertEqual(users_page_one.json()["meta"]["total_pages"], 2)
+        self.assertEqual(len(users_page_one.json()["users"]), 4)
+
+        users_last_page = self.client.get(
+            f"/api/admin/users?q=pagination-{marker}&page=99&page_size=4",
+            headers=headers,
+        )
+        self.assertEqual(users_last_page.status_code, 200)
+        self.assertEqual(users_last_page.json()["meta"]["page"], 2)
+        self.assertEqual(len(users_last_page.json()["users"]), 1)
+
+        deleted_user_id = users_last_page.json()["users"][0]["id"]
+        deleted = self.client.delete(f"/api/admin/users/{deleted_user_id}", headers=headers)
+        self.assertEqual(deleted.status_code, 200)
+        users_after_delete = self.client.get(
+            f"/api/admin/users?q=pagination-{marker}&page=2&page_size=4",
+            headers=headers,
+        )
+        self.assertEqual(users_after_delete.status_code, 200)
+        self.assertEqual(users_after_delete.json()["meta"]["page"], 1)
+        self.assertEqual(len(users_after_delete.json()["users"]), 4)
+
+        for index in range(21):
+            main.record_event(
+                event_type="qualification_application",
+                metadata={"name": f"Audit Search {marker}", "department": "Pagination Department"},
+            )
+
+        audit_page_one = self.client.get(
+            f"/api/admin/audit/events?type=qualification_application&q={marker}&page=1&page_size=20",
+            headers=headers,
+        )
+        self.assertEqual(audit_page_one.status_code, 200)
+        self.assertEqual(audit_page_one.json()["meta"]["total"], 21)
+        self.assertEqual(audit_page_one.json()["meta"]["total_pages"], 2)
+        self.assertEqual(len(audit_page_one.json()["events"]), 20)
+
+        audit_last_page = self.client.get(
+            f"/api/admin/audit/events?type=qualification_application&q={marker}&page=99&page_size=20",
+            headers=headers,
+        )
+        self.assertEqual(audit_last_page.status_code, 200)
+        self.assertEqual(audit_last_page.json()["meta"]["page"], 2)
+        self.assertEqual(len(audit_last_page.json()["events"]), 1)
 
     def test_application_feedback_and_ai_routes_work_with_mocked_services(self) -> None:
         fake_user = SimpleNamespace(

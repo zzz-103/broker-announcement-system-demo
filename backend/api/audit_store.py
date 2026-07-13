@@ -157,24 +157,48 @@ def record_event(
     return _row_to_event(row), True
 
 
-def list_events(event_type: str | None, limit: int) -> list[AuditEvent]:
+def list_events(
+    event_type: str | None,
+    page: int,
+    page_size: int,
+    query: str | None = None,
+) -> tuple[list[AuditEvent], int, int]:
     if event_type and event_type not in EVENT_TYPES:
         raise AuditStoreError("audit event type is invalid")
+    normalized_query = query.strip() if query else ""
+    where_clauses: list[str] = []
+    parameters: list[object] = []
+    if event_type:
+        where_clauses.append("event_type = ?")
+        parameters.append(event_type)
+    if normalized_query:
+        escaped_query = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped_query}%"
+        where_clauses.append(
+            "(username LIKE ? ESCAPE '\\' OR role LIKE ? ESCAPE '\\' OR source LIKE ? ESCAPE '\\' "
+            "OR ip_masked LIKE ? ESCAPE '\\' OR metadata_json LIKE ? ESCAPE '\\')"
+        )
+        parameters.extend([pattern, pattern, pattern, pattern, pattern])
+    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
     try:
         with _connect() as connection:
             _ensure_schema(connection)
-            if event_type:
-                rows = connection.execute(
-                    "SELECT * FROM audit_events WHERE event_type = ? ORDER BY created_at DESC, id DESC LIMIT ?",
-                    (event_type, limit),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    "SELECT * FROM audit_events ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
-                ).fetchall()
+            total = int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM audit_events {where_clause}",
+                    parameters,
+                ).fetchone()[0]
+            )
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            effective_page = min(page, total_pages)
+            offset = (effective_page - 1) * page_size
+            rows = connection.execute(
+                f"SELECT * FROM audit_events {where_clause} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                [*parameters, page_size, offset],
+            ).fetchall()
     except sqlite3.Error as exc:
         raise AuditStoreError("failed to load audit events") from exc
-    return [_row_to_event(row) for row in rows]
+    return [_row_to_event(row) for row in rows], total, effective_page
 
 
 def _today_range() -> tuple[str, str]:

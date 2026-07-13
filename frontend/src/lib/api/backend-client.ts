@@ -52,7 +52,7 @@ export interface AuditSummaryResponse {
 
 export interface AuditEventsResponse {
   events: AuditEventRecord[];
-  meta: { type: AuditEventType | null; limit: number; count: number };
+  meta: AdminListMeta & { type: AuditEventType | null; count: number };
 }
 
 export interface StartJobResponse {
@@ -168,6 +168,21 @@ export interface AdminUser {
 
 export interface AdminUsersResponse {
   users: AdminUser[];
+  meta: AdminListMeta;
+}
+
+export interface AdminListMeta {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  q: string;
+}
+
+export interface AdminListQuery {
+  page: number;
+  pageSize: number;
+  query: string;
 }
 
 export interface CreateAdminUserInput {
@@ -391,8 +406,13 @@ export function publishAnnouncements(token: string, signal?: AbortSignal): Promi
   );
 }
 
-export function getAdminUsers(token: string): Promise<AdminUsersResponse> {
-  return requestJson<AdminUsersResponse>("/api/admin/users", {}, token);
+export function getAdminUsers(token: string, options: AdminListQuery): Promise<AdminUsersResponse> {
+  const query = new URLSearchParams({
+    page: String(options.page),
+    page_size: String(options.pageSize),
+  });
+  if (options.query.trim()) query.set("q", options.query.trim());
+  return requestJson<AdminUsersResponse>(`/api/admin/users?${query.toString()}`, {}, token);
 }
 
 export function getAdminAuditSummary(token: string): Promise<AuditSummaryResponse> {
@@ -402,9 +422,15 @@ export function getAdminAuditSummary(token: string): Promise<AuditSummaryRespons
 export function getAdminAuditEvents(
   token: string,
   eventType: AuditEventType | "",
+  options: AdminListQuery,
 ): Promise<AuditEventsResponse> {
-  const query = eventType ? `?type=${encodeURIComponent(eventType)}&limit=100` : "?limit=100";
-  return requestJson<AuditEventsResponse>(`/api/admin/audit/events${query}`, {}, token);
+  const query = new URLSearchParams({
+    page: String(options.page),
+    page_size: String(options.pageSize),
+  });
+  if (eventType) query.set("type", eventType);
+  if (options.query.trim()) query.set("q", options.query.trim());
+  return requestJson<AuditEventsResponse>(`/api/admin/audit/events?${query.toString()}`, {}, token);
 }
 
 export function createAdminUser(

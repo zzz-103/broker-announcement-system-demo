@@ -387,6 +387,7 @@ export default function Dashboard() {
         showDashboard={showDashboard}
         onShowModal={() => setShowModal(true)}
         onExport={() => exportCsv(filteredData)}
+        onOpenFeedback={() => openFeedback()}
         onShowDashboard={setShowDashboard}
         onLogout={logout}
       />
@@ -429,7 +430,6 @@ export default function Dashboard() {
           brokerOptions={brokerOptions}
           allBrokerOptions={allBrokerOptions}
           onMissingBrokerSearch={dataStatus === "ready" && !search.trim() ? (brokerName) => openFeedback("broker_request", brokerName) : undefined}
-          onOpenFeedback={() => openFeedback()}
           methodOptions={methodOptions}
           sortedBrokers={sortedBrokers}
           visibleBrokerCount={visibleBrokerCount}

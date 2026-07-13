@@ -5,8 +5,11 @@ import {
   AlertCircle,
   CheckCircle2,
   Clipboard,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   RefreshCw,
+  Search,
   Trash2,
   UserPlus,
   Users,
@@ -14,6 +17,7 @@ import {
 import { useAuthStore } from "@/store/auth-store";
 import {
   AdminUser,
+  type AdminListMeta,
   BackendApiError,
   createAdminUser,
   deleteAdminUser,
@@ -24,6 +28,9 @@ interface CreatedCredential {
   username: string;
   password: string;
 }
+
+const USER_PAGE_SIZE = 4;
+const EMPTY_META: AdminListMeta = { page: 1, page_size: USER_PAGE_SIZE, total: 0, total_pages: 1, q: "" };
 
 function formatCreatedAt(value: string) {
   const date = new Date(value);
@@ -42,6 +49,10 @@ function errorMessage(error: unknown) {
 export function UserApprovalManager() {
   const { token, clearAuth } = useAuthStore();
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [meta, setMeta] = useState<AdminListMeta>(EMPTY_META);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [department, setDepartment] = useState("");
@@ -73,23 +84,33 @@ export function UserApprovalManager() {
     [clearAuth],
   );
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (requestedPage = page, query = searchQuery) => {
     if (!token) return;
     setIsLoading(true);
     setError("");
     try {
-      const data = await getAdminUsers(token);
+      const data = await getAdminUsers(token, { page: requestedPage, pageSize: USER_PAGE_SIZE, query });
       setUsers(data.users);
+      setMeta(data.meta);
+      if (data.meta.page !== page) setPage(data.meta.page);
     } catch (error) {
       if (!handleAuthError(error)) setError(errorMessage(error));
     } finally {
       setIsLoading(false);
     }
-  }, [handleAuthError, token]);
+  }, [handleAuthError, page, searchQuery, token]);
 
   useEffect(() => {
     void loadUsers();
   }, [loadUsers]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -107,7 +128,10 @@ export function UserApprovalManager() {
       setName("");
       setEmail("");
       setDepartment("");
-      await loadUsers();
+      setSearchInput("");
+      setSearchQuery("");
+      setPage(1);
+      await loadUsers(1, "");
     } catch (error) {
       if (!handleAuthError(error)) setError(errorMessage(error));
     } finally {
@@ -286,14 +310,24 @@ export function UserApprovalManager() {
               已审批用户
             </div>
             <span className="text-xs text-[#667085] font-semibold bg-[#F5F7FA] px-2.5 py-0.5 rounded-full">
-              {users.length} 人
+              {meta.total} 人
             </span>
+          </div>
+
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#98A2B3]" />
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="搜索姓名、账号、邮箱或部门"
+              className="h-9 w-full rounded-lg border border-[#E4E9F0] bg-[#F8FAFC] pl-9 pr-3 text-xs text-[#172033] outline-none transition-all placeholder:text-[#98A2B3] focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10"
+            />
           </div>
 
           <div className="space-y-3">
             {users.length === 0 && !isLoading && (
               <div className="rounded-xl border border-dashed border-[#E4E9F0] py-16 text-center text-xs text-[#98A2B3] bg-[#F8FAFC]">
-                暂无已审批用户
+                {searchQuery ? "未找到匹配的已审批用户" : "暂无已审批用户"}
               </div>
             )}
             {isLoading && users.length === 0 && (
@@ -398,6 +432,30 @@ export function UserApprovalManager() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {meta.total > 0 && (
+              <div className="flex items-center justify-between gap-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
+                <span>第 {meta.page} / {meta.total_pages} 页</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={isLoading || meta.page <= 1}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <ChevronLeft className="size-3.5" />上一页
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((current) => Math.min(meta.total_pages, current + 1))}
+                    disabled={isLoading || meta.page >= meta.total_pages}
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    下一页<ChevronRight className="size-3.5" />
+                  </button>
+                </div>
               </div>
             )}
           </div>
