@@ -25,6 +25,7 @@ frontend/tsconfig.tsbuildinfo
 .env.*
 **/.env
 **/.env.*
+frontend/.env.local
 !.env.example
 !**/.env.example
 

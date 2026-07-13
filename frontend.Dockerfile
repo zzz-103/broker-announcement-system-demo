@@ -4,6 +4,11 @@ WORKDIR /app
 
 RUN corepack enable
 
+# Production is served through the gateway, so browser requests must use same-origin /api.
+# This takes precedence over any developer-only frontend/.env.local configuration.
+ARG NEXT_PUBLIC_API_BASE_URL=
+ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 
 RUN pnpm install --frozen-lockfile
