@@ -80,7 +80,7 @@ class JobManager:
         )
 
     def start_pipeline(self) -> Job:
-        """Start a pipeline job: scraper -> LLM -> AI analysis."""
+        """Start the dual-notice pipeline and its conservative match stages."""
         with self._condition:
             if self._active_operation:
                 raise JobConflictError(self._conflict_message(self._active_operation))
@@ -334,25 +334,25 @@ class JobManager:
                 },
             )
 
-            # Stage 1: scraper
-            log("[scraper] 阶段开始")
-            scraper_exit = self._execute_stage(job_id, self._build_scraper_command, "scraper")
-            if scraper_exit != 0:
-                log(f"[scraper] 失败，退出码 {scraper_exit}，Pipeline 停止", "stderr")
-                self._finish_job(job_id, status="failed", exit_code=scraper_exit, error="scraper 失败")
-                return
-            log("[scraper] 完成")
+            stages: list[tuple[str, str, Callable[[], tuple[list[str], Path, dict[str, str]]]]] = [
+                ("procurement-scraper", "采购公告爬虫", lambda: self._build_scraper_command("procurement")),
+                ("result-scraper", "结果公告爬虫", lambda: self._build_scraper_command("result")),
+                ("procurement-llm", "采购公告 LLM 结构化", lambda: self._build_llm_command(notice_type="procurement")),
+                ("result-llm", "结果公告 LLM 结构化", lambda: self._build_llm_command(notice_type="result")),
+                ("rule-matching", "规则候选匹配", self._build_rule_matching_command),
+                ("llm-matching", "LLM 双重复核匹配", self._build_llm_matching_command),
+                ("project-merger", "匹配结果汇总", self._build_project_merger_command),
+            ]
+            for stage_label, stage_name, command_builder in stages:
+                log(f"[{stage_label}] {stage_name}阶段开始")
+                exit_code = self._execute_stage(job_id, command_builder, stage_label)
+                if exit_code != 0:
+                    log(f"[{stage_label}] 失败，退出码 {exit_code}，Pipeline 停止", "stderr")
+                    self._finish_job(job_id, status="failed", exit_code=exit_code, error=f"{stage_name}失败")
+                    return
+                log(f"[{stage_label}] 完成")
 
-            # Stage 2: LLM
-            log("[llm] 阶段开始")
-            llm_exit = self._execute_stage(job_id, self._build_llm_command, "llm")
-            if llm_exit != 0:
-                log(f"[llm] 失败，退出码 {llm_exit}，Pipeline 停止", "stderr")
-                self._finish_job(job_id, status="failed", exit_code=llm_exit, error="llm 失败")
-                return
-            log("[llm] 完成")
-
-            # Stage 3: AI analysis
+            # Final stage: AI analysis
             analysis_enabled = os.getenv("PIPELINE_ANALYSIS_ENABLED", "true").strip().lower()
             if analysis_enabled in ("false", "0", "no", "off"):
                 log("[analysis] skipped (PIPELINE_ANALYSIS_ENABLED=false)")
@@ -395,7 +395,7 @@ class JobManager:
         try:
             command, cwd, env = command_builder()
 
-            if stage_label == "scraper":
+            if stage_label.endswith("scraper"):
                 lookback_days, since_date = self._get_scraper_lookback_info()
                 self._append_event(
                     job_id,
@@ -531,7 +531,9 @@ class JobManager:
         since_date = today - timedelta(days=lookback_days)
         return lookback_days, since_date.isoformat()
 
-    def _build_scraper_command(self) -> tuple[list[str], Path, dict[str, str]]:
+    def _build_scraper_command(self, notice_type: str = "procurement") -> tuple[list[str], Path, dict[str, str]]:
+        if notice_type not in {"procurement", "result"}:
+            raise JobStartError(f"Unsupported scraper notice type: {notice_type}")
         project_root = Path(__file__).resolve().parents[2]
         scraper_root = project_root / "backend" / "python-http-www-cfcpn-com-jcw"
         default_script = scraper_root / "cfcpn_scraper.py"
@@ -555,6 +557,8 @@ class JobManager:
             str(script_path),
             "--keyword",
             "\u8bc1\u5238",
+            "--notice-type",
+            notice_type,
             "--update",
             "--output-dir",
             "output",
@@ -573,10 +577,16 @@ class JobManager:
         mode: str = "incremental",
         overwrite: bool = False,
         external: bool = False,
+        notice_type: str = "procurement",
     ) -> tuple[list[str], Path, dict[str, str]]:
+        if notice_type not in {"procurement", "result"}:
+            raise JobStartError(f"Unsupported LLM notice type: {notice_type}")
+        if external and notice_type != "procurement":
+            raise JobStartError("External LLM imports only support procurement notices")
         project_root = Path(__file__).resolve().parents[2]
         default_script = project_root / "backend" / "llm_table" / "llm_markdown_table_builder.py"
         default_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "notices"
+        default_result_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices"
         default_external_input_dir = (
             project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "external" / "notices"
         )
@@ -584,6 +594,7 @@ class JobManager:
             project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "checkpoints" / "external_llm.json"
         )
         default_output_dir = project_root / "backend" / "data" / "staging"
+        default_result_output_dir = default_output_dir / "result"
         default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
         default_working_dir = project_root / "backend" / "llm_table"
 
@@ -595,13 +606,18 @@ class JobManager:
         )
         script_path = self._resolve_path(os.getenv("LLM_SCRIPT_PATH"), project_root, default_script)
         working_dir = self._resolve_path(os.getenv("LLM_WORKING_DIR"), project_root, default_working_dir)
-        input_env = os.getenv("LLM_EXTERNAL_INPUT_DIR") if external else os.getenv("LLM_INPUT_DIR")
+        input_env = (
+            os.getenv("LLM_EXTERNAL_INPUT_DIR")
+            if external
+            else os.getenv("LLM_RESULT_INPUT_DIR") if notice_type == "result" else os.getenv("LLM_INPUT_DIR")
+        )
         input_dir = self._resolve_path(
             input_env,
             project_root,
-            default_external_input_dir if external else default_input_dir,
+            default_external_input_dir if external else default_result_input_dir if notice_type == "result" else default_input_dir,
         )
-        output_dir = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, default_output_dir)
+        output_env = os.getenv("LLM_RESULT_OUTPUT_DIR") if notice_type == "result" else os.getenv("LLM_OUTPUT_DIR")
+        output_dir = self._resolve_path(output_env, project_root, default_result_output_dir if notice_type == "result" else default_output_dir)
         config_path = self._resolve_path(os.getenv("LLM_CONFIG_PATH"), project_root, default_config_path)
         workers = os.getenv("LLM_WORKERS", "4")
 
@@ -624,6 +640,8 @@ class JobManager:
             str(script_path),
             "--input-dir",
             str(input_dir),
+            "--notice-type",
+            notice_type,
             "--output-dir",
             str(output_dir),
             "--llm-config",
@@ -652,6 +670,53 @@ class JobManager:
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("PYTHONIOENCODING", "utf-8")
         return command, working_dir, env
+
+    def _build_rule_matching_command(self) -> tuple[list[str], Path, dict[str, str]]:
+        project_root = Path(__file__).resolve().parents[2]
+        procurement_csv = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging") / "announcement_table.csv"
+        result_csv = self._resolve_path(os.getenv("LLM_RESULT_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "result") / "result_table.csv"
+        output_dir = self._resolve_path(os.getenv("MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "matching")
+        max_candidates = os.getenv("MATCHING_MAX_CANDIDATES", "5")
+        return self._build_matching_module_command(
+            "backend.matching.project_matcher",
+            ["--procurement-csv", str(procurement_csv), "--result-csv", str(result_csv), "--output-dir", str(output_dir), "--max-candidates", max_candidates],
+        )
+
+    def _build_llm_matching_command(self) -> tuple[list[str], Path, dict[str, str]]:
+        project_root = Path(__file__).resolve().parents[2]
+        procurement_csv = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging") / "announcement_table.csv"
+        result_csv = self._resolve_path(os.getenv("LLM_RESULT_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "result") / "result_table.csv"
+        matching_dir = self._resolve_path(os.getenv("MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "matching")
+        output_dir = self._resolve_path(os.getenv("LLM_MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "llm_matching")
+        config_path = self._resolve_path(os.getenv("LLM_CONFIG_PATH"), project_root, project_root / "backend" / "config" / "llm_api_config.json")
+        workers = os.getenv("LLM_MATCHING_WORKERS", os.getenv("LLM_WORKERS", "4"))
+        max_candidates = os.getenv("MATCHING_MAX_CANDIDATES", "5")
+        return self._build_matching_module_command(
+            "backend.matching.llm_matcher",
+            ["--procurement-csv", str(procurement_csv), "--result-csv", str(result_csv), "--links-csv", str(matching_dir / "project_links.csv"), "--candidate-scores-csv", str(matching_dir / "candidate_scores.csv"), "--output-dir", str(output_dir), "--llm-config", str(config_path), "--workers", workers, "--max-candidates", max_candidates],
+        )
+
+    def _build_project_merger_command(self) -> tuple[list[str], Path, dict[str, str]]:
+        project_root = Path(__file__).resolve().parents[2]
+        procurement_csv = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging") / "announcement_table.csv"
+        result_csv = self._resolve_path(os.getenv("LLM_RESULT_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "result") / "result_table.csv"
+        matching_dir = self._resolve_path(os.getenv("LLM_MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "llm_matching")
+        output_dir = self._resolve_path(os.getenv("MATCHING_MERGED_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "final")
+        return self._build_matching_module_command(
+            "backend.matching.project_merger",
+            ["--procurement-csv", str(procurement_csv), "--result-csv", str(result_csv), "--verified-links-csv", str(matching_dir / "llm_verified_links.csv"), "--output-dir", str(output_dir)],
+        )
+
+    @staticmethod
+    def _build_matching_module_command(module: str, arguments: list[str]) -> tuple[list[str], Path, dict[str, str]]:
+        project_root = Path(__file__).resolve().parents[2]
+        python_executable = Path(sys.executable)
+        if not python_executable.exists():
+            raise JobStartError("Python executable not found for matching stage")
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        return [str(python_executable), "-u", "-m", module, *arguments], project_root, env
 
     @staticmethod
     def _resolve_path(value: str | None, base_dir: Path, default: Path) -> Path:

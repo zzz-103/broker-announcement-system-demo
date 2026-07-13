@@ -182,9 +182,10 @@ output/notices/*.md
 ```text
 后端启动或调度器触发 pipeline 任务
 → 依次运行:
-  1. cfcpn_scraper.py
-  2. llm_markdown_table_builder.py
-  3. AI 情报分析重构 (若 PIPELINE_ANALYSIS_ENABLED 为 true)
+  1. 采购公告与结果公告 cfcpn_scraper.py
+  2. 采购公告与结果公告 llm_markdown_table_builder.py
+  3. 规则候选匹配、LLM 双重复核与保守汇总
+  4. AI 情报分析重构 (若 PIPELINE_ANALYSIS_ENABLED 为 true)
 ```
 
 ### 看板
@@ -812,6 +813,7 @@ Codex 必须遵守：
 - 推送失败时正式 CSV 保持不变（原子替换保证）
 - `backend/data/staging/.gitkeep` 已提交，运行时 CSV 通过 `.gitignore` 排除
 - 自动化流水线（Pipeline）一键运行功能（串联 scraper -> llm -> analysis）与 API 触发
+- Pipeline 已扩展为采购/结果双公告爬取、双 LLM 结构化、规则候选匹配、LLM 双重复核和保守汇总；匹配产物仅写入 staging，仍需人工审核后发布
 - 独立定时任务调度进程（Scheduler），基于 APScheduler 实现 CRON 调度，持有 `X-Scheduler-Token` 安全头进行内部验证触发
 - 任务取消机制：通过 `POST /api/jobs/{job_id}/cancel` 支持中止运行中的子进程或流水线
 - 采购公告与结果公告规则匹配器（`backend/matching/project_matcher.py`），输出匹配、候选分数、未匹配结果和运行摘要

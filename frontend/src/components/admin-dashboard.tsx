@@ -126,7 +126,7 @@ function trimLogs(logs: AdminTaskLogLine[]) {
 }
 
 function cardIdForJob(jobType: JobType): CardId {
-  return jobType === "scraper" ? "crawler" : "llm";
+  return jobType === "scraper" || jobType === "pipeline" ? "crawler" : "llm";
 }
 
 function labelForOperation(operationId: OperationId): string {
@@ -156,6 +156,9 @@ function isTerminalJobStatus(status: string) {
 function jobSuccessSummary(jobType: JobType, label: string): string {
   if (jobType === "llm" || jobType === "llm-external") {
     return "LLM 处理完成，候选数据已生成，请点击\u2018推送\u2019更新正式看板。";
+  }
+  if (jobType === "pipeline") {
+    return "双公告爬取、双 LLM 结构化与双重复核匹配已完成；匹配结果已写入 staging。请审核后推送采购公告看板数据。";
   }
   return `${label}已完成。`;
 }
@@ -375,7 +378,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       const cardId =
         operationId === "ai_analysis"
           ? "ai"
-          : operationId === "scraper"
+          : operationId === "scraper" || operationId === "pipeline"
             ? "crawler"
             : "llm";
 
@@ -506,6 +509,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       const initialMessage =
         jobType === "scraper"
           ? "正在连接后端并启动爬虫任务..."
+          : jobType === "pipeline"
+            ? "正在启动双公告爬取、LLM 结构化与匹配 Pipeline..."
           : jobType === "llm-external"
             ? "正在导入外来公告，输出候选 CSV..."
           : "正在启动 LLM 数据处理，输出候选 CSV...";
@@ -1023,7 +1028,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         icon: Globe,
         iconBg: "from-emerald-500 to-teal-600",
         title: "一键更新爬虫",
-        description: "启动后端爬虫任务，抓取最新公告原始 Markdown 数据。",
+        description: "可单独抓取采购公告，或一键完成双公告爬取、LLM 结构化与匹配。",
       },
       {
         id: "llm" as const,
@@ -1199,9 +1204,28 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           )}
                         </Button>
                       </div>
+                    ) : card.id === "crawler" ? (
+                      <div className="flex items-center gap-2 w-full">
+                        <GlowButton
+                          onClick={() => void runJob("pipeline")}
+                          disabled={isBusy}
+                          className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex-[7] flex items-center justify-center gap-1.5"
+                        >
+                          {activeOperation?.id === "pipeline" ? (
+                            <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
+                          ) : "运行完整 Pipeline"}
+                        </GlowButton>
+                        <Button
+                          type="button"
+                          onClick={() => void runJob("scraper")}
+                          disabled={isBusy}
+                          variant="outline"
+                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex-[3]"
+                        >单独爬取</Button>
+                      </div>
                     ) : (
                       <GlowButton
-                        onClick={() => void (card.id === "crawler" ? runJob("scraper") : runAiAnalysis())}
+                        onClick={() => void runAiAnalysis()}
                         disabled={isBusy}
                         className="h-10 w-full text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
                       >
@@ -1210,11 +1234,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                             <RefreshCw className="size-3.5 animate-spin" />
                             运行中...
                           </>
-                        ) : card.id === "crawler" ? (
-                          "启动爬虫"
-                        ) : (
-                          "生成分析"
-                        )}
+                        ) : "生成分析"}
                       </GlowButton>
                     )}
                   </div>
