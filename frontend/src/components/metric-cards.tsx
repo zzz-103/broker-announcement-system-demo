@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import type { DashboardStatistics, ProcessedRecord } from "@/lib/announcement-data";
-import { getDataBaseline, uniqueCount } from "@/lib/announcement-data";
+import { uniqueCount } from "@/lib/announcement-data";
 import { useFilterStore } from "@/store/filter-store";
 
 interface MetricCardsProps {
   data: ProcessedRecord[];
-  allData: ProcessedRecord[];
+  baseline: Date | null;
   statistics: DashboardStatistics;
   updatedAt: string | null;
 }
@@ -28,11 +28,9 @@ function formatUpdatedAt(value: string | null): string {
   return `更新于 ${date.toLocaleDateString("zh-CN")}`;
 }
 
-export function MetricCards({ data, allData, statistics, updatedAt }: MetricCardsProps) {
+export function MetricCards({ data, baseline, statistics, updatedAt }: MetricCardsProps) {
   const { setDetailFilter } = useFilterStore();
   const [showBrokerDetails, setShowBrokerDetails] = useState(false);
-  const baseline = useMemo(() => getDataBaseline(allData), [allData]);
-
   const metrics = useMemo<MetricItem[]>(() => {
     const totalRecords = data.length;
     const uniqueProjects = uniqueCount(data.map((record) => record.projectKey));

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
+import { useCallback, useDeferredValue, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
 import dynamic from "next/dynamic";
 import {
   DataNotGeneratedError,
@@ -194,6 +194,7 @@ export default function Dashboard() {
 
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
   const dashboardStatistics = useMemo(() => getDashboardStatistics(allData), [allData]);
+  const deferredSearch = useDeferredValue(search.toLowerCase());
 
   const methodOptions = useMemo(() => {
     const set = new Set<string>();
@@ -231,15 +232,8 @@ export default function Dashboard() {
     }
 
     // Search
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (r) =>
-          r.project_name_raw.toLowerCase().includes(q) ||
-          r.validBrokerName.toLowerCase().includes(q) ||
-          r.normalizedSupplier.toLowerCase().includes(q) ||
-          r.procurement_method.toLowerCase().includes(q)
-      );
+    if (deferredSearch) {
+      result = result.filter((r) => r.searchText.includes(deferredSearch));
     }
 
     if (primaryDomain)
@@ -262,7 +256,7 @@ export default function Dashboard() {
     finTechOnly,
     timeRange,
     baseline,
-    search,
+    deferredSearch,
     primaryDomain,
     announcementStage,
     procurementMethod,
@@ -296,9 +290,10 @@ export default function Dashboard() {
   // Final filtered data
   const filteredData = useMemo(() => {
     if (brokerNames.length === 0) return dataBeforeBrokerFilter;
+    const selectedBrokers = new Set(brokerNames);
     return dataBeforeBrokerFilter.filter((r) => {
       const brokerName = getValidBrokerName(r);
-      return brokerName !== null && brokerNames.includes(brokerName);
+      return brokerName !== null && selectedBrokers.has(brokerName);
     });
   }, [brokerNames, dataBeforeBrokerFilter]);
 
@@ -457,29 +452,29 @@ export default function Dashboard() {
         ) : activeTab === "overview" ? (
           <>
             {/* Metric Cards */}
-            <MetricCards data={filteredData} allData={allData} statistics={dashboardStatistics} updatedAt={dataUpdatedAt} />
+            <MetricCards data={filteredData} baseline={baseline} statistics={dashboardStatistics} updatedAt={dataUpdatedAt} />
 
             {/* Executive Summary */}
-            <ExecutiveSummary data={filteredData} allData={allData} />
+            <ExecutiveSummary data={filteredData} allData={allData} baseline={baseline} />
 
             {/* Charts */}
             <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4">
-              <ProcurementTrendChart data={filteredData} allData={allData} />
-              <DomainDistributionChart data={filteredData} allData={allData} />
-              <StageDistributionChart data={filteredData} allData={allData} />
+              <ProcurementTrendChart data={filteredData} />
+              <DomainDistributionChart data={filteredData} />
+              <StageDistributionChart data={filteredData} />
             </div>
 
             {/* Observation Cards */}
             <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4">
-              <BrokerActivityCard data={filteredData} allData={allData} />
-              <SupplierObservationCard data={filteredData} allData={allData} />
-              <PriceSamplesCard data={filteredData} allData={allData} />
+              <BrokerActivityCard data={filteredData} baseline={baseline} />
+              <SupplierObservationCard data={filteredData} />
+              <PriceSamplesCard data={filteredData} />
             </div>
 
             {/* Key Project Radar */}
             <KeyProjectRadar
               data={filteredData}
-              allData={allData}
+              baseline={baseline}
               onSelectProject={setSelectedProject}
             />
           </>

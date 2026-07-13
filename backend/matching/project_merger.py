@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import tempfile
@@ -9,6 +10,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from backend.matching import project_matcher
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -88,12 +91,7 @@ def normalize_text(value: Any) -> str:
 
 
 def notice_id(row: dict[str, str]) -> str:
-    return normalize_text(
-        row.get("notice_id")
-        or row.get("document_sha1")
-        or row.get("source_file")
-        or row.get("markdown_file")
-    )
+    return normalize_text(row.get("notice_id") or row.get("document_sha1"))
 
 
 def read_csv(path: Path, label: str) -> tuple[list[str], list[dict[str, str]]]:
@@ -125,24 +123,79 @@ def require_fields(fieldnames: list[str], required: set[str], label: str) -> Non
 
 
 def require_id_source(fieldnames: list[str], label: str) -> None:
-    if not {"notice_id", "document_sha1", "source_file", "markdown_file"}.intersection(fieldnames):
-        raise InputError(f"{label} CSV 缺少公告 ID 字段（notice_id/document_sha1/source_file/markdown_file）")
+    if not {"notice_id", "document_sha1"}.intersection(fieldnames):
+        raise InputError(f"{label} CSV 缺少公告 ID 字段（notice_id/document_sha1）")
 
 
-def build_index(rows: list[dict[str, str]], label: str) -> dict[str, dict[str, str]]:
-    indexed: dict[str, dict[str, str]] = {}
-    duplicates: set[str] = set()
+def stable_row_hash(row: dict[str, str]) -> str:
+    payload = json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def record_key(row: dict[str, str]) -> str:
+    package = project_matcher.normalize_package_number(
+        row.get("package_number") or row.get("project_name") or row.get("title")
+    )
+    return f"{notice_id(row)}:{package or '-'}:{stable_row_hash(row)}"
+
+
+def prepare_rows(
+    rows: list[dict[str, str]],
+) -> tuple[list[dict[str, str]], dict[str, list[dict[str, str]]], int, int]:
+    valid: list[dict[str, str]] = []
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    seen_rows: set[str] = set()
+    deduplicated_count = 0
+    invalid_count = 0
+    for original in rows:
+        key = notice_id(original)
+        if not key:
+            invalid_count += 1
+            continue
+        fingerprint = stable_row_hash(original)
+        if fingerprint in seen_rows:
+            deduplicated_count += 1
+            continue
+        seen_rows.add(fingerprint)
+        row = dict(original)
+        row["record_key"] = record_key(original)
+        valid.append(row)
+        grouped[key].append(row)
+    return valid, grouped, deduplicated_count, invalid_count
+
+
+def unique_rows_by_id(rows: list[dict[str, str]]) -> tuple[dict[str, dict[str, str]], set[str], int]:
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    invalid_count = 0
     for row in rows:
         key = notice_id(row)
-        if not key:
-            raise InputError(f"{label} CSV 存在缺少公告 ID 的记录")
-        if key in indexed:
-            duplicates.add(key)
-        indexed[key] = row
-    if duplicates:
-        sample = ", ".join(sorted(duplicates)[:3])
-        raise InputError(f"{label} CSV 存在重复公告 ID: {sample}")
-    return indexed
+        if key:
+            grouped[key].append(row)
+        else:
+            invalid_count += 1
+    duplicate_ids = {key for key, items in grouped.items() if len(items) > 1}
+    return {key: items[0] for key, items in grouped.items() if len(items) == 1}, duplicate_ids, invalid_count
+
+
+def resolve_procurement_row(
+    result_row: dict[str, str], candidates: list[dict[str, str]]
+) -> dict[str, str] | None:
+    if len(candidates) == 1:
+        return candidates[0]
+    result_package = project_matcher.normalize_package_number(
+        result_row.get("package_number") or result_row.get("project_name") or result_row.get("title")
+    )
+    if not result_package:
+        return None
+    matches = [
+        row
+        for row in candidates
+        if project_matcher.normalize_package_number(
+            row.get("package_number") or row.get("project_name") or row.get("title")
+        )
+        == result_package
+    ]
+    return matches[0] if len(matches) == 1 else None
 
 
 def parse_confidence(value: str) -> float | None:
@@ -154,7 +207,7 @@ def parse_confidence(value: str) -> float | None:
 
 
 def hard_conflict_is_clear(value: str) -> bool:
-    return normalize_text(value).lower() in {"", "false"}
+    return normalize_text(value).lower() in {"", "false", "0", "none", "null"}
 
 
 def parse_publish_date(value: str) -> datetime | None:
@@ -201,7 +254,7 @@ def exclusion_row(link: dict[str, str], result_row: dict[str, str] | None, reaso
 def validate_link(
     link: dict[str, str],
     result_rows_by_id: dict[str, dict[str, str]],
-    procurement_rows_by_id: dict[str, dict[str, str]],
+    procurement_rows_by_id: dict[str, list[dict[str, str]]],
     duplicate_result_ids: set[str],
 ) -> tuple[bool, str, float | None, float | None]:
     result_notice_id = normalize_text(link.get("result_notice_id"))
@@ -275,9 +328,9 @@ def run_merger(
     require_fields(result_fields, REQUIRED_RESULT_FIELDS, "结果公告")
     require_fields(link_fields, REQUIRED_LINK_FIELDS, "LLM 匹配结果")
 
-    procurement_rows_by_id = build_index(procurement_rows, "采购公告")
-    result_rows_by_id = build_index(result_rows, "结果公告")
-    duplicate_result_ids = {
+    procurement_rows, procurement_rows_by_id, deduplicated_count, invalid_procurement_count = prepare_rows(procurement_rows)
+    result_rows_by_id, duplicate_result_rows, invalid_result_count = unique_rows_by_id(result_rows)
+    duplicate_result_ids = duplicate_result_rows | {
         result_notice_id
         for result_notice_id, count in Counter(normalize_text(row.get("result_notice_id")) for row in links).items()
         if result_notice_id and count > 1
@@ -294,6 +347,11 @@ def run_merger(
         if not is_accepted:
             excluded.append(exclusion_row(link, result_row, reason))
             continue
+        procurement_candidates = procurement_rows_by_id[normalize_text(link.get("procurement_notice_id"))]
+        procurement_row = resolve_procurement_row(result_row, procurement_candidates)
+        if procurement_row is None:
+            excluded.append(exclusion_row(link, result_row, "ambiguous_procurement_rows"))
+            continue
         accepted.append(
             {
                 "result_notice_id": result_notice_id,
@@ -302,18 +360,19 @@ def run_merger(
                 "second_confidence": second_confidence,
                 "final_confidence": min(first_confidence, second_confidence),
                 "result_row": result_row,
+                "procurement_record_key": procurement_row["record_key"],
             }
         )
 
     accepted.sort(key=lambda item: (item["procurement_notice_id"], *stable_result_key(item)))
     accepted_by_procurement: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in accepted:
-        accepted_by_procurement[item["procurement_notice_id"]].append(item)
+        accepted_by_procurement[item["procurement_record_key"]].append(item)
 
     merged_rows: list[dict[str, Any]] = []
     for procurement_row in procurement_rows:
         merged = dict(procurement_row)
-        linked_results = accepted_by_procurement.get(notice_id(procurement_row), [])
+        linked_results = accepted_by_procurement.get(procurement_row["record_key"], [])
         for field in MERGED_RESULT_FIELDS:
             merged[field] = ""
         if linked_results:
@@ -366,9 +425,12 @@ def run_merger(
     missing_result_count = sum(row["exclusion_reason"] == "missing_result_record" for row in excluded)
     summary = {
         "procurement_count": len(procurement_rows),
+        "deduplicated_count": deduplicated_count,
+        "invalid_procurement_count": invalid_procurement_count,
+        "invalid_result_count": invalid_result_count,
         "result_count": len(result_rows),
         "verified_link_count": len(links),
-        "accepted_link_count": len(accepted),
+        "accepted_link_count": len(accepted_link_rows),
         "excluded_link_count": len(excluded),
         "merged_procurement_count": len(accepted_by_procurement),
         "multi_result_project_count": sum(len(items) > 1 for items in accepted_by_procurement.values()),
@@ -379,7 +441,7 @@ def run_merger(
     }
 
     # All validation and selection completes before the output directory is created.
-    write_csv_atomic(output_dir / "announcement_table_merged_test.csv", procurement_fields + MERGED_RESULT_FIELDS, merged_rows)
+    write_csv_atomic(output_dir / "announcement_table_merged_test.csv", procurement_fields + ["record_key"] + MERGED_RESULT_FIELDS, merged_rows)
     write_csv_atomic(output_dir / "accepted_links.csv", ACCEPTED_LINK_FIELDS, accepted_link_rows)
     write_csv_atomic(output_dir / "excluded_results.csv", EXCLUDED_RESULT_FIELDS, excluded)
     write_json_atomic(output_dir / "run_summary.json", summary)

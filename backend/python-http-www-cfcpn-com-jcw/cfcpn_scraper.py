@@ -72,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     failures_path = runtime_paths["failures_path"]
     checkpoint_path = runtime_paths["checkpoint_path"]
     notices_dir.mkdir(parents=True, exist_ok=True)
+    existing_paths, index_records = scan_existing_notices(notices_dir, args.notice_type)
     if args.resume:
         checkpoint = load_checkpoint(checkpoint_path)
         if checkpoint and checkpoint.get("completed", False):
@@ -94,17 +95,14 @@ def main(argv: list[str] | None = None) -> int:
                 last_page_from_json = int(checkpoint.get("last_completed_page") or 1)
 
             last_page_from_md = 1
-            matching_count = 0
-            if notices_dir.exists():
-                for path in notices_dir.glob("*.md"):
-                    fm = read_front_matter(path)
-                    if fm.get("keyword") == args.keyword:
-                        pub_time_str = fm.get("publish_time")
-                        pub_date = parse_publish_date(pub_time_str)
-                        if pub_date and pub_date >= args.since_date:
-                            matching_count += 1
-                if args.page_size > 0:
-                    last_page_from_md = math.ceil(matching_count / args.page_size)
+            matching_count = sum(
+                1
+                for record in index_records.values()
+                if record.get("keyword") == args.keyword
+                and (parse_publish_date(record.get("publish_time")) or date.min) >= args.since_date
+            )
+            if args.page_size > 0:
+                last_page_from_md = math.ceil(matching_count / args.page_size)
 
             if args.update:
                 last_page = last_page_from_json
@@ -128,7 +126,6 @@ def main(argv: list[str] | None = None) -> int:
                         args.start_page,
                     )
 
-    existing_paths = scan_existing_notice_paths(notices_dir, args.notice_type)
     processed_ids: set[str] = set()
     session = create_session()
     stats = {
@@ -330,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
                     notices_dir=notices_dir,
                     failures_path=failures_path,
                     existing_paths=existing_paths,
+                    index_records=index_records,
                     stats=stats,
                     throttle=throttle,
                     forbidden_state=forbidden_state,
@@ -365,7 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         stop_reason = "用户中断"
         LOGGER.warning("用户中断，正在重建索引")
 
-    rebuild_index(notices_dir, index_path)
+    if stats["saved"] > 0 or not index_path.exists():
+        rebuild_index(index_records, index_path)
+    else:
+        LOGGER.info("没有新增公告，保留现有索引文件：%s", index_path)
     if not stop_reason:
         stop_reason = "已到最后一页"
     write_checkpoint(
@@ -749,6 +750,7 @@ def download_and_save_item(
     notices_dir: Path,
     failures_path: Path,
     existing_paths: dict[str, Path],
+    index_records: dict[str, dict[str, Any]],
     stats: dict[str, int],
     throttle: Throttle,
     forbidden_state: dict[str, int],
@@ -834,6 +836,15 @@ def download_and_save_item(
             existing_path.unlink()
         path = write_notice_markdown(notice, notices_dir, keyword=args.keyword)
         existing_paths[notice_key_value] = path
+        index_records[notice_id] = {
+            "notice_id": notice_id,
+            "title": notice.get("title", ""),
+            "publish_time": notice.get("publish_time", ""),
+            "purchaser": notice.get("purchaser", ""),
+            "region": notice.get("region", ""),
+            "keyword": args.keyword,
+            "path": path,
+        }
         stats["saved"] += 1
         LOGGER.info("已保存：%s", path)
     except Exception as exc:
@@ -928,10 +939,14 @@ def notice_key(notice_type: str, notice_id: str) -> str:
     return f"{notice_type}:{notice_id}"
 
 
-def scan_existing_notice_paths(notices_dir: Path, notice_type: str) -> dict[str, Path]:
+def scan_existing_notices(
+    notices_dir: Path,
+    notice_type: str,
+) -> tuple[dict[str, Path], dict[str, dict[str, Any]]]:
     paths: dict[str, Path] = {}
+    index_records: dict[str, dict[str, Any]] = {}
     if not notices_dir.exists():
-        return paths
+        return paths, index_records
     for path in notices_dir.glob("*.md"):
         data = read_front_matter(path)
         notice_id = str(data.get("notice_id") or "")
@@ -942,27 +957,25 @@ def scan_existing_notice_paths(notices_dir: Path, notice_type: str) -> dict[str,
             key = notice_key(notice_type, notice_id)
             if key not in paths:
                 paths[key] = path
-    return paths
+                index_records[notice_id] = {
+                    "notice_id": notice_id,
+                    "title": data.get("title", ""),
+                    "publish_time": data.get("publish_time", ""),
+                    "purchaser": data.get("purchaser", ""),
+                    "region": data.get("region", ""),
+                    "keyword": data.get("keyword", ""),
+                    "path": path,
+                }
+    return paths, index_records
 
 
-def rebuild_index(notices_dir: Path, index_path: Path) -> Path:
-    notices: list[dict[str, Any]] = []
-    paths: dict[str, Path] = {}
-    for path in sorted(notices_dir.glob("*.md")) if notices_dir.exists() else []:
-        data = read_front_matter(path)
-        notice_id = str(data.get("notice_id") or "")
-        if not notice_id or notice_id in paths:
-            continue
-        notices.append(
-            {
-                "notice_id": notice_id,
-                "title": data.get("title", ""),
-                "publish_time": data.get("publish_time", ""),
-                "purchaser": data.get("purchaser", ""),
-                "region": data.get("region", ""),
-            }
-        )
-        paths[notice_id] = path
+def rebuild_index(index_records: dict[str, dict[str, Any]], index_path: Path) -> Path:
+    notices = list(index_records.values())
+    paths = {
+        notice_id: record["path"]
+        for notice_id, record in index_records.items()
+        if isinstance(record.get("path"), Path)
+    }
     return write_index_markdown(notices, paths, index_path)
 
 

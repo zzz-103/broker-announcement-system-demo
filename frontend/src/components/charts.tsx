@@ -11,7 +11,7 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ProcessedRecord } from "@/lib/announcement-data";
-import { getDataBaseline, uniqueCount } from "@/lib/announcement-data";
+import { uniqueCount } from "@/lib/announcement-data";
 import { useFilterStore } from "@/store/filter-store";
 
 // Register only the components we use (tree-shaking)
@@ -28,7 +28,6 @@ echarts.use([
 
 interface ChartsProps {
   data: ProcessedRecord[];
-  allData: ProcessedRecord[];
 }
 
 function EmptyChartState() {
@@ -39,12 +38,10 @@ function EmptyChartState() {
   );
 }
 
-export function ProcurementTrendChart({ data, allData }: ChartsProps) {
+export function ProcurementTrendChart({ data }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
   const { setAnnouncementStage } = useFilterStore();
-
-  const baseline = useMemo(() => getDataBaseline(allData), [allData]);
 
   const chartData = useMemo(() => {
     // Group by month
@@ -231,8 +228,12 @@ export function DomainDistributionChart({ data }: ChartsProps) {
           type: "bar",
           data: [...chartData.counts].reverse(),
           itemStyle: {
-            color: (params: any) => {
-              const valIndex = params.dataIndex; // bottom is 0 (smallest), top is N (largest)
+            color: (params: unknown) => {
+              const rawDataIndex =
+                typeof params === "object" && params !== null
+                  ? Reflect.get(params, "dataIndex")
+                  : 0;
+              const valIndex = typeof rawDataIndex === "number" ? rawDataIndex : 0;
               const total = chartData.counts.length || 8;
               const opacity = 0.35 + (valIndex / (total - 1)) * 0.65;
               return `rgba(37, 99, 235, ${Math.min(1, Math.max(0.35, opacity))})`;

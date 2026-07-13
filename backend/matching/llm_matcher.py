@@ -39,6 +39,9 @@ DEFAULT_MAX_CANDIDATES = 5
 DEFAULT_WORKERS = 2
 MATCHER_VERSION = "p13d_llm_matcher_v1"
 
+_MARKDOWN_CACHE: dict[Path, str] = {}
+_MARKDOWN_CACHE_LOCK = threading.Lock()
+
 GENERATED_OUTPUT_NAMES = {
     "llm_verified_links.csv",
     "llm_decisions.jsonl",
@@ -260,7 +263,7 @@ def procurement_id(row: dict[str, str]) -> str:
 
 
 def source_file(row: dict[str, str]) -> str:
-    return row.get("source_file") or row.get("markdown_file") or row.get("raw_json_path") or ""
+    return row.get("source_file") or row.get("markdown_file") or ""
 
 
 def build_indexes(rows: list[dict[str, str]], id_func: Any) -> dict[str, dict[str, str]]:
@@ -540,7 +543,13 @@ def load_markdown_excerpt(row: dict[str, str], search_dirs: list[Path], notice_i
     if path is None:
         return ""
     try:
-        text = path.read_text(encoding="utf-8-sig")
+        resolved = path.resolve()
+        with _MARKDOWN_CACHE_LOCK:
+            text = _MARKDOWN_CACHE.get(resolved)
+        if text is None:
+            text = resolved.read_text(encoding="utf-8-sig")
+            with _MARKDOWN_CACHE_LOCK:
+                _MARKDOWN_CACHE[resolved] = text
     except OSError:
         return ""
     limit = 8000 if expanded else 2400
@@ -551,7 +560,6 @@ def resolve_source_path(row: dict[str, str], search_dirs: list[Path], notice_id_
     raw_candidates = [
         row.get("source_file", ""),
         row.get("markdown_file", ""),
-        row.get("raw_json_path", ""),
     ]
     for raw in raw_candidates:
         text = normalize_text(raw)
@@ -854,8 +862,25 @@ def run_llm_matching(
     procurement_rows = read_csv_rows(procurement_csv)
     link_rows = read_csv_rows(links_csv)
     candidate_score_rows = read_csv_rows(candidate_scores_csv)
+    input_result_count = len(result_rows)
     if max_files is not None:
         result_rows = result_rows[: max(0, max_files)]
+
+    unique_result_rows: list[dict[str, str]] = []
+    duplicate_result_ids: set[str] = set()
+    seen_result_rows: dict[str, dict[str, str]] = {}
+    for row in result_rows:
+        rid = result_id(row)
+        previous = seen_result_rows.get(rid)
+        if not rid:
+            duplicate_result_ids.add(rid)
+            continue
+        if previous is None:
+            seen_result_rows[rid] = row
+            unique_result_rows.append(row)
+        elif previous != row:
+            duplicate_result_ids.add(rid)
+    result_rows = [row for row in unique_result_rows if result_id(row) not in duplicate_result_ids]
 
     procurements_by_id = build_indexes(procurement_rows, procurement_id)
     links_by_result = {row.get("result_notice_id", ""): row for row in link_rows}
@@ -906,15 +931,16 @@ def run_llm_matching(
     write_jsonl_atomic(output_dir / "llm_decisions.jsonl", decision_rows)
 
     counts = {
-        "auto_matched_count": sum(1 for item in results if item.final_status == "auto_matched"),
-        "auto_unmatched_count": sum(1 for item in results if item.final_status == "auto_unmatched"),
-        "needs_review_count": sum(1 for item in results if item.final_status == "needs_review"),
-        "failed_count": sum(1 for item in results if item.final_status == "failed"),
-        "cached_count": sum(1 for item in results if item.cached),
+        "auto_matched_count": sum(row["final_status"] == "auto_matched" for row in verified_rows),
+        "auto_unmatched_count": sum(row["final_status"] == "auto_unmatched" for row in verified_rows),
+        "needs_review_count": sum(row["final_status"] == "needs_review" for row in verified_rows),
+        "failed_count": sum(row["final_status"] == "failed" for row in verified_rows),
+        "cached_count": sum(bool(item.cached) for item in results),
     }
     summary = {
-        "input_result_count": len(read_csv_rows(result_csv)),
-        "processed_count": len(results),
+        "input_result_count": input_result_count,
+        "processed_count": len(verified_rows),
+        "duplicate_result_count": len(duplicate_result_ids),
         **counts,
         "llm_request_count": sum(0 if item.cached else 2 for item in results if not item.failed or not item.cached),
         "generated_at": datetime.now(timezone.utc).isoformat(),

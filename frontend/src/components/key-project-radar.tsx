@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
-  getDataBaseline,
   scoreProject,
   getScoreReason,
   formatDate,
@@ -12,7 +11,7 @@ import {
 
 interface KeyProjectRadarProps {
   data: ProcessedRecord[];
-  allData: ProcessedRecord[];
+  baseline: Date | null;
   onSelectProject: (r: ProcessedRecord) => void;
 }
 
@@ -31,11 +30,9 @@ const DOMAIN_COLORS: Record<string, string> = {
 
 export function KeyProjectRadar({
   data,
-  allData,
+  baseline,
   onSelectProject,
 }: KeyProjectRadarProps) {
-  const baseline = useMemo(() => getDataBaseline(allData), [allData]);
-
   const projects = useMemo(() => {
     // Deduplicate by projectKey
     const seen = new Set<string>();

@@ -18,9 +18,17 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - runtime dependency guard
-    OpenAI = None
+    from backend.llm_table.llm_client import (
+        LLMApiConfig,
+        OpenAICompatibleClient as BaseOpenAICompatibleClient,
+        parse_json_text,
+    )
+except ModuleNotFoundError:  # Direct script execution from backend/llm_table.
+    from llm_client import (  # type: ignore[no-redef]
+        LLMApiConfig,
+        OpenAICompatibleClient as BaseOpenAICompatibleClient,
+        parse_json_text,
+    )
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -308,49 +316,6 @@ class IncrementalSelectionResult:
     changed_files: list[Path]
 
 
-@dataclass(slots=True)
-class LLMApiConfig:
-    base_url: str
-    api_key: str
-    model: str
-    temperature: float = 0.1
-    top_p: float = 1.0
-    max_tokens: int = 16384
-    frequency_penalty: float = 0.0
-    presence_penalty: float = 0.0
-    timeout_seconds: int = 180
-    use_json_object: bool = True
-
-    @classmethod
-    def load(cls, config_path: Path) -> "LLMApiConfig":
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-        api_key = os.environ.get("LLM_API_KEY")
-        if api_key is None:
-            api_key = str(payload.get("api_key", "")).strip()
-        else:
-            api_key = api_key.strip()
-        return cls(
-            base_url=str(payload.get("base_url", "")).strip(),
-            api_key=api_key,
-            model=str(payload.get("model", "")).strip(),
-            temperature=float(payload.get("temperature", 0.1)),
-            top_p=float(payload.get("top_p", 1.0)),
-            max_tokens=int(payload.get("max_tokens", 16384)),
-            frequency_penalty=float(payload.get("frequency_penalty", 0.0)),
-            presence_penalty=float(payload.get("presence_penalty", 0.0)),
-            timeout_seconds=int(payload.get("timeout_seconds", 180)),
-            use_json_object=bool(payload.get("use_json_object", True)),
-        )
-
-    def validate(self) -> None:
-        if not self.base_url:
-            raise ValueError("llm_api_config.json 缺少 base_url")
-        if not self.api_key:
-            raise ValueError("llm_api_config.json 缺少 api_key")
-        if not self.model:
-            raise ValueError("llm_api_config.json 缺少 model")
-
-
 @dataclass(frozen=True, slots=True)
 class NoticeTypeRuntime:
     notice_type: str
@@ -384,23 +349,14 @@ NOTICE_TYPE_RUNTIMES = {
 }
 
 
-class OpenAICompatibleClient:
+class OpenAICompatibleClient(BaseOpenAICompatibleClient):
     def __init__(
         self,
         config: LLMApiConfig,
         system_prompt: str = SYSTEM_PROMPT,
     ) -> None:
-        if OpenAI is None:
-            raise ImportError(
-                "缺少 openai 依赖，请先执行 `uv pip install openai` 或在当前环境中安装 openai。"
-            )
-        self.config = config
+        super().__init__(config)
         self.system_prompt = system_prompt
-        self.client = OpenAI(
-            base_url=self.config.base_url,
-            api_key=self.config.api_key,
-            timeout=self.config.timeout_seconds,
-        )
 
     def extract(self, markdown: str, metadata: dict[str, str]) -> Any:
         messages = [
@@ -442,7 +398,7 @@ class OpenAICompatibleClient:
             trace_id=str(time.time_ns()),
         )
         # #endregion
-        response = self.client.chat.completions.create(**request_kwargs)
+        result = super()._request_json(request_kwargs)
         # #region debug-point B:openai-request-end
         report_debug_event(
             hypothesis_id="B",
@@ -454,62 +410,7 @@ class OpenAICompatibleClient:
             },
         )
         # #endregion
-        content = self._extract_message_content(response)
-        return parse_json_text(content)
-
-    @staticmethod
-    def _extract_message_content(response: Any) -> str:
-        choices = getattr(response, "choices", None) or []
-        if not choices:
-            raise ValueError(f"API response missing choices: {response}")
-        message = getattr(choices[0], "message", None)
-        if message is None:
-            raise ValueError(f"API response missing message: {response}")
-        content = getattr(message, "content", None)
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            text_fragments: list[str] = []
-            for item in content:
-                item_type = getattr(item, "type", None)
-                item_text = getattr(item, "text", None)
-                if item_type == "text" and item_text:
-                    text_fragments.append(str(item_text))
-                elif isinstance(item, dict) and item.get("type") == "text":
-                    text_fragments.append(str(item.get("text", "")))
-            if text_fragments:
-                return "\n".join(text_fragments)
-        raise ValueError(f"API response missing message content: {response}")
-
-
-def parse_json_text(text: str) -> Any:
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        pass
-
-    array_start = cleaned.find("[")
-    array_end = cleaned.rfind("]")
-    object_start = cleaned.find("{")
-    object_end = cleaned.rfind("}")
-
-    candidates: list[str] = []
-    if array_start >= 0 and array_end > array_start:
-        candidates.append(cleaned[array_start : array_end + 1])
-    if object_start >= 0 and object_end > object_start:
-        candidates.append(cleaned[object_start : object_end + 1])
-
-    for candidate in candidates:
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-
-    raise ValueError(f"Unable to parse JSON from model output: {text[:500]}")
+        return result
 
 
 def emit_progress(

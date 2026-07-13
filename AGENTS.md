@@ -48,20 +48,22 @@ D:\broker-announcement-system-demo
 ## 4. 当前架构
 
 ```text
- 独立调度器进程 (APScheduler)
-        ↓ HTTP (X-Scheduler-Token)
- 浏览器   ↓
-   ↓ HTTP / SSE
- Next.js 前端
-   ↓ HTTP / SSE
- FastAPI 后端
+ Next.js 构建阶段
+   ↓ 静态导出 frontend/out
+ 浏览器
+   ↓ 同源 HTTP / SSE
+ FastAPI 后端（单 worker，托管静态前端与 API）
    ↓ subprocess
  Python 爬虫 / LLM 结构化 / 自动化流水线
    ↓
  backend/data/*.csv / *.json
+
+ 独立调度器进程 (APScheduler)
+   ↓ HTTP (X-Scheduler-Token)
+ FastAPI 后端
 ```
 
-### Next.js 前端负责
+### Next.js 静态前端负责
 
 - 登录界面
 - 管理员操作界面
@@ -70,6 +72,7 @@ D:\broker-announcement-system-demo
 - 展示任务状态和日志
 - 请求看板数据
 - 展示图表、表格和 AI 分析结果
+- 仅在开发和构建阶段运行 Node.js；生产由 FastAPI 托管静态产物
 
 ### FastAPI 后端负责
 
@@ -82,6 +85,7 @@ D:\broker-announcement-system-demo
 - 结构化数据接口
 - AI 情报分析接口与缓存读写
 - 验证定时调度器的 `X-Scheduler-Token` 安全头并触发内部任务
+- 从 `frontend/out` 提供生产静态页面与长期缓存的哈希资源
 
 ### 独立调度器进程负责
 
@@ -113,7 +117,7 @@ frontend/
 │   ├── admin-task-progress.tsx   # 任务统一进度条组件
 │   ├── admin-task-log-dialog.tsx # 详细日志弹窗组件
 │   ├── user-approval-manager.tsx # 用户审批及权限管理组件
-│   ├── login-page.tsx            # 登录页面组件
+│   ├── login-page-with-apply.tsx # 登录与资格申请组件
 │   ├── charts.tsx                # 图表组件 (数据看板)
 │   ├── project-table.tsx         # 招采项目表格展示
 │   ├── ai-summary.tsx            # AI 智能摘要展示
@@ -540,6 +544,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-me
 FRONTEND_ORIGIN=http://localhost:3000,http://localhost:5000
+FRONTEND_DIST_PATH=frontend/out
 
 SCRAPER_PYTHON_EXECUTABLE=
 SCRAPER_SCRIPT_PATH=
@@ -555,6 +560,7 @@ LLM_WORKERS=4
 
 ANNOUNCEMENT_STAGING_CSV_PATH=backend/data/staging/announcement_table.csv
 ANNOUNCEMENT_CSV_PATH=backend/data/announcement_table.csv
+ANNOUNCEMENT_BACKUP_RETENTION=3
 USER_DB_PATH=backend/data/users.db
 
 AI_ANALYSIS_CACHE_PATH=backend/data/ai-analysis.json
@@ -569,7 +575,7 @@ PIPELINE_ANALYSIS_DAYS=30
 SCHEDULER_ENABLED=true
 SCHEDULER_TIMEZONE=Asia/Shanghai
 SCHEDULER_CRON=0 12 * * sun
-SCHEDULER_API_URL=http://localhost:8000
+SCHEDULER_API_URL=http://127.0.0.1:5000
 SCHEDULER_TOKEN=change-me
 ```
 
@@ -586,20 +592,20 @@ SCHEDULER_TOKEN=change-me
 
 ## 18. 本地启动命令
 
-### FastAPI
+### FastAPI（Windows 生产）
 
 在项目根目录：
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r backend\api\requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 8000 --reload
+.\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 5000 --workers 1
 ```
 
 检查：
 
 ```text
-http://localhost:8000/api/health
-http://localhost:8000/docs
+http://localhost:5000/api/health
+http://localhost:5000/docs
 ```
 
 ### 独立调度器 (Scheduler)
@@ -610,7 +616,7 @@ http://localhost:8000/docs
 .\.venv\Scripts\python.exe -m backend.api.scheduler
 ```
 
-### Next.js
+### Next.js（开发与生产构建）
 
 在 `frontend` 目录：
 
@@ -620,7 +626,7 @@ pnpm build
 pnpm dev
 ```
 
-默认地址通常是 `http://localhost:3000`。如果端口变化，必须同步更新 `FRONTEND_ORIGIN` 和 `NEXT_PUBLIC_API_BASE_URL`。
+开发地址通常是 `http://localhost:3000`。生产构建必须将 `NEXT_PUBLIC_API_BASE_URL` 置空并生成 `frontend/out`，生产环境不得运行 `next start`。Uvicorn 必须保持单 worker，否则内存 Session、任务锁、任务状态和公告缓存会不一致。
 
 ### 任务联调
 
@@ -812,13 +818,17 @@ Codex 必须遵守：
 - 用户访问与登录审计（二维码访问、资格申请、成功登录、进入看板及管理员查看）
 - 世纪证券品牌 Logo、浏览器图标与页面标题接入
 - 看板、登录页和项目明细的移动端可读性优化
+- Next.js 静态导出并由单 worker FastAPI 同端口托管，生产无需常驻 Node.js
+- 公告响应单进程缓存、gzip 压缩与 ETag/304 条件请求
+- 前端搜索延迟计算、搜索文本预计算与重复基准扫描消除
+- 爬虫公告元数据单次扫描、LLM 客户端延迟加载及正式 CSV 备份保留上限
 
 待完成或待最终验收：
 
 - 真实端到端流程验证（爬虫→LLM→推送→看板刷新全链路）
 - 真实 LLM AI 情报分析调用验证（需 llm_api_config.json 配置）
 - 真实结果公告数据匹配质量验收（当前本地 `result_table.csv` 仅有表头）
-- 完整生产部署和启动说明
+- Windows 实机生产部署最终验收
 
 状态变化后应更新本节。
 

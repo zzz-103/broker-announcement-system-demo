@@ -1,91 +1,46 @@
-# 项目上下文
+# 前端项目约束
 
-### 版本技术栈
+## 技术与架构
 
-- **Framework**: Next.js 16 (App Router)
-- **Core**: React 19
-- **Language**: TypeScript 5
-- **UI 组件**: shadcn/ui (基于 Radix UI)
-- **Styling**: Tailwind CSS 4
+- Next.js 16 App Router、React 19、TypeScript 5、Tailwind CSS 4。
+- Zustand 管理认证与筛选状态；TanStack Table 负责表格；ECharts 使用按需模块注册。
+- 开发使用 Next dev，生产使用 `output: "export"`，静态产物由 FastAPI 托管。
+- 前端不得直接读取 CSV、执行 Python、调用外部 LLM 或访问后端文件系统。
+- 所有业务 API 与 SSE 调用集中在 `src/lib/api/backend-client.ts`。
 
-## 项目概述
+## 依赖管理
 
-券商金融科技招采情报平台 - 面向证券公司管理层和信息技术负责人的公开招采情报分析单页应用。前端直接加载 CSV 数据，无后端依赖。
+- 仅允许 pnpm，禁止 npm 或 yarn。
+- 新增依赖前先确认现有模块无法满足需求。
+- 生产前端不得新增 Next Route Handler、Server Action、cookies 或其他需要 Node.js 常驻运行的能力，除非任务明确改变部署架构。
 
-### 核心依赖
+## 编码规范
 
-- **Zustand**: 全局过滤状态管理（搜索词、时间范围、多维度筛选）
-- **PapaParse**: CSV 数据解析
-- **@tanstack/react-table**: 高性能表格（排序、分页）
-- **ECharts (echarts-for-react)**: 图表可视化（趋势图、分布图、环形图）
-- **lucide-react**: 图标库
+- 使用 TypeScript 严格类型心智；禁止隐式 `any`、`as any`、未使用导入和未声明标识符。
+- API 响应、SSE 事件和组件 Props 必须有明确类型。
+- 优先复用现有组件与 `src/lib/announcement-data.ts` 数据处理逻辑，不复制近似实现。
+- 不大改现有看板样式、业务统计口径或筛选行为。
 
-## 目录结构
+## 浏览器与认证
 
-```
-├── public/
-│   └── data/                          # CSV 数据文件（替换数据只需替换此文件）
-│       └── announcement_table.csv
-├── src/
-│   ├── app/
-│   │   ├── page.tsx                   # 主页面（Dashboard 组装层）
-│   │   ├── layout.tsx                 # 根布局
-│   │   └── globals.css                # 全局样式
-│   ├── components/
-│   │   ├── metric-cards.tsx           # 6个核心指标卡片
-│   │   ├── executive-summary.tsx      # 管理层摘要 + 数据覆盖
-│   │   ├── charts.tsx                 # 趋势图 + 方向分布 + 阶段分布
-│   │   ├── observation-cards.tsx      # 券商/供应商/价格观察
-│   │   ├── key-project-radar.tsx      # 重点项目雷达
-│   │   ├── project-table.tsx          # 项目情报明细表
-│   │   ├── project-detail-drawer.tsx  # 项目详情抽屉
-│   │   ├── data-definition-modal.tsx  # 数据口径说明弹窗
-│   │   └── ui/                        # Shadcn UI 组件库
-│   ├── store/
-│   │   └── filter-store.ts            # Zustand 全局过滤状态
-│   ├── lib/
-│   │   ├── announcement-data.ts       # 统一数据处理层（核心）
-│   │   ├── csv-loader.ts              # CSV 加载器（PapaParse）
-│   │   └── utils.ts                   # 通用工具函数
-│   └── types/
-│       └── data.ts                    # 数据类型定义
-├── DESIGN.md                          # 设计规范
-├── next.config.ts                     # Next.js 配置
-├── package.json                       # 项目依赖管理
-└── tsconfig.json                      # TypeScript 配置
+- Token 只能保存在 React 状态和 `sessionStorage`，禁止 `localStorage`。
+- 401 必须清理登录状态；409 显示明确冲突提示。
+- SSE 使用带 Bearer Header 的 `fetch` 流读取，维护跨 chunk buffer；组件卸载时仅中止前端读取。
+- 浏览器 API 必须在客户端事件或 effect 中访问，禁止在服务端渲染阶段直接读取 `window`。
+
+## 静态导出与 UI
+
+- `next/image` 使用静态导出兼容配置；新增路由必须可以在构建期生成。
+- 禁止 JSX `<head>`，使用 metadata。
+- 基础交互优先复用现有 shadcn/Radix Dialog 与 Button 风格。
+- 数据加载失败不得白屏，重任务组件继续使用动态加载。
+
+## 验证
+
+```bash
+pnpm run ts-check
+pnpm run lint:build
+NEXT_PUBLIC_API_BASE_URL= pnpm build
 ```
 
-- 项目文件（如 app 目录、pages 目录、components 等）默认初始化到 `src/` 目录下。
-
-## 包管理规范
-
-**仅允许使用 pnpm** 作为包管理器，**严禁使用 npm 或 yarn**。
-**常用命令**：
-- 安装依赖：`pnpm add <package>`
-- 安装开发依赖：`pnpm add -D <package>`
-- 安装所有依赖：`pnpm install`
-- 移除依赖：`pnpm remove <package>`
-
-## 开发规范
-
-### 编码规范
-
-- 默认按 TypeScript `strict` 心智写代码；优先复用当前作用域已声明的变量、函数、类型和导入，禁止引用未声明标识符或拼错变量名。
-- 禁止隐式 `any` 和 `as any`；函数参数、返回值、解构项、事件对象、`catch` 错误在使用前应有明确类型或先完成类型收窄，并清理未使用的变量和导入。
-
-### next.config 配置规范
-
-- 配置的路径不要写死绝对路径，必须使用 path.resolve(__dirname, ...)、import.meta.dirname 或 process.cwd() 动态拼接。
-
-### Hydration 问题防范
-
-1. 严禁在 JSX 渲染逻辑中直接使用 typeof window、Date.now()、Math.random() 等动态数据。**必须使用 'use client' 并配合 useEffect + useState 确保动态内容仅在客户端挂载后渲染**；同时严禁非法 HTML 嵌套（如 <p> 嵌套 <div>）。
-2. **禁止使用 head 标签**，优先使用 metadata，详见文档：https://nextjs.org/docs/app/api-reference/functions/generate-metadata
-   1. 三方 CSS、字体等资源可在 `globals.css` 中顶部通过 `@import` 引入或使用 next/font
-   2. preload, preconnect, dns-prefetch 通过 ReactDOM 的 preload、preconnect、dns-prefetch 方法引入
-   3. json-ld 可阅读 https://nextjs.org/docs/app/guides/json-ld
-
-## UI 设计与组件规范 (UI & Styling Standards)
-
-- 模板默认预装核心组件库 `shadcn/ui`，位于`src/components/ui/`目录下
-- Next.js 项目**必须默认**采用 shadcn/ui 组件、风格和规范，**除非用户指定用其他的组件和规范。**
+只有静态构建真实退出 0 才能声称前端构建通过。

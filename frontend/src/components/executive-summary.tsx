@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
-  getDataBaseline,
   formatDate,
   uniqueCount,
 } from "@/lib/announcement-data";
@@ -45,11 +44,10 @@ function CoverageBar({
 interface ExecutiveSummaryProps {
   data: ProcessedRecord[];
   allData: ProcessedRecord[];
+  baseline: Date | null;
 }
 
-export function ExecutiveSummary({ data, allData }: ExecutiveSummaryProps) {
-  const baseline = useMemo(() => getDataBaseline(allData), [allData]);
-
+export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryProps) {
   const summary = useMemo(() => {
     // Summary 1: Top 3 domains by project keys
     const domainCounts: Record<string, number> = {};
@@ -136,7 +134,7 @@ export function ExecutiveSummary({ data, allData }: ExecutiveSummaryProps) {
     const dupCount = Object.values(shaMap).filter((s) => s.size > 1).length;
 
     return {
-      latestDate: formatDate(getDataBaseline(allData)),
+      latestDate: formatDate(baseline),
       dateRate: total > 0 ? ((validDates / total) * 100).toFixed(1) : "0",
       supplierRate: total > 0 ? ((validSuppliers / total) * 100).toFixed(1) : "0",
       priceRate: total > 0 ? ((validPrices / total) * 100).toFixed(1) : "0",
@@ -145,7 +143,7 @@ export function ExecutiveSummary({ data, allData }: ExecutiveSummaryProps) {
         allData.filter((r) => r.validBrokerName !== "主体待识别").map((r) => r.validBrokerName)
       ),
     };
-  }, [allData]);
+  }, [allData, baseline]);
 
   return (
     <div className="grid grid-cols-12 gap-4 md:gap-5">

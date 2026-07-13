@@ -61,6 +61,7 @@ export interface ProcessedRecord {
   primaryDomain: string;
   topicTags: string[];
   isFinTech: boolean;
+  searchText: string;
 }
 
 export const SUPPORTED_SOURCES = ["金采网"] as const;
@@ -312,6 +313,13 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
     );
     const topicTags = generateTags(projectNameRaw, subcategory);
     const sourceName = (row.source ?? row.data_source ?? "").trim();
+    const procurementMethod = row.procurement_method?.trim() ?? "";
+    const searchText = [
+      projectNameRaw,
+      validBrokerName,
+      normalizedSupplier,
+      procurementMethod,
+    ].join("\n").toLowerCase();
 
     return {
       broker_folder: row.broker_folder?.trim() ?? "",
@@ -326,7 +334,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       procurement_category: category,
       project_subcategory: subcategory,
       project_name_raw: projectNameRaw,
-      procurement_method: row.procurement_method?.trim() ?? "",
+      procurement_method: procurementMethod,
       winning_supplier_raw: supplierRaw,
       winning_amount_yuan: winningAmount,
       sourceName,
@@ -339,6 +347,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       primaryDomain,
       topicTags,
       isFinTech,
+      searchText,
     };
   });
 }

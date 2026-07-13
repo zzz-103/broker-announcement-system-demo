@@ -3,6 +3,7 @@
 import asyncio
 import csv
 import os
+import re
 import secrets
 import shutil
 import threading
@@ -13,9 +14,11 @@ from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .ai_analysis import (
@@ -24,6 +27,7 @@ from .ai_analysis import (
     load_cached_analysis,
     to_http_exception,
 )
+from .announcement_cache import AnnouncementResponseCache, accepts_gzip, etag_matches
 from .audit_store import AuditStoreError, EVENT_TYPES as AUDIT_EVENT_TYPES, get_today_summary, list_events, record_event
 from .job_manager import JobConflictError, JobManager, JobNotFoundError, format_sse
 from .supplemental_seed import (
@@ -138,6 +142,7 @@ class LlmJobRequest(BaseModel):
 
 
 job_manager = JobManager()
+announcement_response_cache = AnnouncementResponseCache()
 session_tokens: dict[str, dict[str, object]] = {}
 session_tokens_lock = threading.Lock()
 QUALIFICATION_NOT_FOUND_MESSAGE = "\u672a\u627e\u5230\u5339\u914d\u8d44\u683c\uff0c\u8bf7\u8054\u7cfb\u7ba1\u7406\u5458"
@@ -162,6 +167,28 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=3)
+
+
+@app.middleware("http")
+async def frontend_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    vary_header = response.headers.get("Vary")
+    if vary_header:
+        unique_vary: list[str] = []
+        seen_vary: set[str] = set()
+        for value in (item.strip() for item in vary_header.split(",")):
+            normalized = value.casefold()
+            if value and normalized not in seen_vary:
+                seen_vary.add(normalized)
+                unique_vary.append(value)
+        response.headers["Vary"] = ", ".join(unique_vary)
+    request_path = request.url.path
+    if response.status_code < 400 and request_path.startswith("/_next/static/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif not request_path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 def get_session(authorization: Annotated[str | None, Header()] = None) -> dict[str, object]:
@@ -344,6 +371,54 @@ def backup_csv_atomically(target_path: Path) -> str | None:
             except OSError:
                 pass
     return backup_path.name
+
+
+def announcement_backup_retention() -> int:
+    raw_value = os.getenv("ANNOUNCEMENT_BACKUP_RETENTION", "3").strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return 3
+    return value if 1 <= value <= 100 else 3
+
+
+def prune_old_announcement_backups(
+    target_path: Path,
+    retention: int | None = None,
+) -> list[str]:
+    keep_count = retention if retention is not None else announcement_backup_retention()
+    pattern = re.compile(
+        rf"^{re.escape(target_path.stem)}-(\d{{8}}-\d{{6}})"
+        rf"\.backup{re.escape(target_path.suffix)}$"
+    )
+    candidates: list[tuple[datetime, Path]] = []
+    try:
+        directory_entries = list(target_path.parent.iterdir())
+    except OSError:
+        return []
+
+    for path in directory_entries:
+        if not path.is_file():
+            continue
+        match = pattern.fullmatch(path.name)
+        if match is None:
+            continue
+        try:
+            timestamp = datetime.strptime(match.group(1), "%Y%m%d-%H%M%S")
+        except ValueError:
+            continue
+        candidates.append((timestamp, path))
+
+    candidates.sort(key=lambda item: (item[0], item[1].name), reverse=True)
+    removed: list[str] = []
+    for _, path in candidates[max(0, keep_count) :]:
+        try:
+            path.unlink()
+        except OSError:
+            print("Warning: failed to prune an old announcement backup.")
+        else:
+            removed.append(path.name)
+    return removed
 
 
 @app.post("/api/login", response_model=LoginResponse)
@@ -642,7 +717,7 @@ def scheduled_pipeline(
 
 
 @app.get("/api/data/announcements", dependencies=[Depends(require_token)])
-def get_announcements() -> dict[str, object]:
+def get_announcements(request: Request) -> Response:
     csv_path = announcement_csv_path()
 
     if not csv_path.exists():
@@ -651,16 +726,28 @@ def get_announcements() -> dict[str, object]:
             detail="announcement data has not been generated; run scraper and LLM first",
         )
 
-    _, records = read_announcement_csv(csv_path)
+    try:
+        cached = announcement_response_cache.get(csv_path, read_announcement_csv)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="failed to read announcement data",
+        ) from exc
 
-    updated_at = datetime.fromtimestamp(csv_path.stat().st_mtime, timezone.utc).isoformat()
-    return {
-        "records": records,
-        "meta": {
-            "count": len(records),
-            "updated_at": updated_at,
-        },
+    use_gzip = accepts_gzip(request.headers.get("accept-encoding"))
+    response_headers = {
+        "ETag": cached.etag,
+        "Vary": "Accept-Encoding",
+        "Cache-Control": "private, no-cache",
     }
+    if etag_matches(request.headers.get("if-none-match"), cached.etag):
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=response_headers)
+    if use_gzip:
+        response_headers["Content-Encoding"] = "gzip"
+        body = cached.gzip_body
+    else:
+        body = cached.raw_body
+    return Response(content=body, media_type="application/json", headers=response_headers)
 
 
 @app.post("/api/data/announcements/publish", dependencies=[Depends(require_admin_token)])
@@ -699,6 +786,8 @@ def publish_announcements() -> dict[str, object]:
         )
         backup_name = backup_csv_atomically(target_path)
         publish_csv_atomically(publish_plan.fieldnames, publish_plan.records, target_path)
+        announcement_response_cache.invalidate(target_path)
+        prune_old_announcement_backups(target_path)
 
         published_at = datetime.now(timezone.utc).isoformat()
         updated_at = datetime.fromtimestamp(target_path.stat().st_mtime, timezone.utc).isoformat()
@@ -937,3 +1026,26 @@ async def job_events(job_id: str) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def frontend_dist_path() -> Path:
+    project_root = Path(__file__).resolve().parents[2]
+    return resolve_project_path(
+        os.getenv("FRONTEND_DIST_PATH"),
+        project_root / "frontend" / "out",
+    )
+
+
+_frontend_dist = frontend_dist_path()
+if _frontend_dist.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(_frontend_dist), html=True),
+        name="frontend",
+    )
+else:
+    @app.get("/{frontend_path:path}", include_in_schema=False)
+    def frontend_not_built(frontend_path: str) -> PlainTextResponse:
+        if frontend_path == "api" or frontend_path.startswith("api/"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="not found")
+        return PlainTextResponse("frontend build not found", status_code=503)

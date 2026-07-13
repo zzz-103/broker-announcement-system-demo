@@ -536,11 +536,11 @@ class JobManager:
         scraper_root = project_root / "backend" / "python-http-www-cfcpn-com-jcw"
         default_script = scraper_root / "cfcpn_scraper.py"
 
-        default_python = scraper_root / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        python_executable = self._resolve_path(
-            os.getenv("SCRAPER_PYTHON_EXECUTABLE"),
-            project_root,
-            default_python if default_python.exists() else Path(sys.executable),
+        configured_python = os.getenv("SCRAPER_PYTHON_EXECUTABLE")
+        python_executable = (
+            self._resolve_path(configured_python, project_root, Path(sys.executable))
+            if configured_python
+            else Path(sys.executable)
         )
         script_path = self._resolve_path(os.getenv("SCRAPER_SCRIPT_PATH"), project_root, default_script)
         working_dir = self._resolve_path(os.getenv("SCRAPER_WORKING_DIR"), project_root, scraper_root)
@@ -587,10 +587,11 @@ class JobManager:
         default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
         default_working_dir = project_root / "backend" / "llm_table"
 
-        python_executable = self._resolve_path(
-            os.getenv("LLM_PYTHON_EXECUTABLE"),
-            project_root,
-            Path(sys.executable),
+        configured_python = os.getenv("LLM_PYTHON_EXECUTABLE")
+        python_executable = (
+            self._resolve_path(configured_python, project_root, Path(sys.executable))
+            if configured_python
+            else Path(sys.executable)
         )
         script_path = self._resolve_path(os.getenv("LLM_SCRIPT_PATH"), project_root, default_script)
         working_dir = self._resolve_path(os.getenv("LLM_WORKING_DIR"), project_root, default_working_dir)

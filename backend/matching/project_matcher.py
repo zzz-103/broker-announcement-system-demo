@@ -17,7 +17,6 @@ from typing import Any
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = ROOT_DIR.parent
 DEFAULT_PROCUREMENT_CSV = ROOT_DIR / "data" / "staging" / "announcement_table.csv"
-FALLBACK_PROCUREMENT_CSV = ROOT_DIR / "data" / "announcement_table.csv"
 DEFAULT_RESULT_CSV = ROOT_DIR / "data" / "staging" / "result" / "result_table.csv"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "data" / "staging" / "matching"
 DEFAULT_MAX_CANDIDATES = 5
@@ -295,9 +294,7 @@ def package_similarity(result_package: str, procurement_package: str) -> float:
 
 
 def resolve_default_procurement_csv() -> Path:
-    if DEFAULT_PROCUREMENT_CSV.exists():
-        return DEFAULT_PROCUREMENT_CSV
-    return FALLBACK_PROCUREMENT_CSV
+    return DEFAULT_PROCUREMENT_CSV
 
 
 def read_csv_rows(path: Path) -> list[dict[str, str]]:
@@ -450,6 +447,7 @@ def recall_candidates(
             candidate.title_similarity,
             candidate.purchaser_match,
             candidate.date_score,
+            candidate.procurement.notice_id,
         ),
         reverse=True,
     )

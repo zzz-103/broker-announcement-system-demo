@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from backend.llm_table.llm_markdown_table_builder import (
+from backend.llm_table.llm_client import (
     LLMApiConfig,
     OpenAICompatibleClient,
 )

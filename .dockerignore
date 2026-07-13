@@ -15,6 +15,7 @@
 # Node / Next.js 本地依赖与构建缓存
 **/node_modules
 **/.next
+**/out
 **/.turbo
 **/coverage
 frontend/tsconfig.tsbuildinfo
@@ -34,7 +35,7 @@ backend/config/llm_api_config.json
 # 宿主机本地运行目录与挂载目录
 runtime/
 
-# 排除后端运行时生成的动态数据与临时结果（保留初始 CSV announcement_table.csv 作为初始数据）
+# 排除后端运行时生成的动态数据与临时结果
 backend/data/*
 # 确保排除用户数据库及其他动态文件
 backend/data/users.db

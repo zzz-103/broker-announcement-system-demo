@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
-  getDataBaseline,
   formatDate,
   uniqueCount,
 } from "@/lib/announcement-data";
@@ -11,11 +10,13 @@ import { Info } from "lucide-react";
 
 interface ObservationProps {
   data: ProcessedRecord[];
-  allData: ProcessedRecord[];
 }
 
-export function BrokerActivityCard({ data, allData }: ObservationProps) {
-  const baseline = useMemo(() => getDataBaseline(allData), [allData]);
+interface BrokerActivityProps extends ObservationProps {
+  baseline: Date | null;
+}
+
+export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
 
   const brokers = useMemo(() => {
     const ninetyDaysAgo = baseline
@@ -211,7 +212,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
   );
 }
 
-export function PriceSamplesCard({ data, allData }: ObservationProps) {
+export function PriceSamplesCard({ data }: ObservationProps) {
   const samples = useMemo(() => {
     const priceRecords = data.filter(
       (r) => r.priceSampleKey && r.normalizedSupplier

@@ -1,13 +1,14 @@
 services:
   backend-api:
-    image: 172.16.96.238:5000/broker-backend:1.2.0
+    image: ${BROKER_IMAGE:-broker-backend:1.2.5}
     ports:
-      - "8000:8000"
+      - "5000:8000"
     restart: unless-stopped
     env_file:
       - .env
     environment:
       - SCHEDULER_ENABLED=false
+      - FRONTEND_DIST_PATH=/app/frontend/out
     volumes:
       - ./runtime/data:/app/backend/data
       - ./runtime/scraper-output:/app/backend/python-http-www-cfcpn-com-jcw/output
@@ -26,7 +27,7 @@ services:
         max-file: "5"
 
   backend-scheduler:
-    image: 172.16.96.238:5000/broker-backend:1.2.0
+    image: ${BROKER_IMAGE:-broker-backend:1.2.5}
     command: python -m backend.api.scheduler
     restart: unless-stopped
     env_file:
@@ -37,19 +38,6 @@ services:
     depends_on:
       backend-api:
         condition: service_healthy
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "20m"
-        max-file: "5"
-
-  frontend:
-    image: 172.16.96.238:5000/broker-frontend:1.2.0
-    ports:
-      - "5000:3000"
-    restart: unless-stopped
-    environment:
-      - PORT=3000
     logging:
       driver: "json-file"
       options:
