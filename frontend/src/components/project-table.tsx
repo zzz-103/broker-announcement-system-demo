@@ -22,7 +22,7 @@ import {
   Rows3,
 } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
-import { formatDate, formatAmount } from "@/lib/announcement-data";
+import { displayAmountLabel, formatDate, formatAmount } from "@/lib/announcement-data";
 
 interface ProjectTableProps {
   data: ProcessedRecord[];
@@ -54,8 +54,8 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
     if (sortMode === "amount") {
       // 有金额优先：先按是否有金额降序，再按日期降序
       return [...data].sort((a, b) => {
-        const aHasAmount = a.winning_amount_yuan !== null ? 1 : 0;
-        const bHasAmount = b.winning_amount_yuan !== null ? 1 : 0;
+        const aHasAmount = a.display_amount_yuan !== null ? 1 : 0;
+        const bHasAmount = b.display_amount_yuan !== null ? 1 : 0;
         if (aHasAmount !== bHasAmount) return bHasAmount - aHasAmount;
         // 同组内按日期降序
         const aTime = a.validPublishDate?.getTime() || 0;
@@ -132,7 +132,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         accessorKey: "announcement_stage",
         header: "公告阶段",
         size: 90,
-        cell: ({ getValue }) => {
+        cell: ({ getValue, row }) => {
           const stage = getValue<string>() || "待确认";
           const style = STAGE_STYLES[stage] || "bg-slate-50 border-slate-100 text-slate-600";
           return (
@@ -169,20 +169,19 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         },
       },
       {
-        accessorKey: "winning_amount_yuan",
-        header: "公开成交金额",
+        accessorKey: "display_amount_yuan",
+        header: "公开金额",
         size: 120,
         enableSorting: true,
-        cell: ({ getValue }) => {
+        cell: ({ getValue, row }) => {
           const v = getValue<number | null>();
           return (
-            <span
-              className={`text-[13px] font-bold text-right block tabular-nums ${
-                v !== null ? "text-[#0F9F8F]" : "text-[#98A2B3] font-medium"
-              }`}
-            >
-              {v !== null ? formatAmount(v) : "未披露"}
-            </span>
+            <div className={`text-right ${v === null ? "text-[#98A2B3]" : row.original.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}`}>
+              <span className="block text-[10px] font-medium">{v !== null ? displayAmountLabel(row.original) : "未披露"}</span>
+              <span className={`block text-[13px] font-bold tabular-nums ${v === null ? "font-medium" : ""}`}>
+                {v !== null ? formatAmount(v) : "-"}
+              </span>
+            </div>
           );
         },
       },
@@ -304,7 +303,8 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                 <p><span className="text-[#98A2B3]">券商：</span>{record.validBrokerName}</p>
                 <p><span className="text-[#98A2B3]">日期：</span>{formatDate(record.validPublishDate)}</p>
                 <p className="col-span-2"><span className="text-[#98A2B3]">采购方式：</span>{record.procurement_method || "方式未识别"}</p>
-                <p className="col-span-2"><span className="text-[#98A2B3]">中标信息：</span>{record.normalizedSupplier || "未披露"}{record.winning_amount_yuan !== null ? ` · ${formatAmount(record.winning_amount_yuan)}` : ""}</p>
+                <p className="col-span-2"><span className="text-[#98A2B3]">中标信息：</span>{record.normalizedSupplier || "未披露"}</p>
+                <p className="col-span-2"><span className="text-[#98A2B3]">公开金额：</span>{record.display_amount_yuan !== null ? <span className={record.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}>{displayAmountLabel(record)} · {formatAmount(record.display_amount_yuan)}</span> : "未披露"}</p>
               </div>
               <details className="mt-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
                 <summary className="cursor-pointer font-medium text-[#2563EB]">展开次要字段</summary>

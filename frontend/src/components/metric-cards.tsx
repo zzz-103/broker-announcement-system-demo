@@ -49,8 +49,8 @@ export function MetricCards({ data, baseline, statistics, updatedAt }: MetricCar
         .filter((record) => record.announcement_stage === "结果公示" && record.normalizedSupplier !== "")
         .map((record) => record.projectKey)
     );
-    const priceSamples = uniqueCount(
-      data.filter((record) => record.priceSampleKey !== null).map((record) => record.priceSampleKey!)
+    const amountSamples = uniqueCount(
+      data.filter((record) => record.amountSampleKey !== null).map((record) => record.amountSampleKey!)
     );
 
     const sourceMetric = {
@@ -92,9 +92,9 @@ export function MetricCards({ data, baseline, statistics, updatedAt }: MetricCar
         color: "#16A36A",
       },
       {
-        label: "公开价格样本",
-        value: priceSamples.toLocaleString(),
-        hint: "有效金额且去重后的样本数",
+        label: "公开金额样本",
+        value: amountSamples.toLocaleString(),
+        hint: "成交金额或项目预算，按金额去重",
         onClick: () => setDetailFilter({ hasPrice: "true" }),
         color: "#F59E0B",
       },

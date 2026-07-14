@@ -246,7 +246,7 @@ export default function Dashboard() {
     // Detail filter (from metric card clicks)
     if (detailFilter) {
       if (detailFilter.hasPrice === "true") {
-        result = result.filter((r) => r.winning_amount_yuan !== null);
+        result = result.filter((r) => r.display_amount_yuan !== null);
       }
     }
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-CANONICAL_FIELDS = [
+BASE_CANONICAL_FIELDS = [
     "broker_folder",
     "markdown_file",
     "document_sha1",
@@ -38,7 +38,23 @@ CANONICAL_FIELDS = [
     "delivery_period_days",
     "winning_supplier",
 ]
-LEGACY_FIELDS = [field for field in CANONICAL_FIELDS if field != "is_broker_project"]
+MERGED_RESULT_FIELDS = [
+    "result_notice_id",
+    "result_title",
+    "result_type",
+    "result_status",
+    "result_publish_date",
+    "winner",
+    "winner_candidates",
+    "winning_amount",
+    "result_match_method",
+    "result_match_confidence",
+    "result_notice_count",
+    "result_history_json",
+]
+CANONICAL_FIELDS = [*BASE_CANONICAL_FIELDS, *MERGED_RESULT_FIELDS]
+LEGACY_FIELDS = [field for field in BASE_CANONICAL_FIELDS if field != "is_broker_project"]
+MERGED_STAGING_FIELDS = [*LEGACY_FIELDS, "record_key", *MERGED_RESULT_FIELDS]
 MANIFEST_FIELDS = {"batch_id", "active", "row_count", "sha256", "imported_at"}
 OVERLAP_FIELDS = [
     "match_level",
@@ -138,15 +154,19 @@ def _canonicalize_rows(
         raise SupplementalDataError(f"failed to read {source_label} CSV") from exc
 
     expected = CANONICAL_FIELDS
+    is_previous_canonical = fieldnames == BASE_CANONICAL_FIELDS
     is_legacy = fieldnames == LEGACY_FIELDS
-    if fieldnames != expected and not (allow_legacy_without_flag and is_legacy):
+    is_merged_staging = fieldnames == MERGED_STAGING_FIELDS
+    if fieldnames != CANONICAL_FIELDS and not is_previous_canonical and not (
+        allow_legacy_without_flag and (is_legacy or is_merged_staging)
+    ):
         raise SupplementalDataError(f"{source_label} CSV headers must match the canonical announcement schema")
 
     canonical_rows: list[dict[str, str]] = []
     source_rows: list[dict[str, str]] = []
     for row in _non_empty_rows(rows):
         normalized_row = {field: str(row.get(field) or "") for field in expected}
-        if is_legacy:
+        if is_legacy or is_merged_staging:
             normalized_row["is_broker_project"] = "true"
         else:
             classification = _normalized(normalized_row["is_broker_project"])
@@ -199,13 +219,21 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def canonical_csv_sha256(rows: Iterable[dict[str, str]]) -> str:
-    """Hash canonical CSV content so deployment newline conversion does not break a seed."""
+def _csv_sha256(rows: Iterable[dict[str, str]], fieldnames: list[str]) -> str:
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=CANONICAL_FIELDS, lineterminator="\n", extrasaction="ignore")
+    writer = csv.DictWriter(output, fieldnames=fieldnames, lineterminator="\n", extrasaction="ignore")
     writer.writeheader()
     writer.writerows(rows)
     return hashlib.sha256(output.getvalue().encode("utf-8")).hexdigest()
+
+
+def canonical_csv_sha256(rows: Iterable[dict[str, str]]) -> str:
+    """Hash canonical CSV content so deployment newline conversion does not break a seed."""
+    return _csv_sha256(rows, CANONICAL_FIELDS)
+
+
+def _previous_canonical_csv_sha256(rows: Iterable[dict[str, str]]) -> str:
+    return _csv_sha256(rows, BASE_CANONICAL_FIELDS)
 
 
 def _write_manifest(path: Path, manifest: dict[str, object]) -> None:
@@ -274,6 +302,15 @@ def _load_active_seed(destination_dir: Path) -> CsvData | None:
     if canonical_hash.lower() == manifest["sha256"].lower():
         return seed
 
+    # Existing seeds created before merger fields became publishable used the
+    # previous canonical header. Normalize them in place without discarding
+    # the newly added result fields.
+    if _previous_canonical_csv_sha256(seed.rows).lower() == manifest["sha256"].lower():
+        write_csv_atomically(seed_path, CANONICAL_FIELDS, seed.rows)
+        manifest["sha256"] = canonical_hash
+        _write_manifest(manifest_path, manifest)
+        return seed
+
     # Manifests created before canonical hashing stored a byte-level hash. Migrate them
     # when the current file is unchanged, or when its normalized content matches the
     # archived source preserved at import time.
@@ -290,6 +327,11 @@ def _load_active_seed(destination_dir: Path) -> CsvData | None:
             source_label="temporary seed source archive",
         )
         if canonical_csv_sha256(archive.rows) == canonical_hash:
+            manifest["sha256"] = canonical_hash
+            _write_manifest(manifest_path, manifest)
+            return seed
+        if _previous_canonical_csv_sha256(archive.rows).lower() == manifest["sha256"].lower():
+            write_csv_atomically(seed_path, CANONICAL_FIELDS, seed.rows)
             manifest["sha256"] = canonical_hash
             _write_manifest(manifest_path, manifest)
             return seed

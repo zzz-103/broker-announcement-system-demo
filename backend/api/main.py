@@ -280,12 +280,13 @@ def announcement_csv_path() -> Path:
     )
 
 
-def announcement_staging_csv_path() -> Path:
+def merged_announcement_csv_path() -> Path:
     project_root = Path(__file__).resolve().parents[2]
-    return resolve_project_path(
-        os.getenv("ANNOUNCEMENT_STAGING_CSV_PATH"),
-        project_root / "backend" / "data" / "staging" / "announcement_table.csv",
+    output_dir = resolve_project_path(
+        os.getenv("MATCHING_MERGED_OUTPUT_DIR"),
+        project_root / "backend" / "data" / "staging" / "final",
     )
+    return output_dir / "announcement_table_merged_test.csv"
 
 
 def read_announcement_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
@@ -758,18 +759,18 @@ def publish_announcements() -> dict[str, object]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     try:
-        staging_path = announcement_staging_csv_path()
+        merged_path = merged_announcement_csv_path()
         target_path = announcement_csv_path()
 
-        if not staging_path.exists():
+        if not merged_path.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="staging announcement CSV not found",
+                detail="final merged announcement CSV not found; run the matching pipeline first",
             )
 
         previous_count = count_csv_records(target_path)
         try:
-            merge_result = merge_for_publication(staging_path, supplemental_data_dir(PROJECT_ROOT))
+            merge_result = merge_for_publication(merged_path, supplemental_data_dir(PROJECT_ROOT))
         except SupplementalDataError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

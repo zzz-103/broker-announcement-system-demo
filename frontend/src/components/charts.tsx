@@ -47,7 +47,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
     // Group by month
     const monthMap: Record<
       string,
-      { projects: Set<string>; results: Set<string>; prices: Set<string> }
+      { projects: Set<string>; results: Set<string>; amounts: Set<string> }
     > = {};
 
     for (const r of data) {
@@ -59,12 +59,12 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
         monthMap[key] = {
           projects: new Set(),
           results: new Set(),
-          prices: new Set(),
+          amounts: new Set(),
         };
       monthMap[key].projects.add(r.projectKey);
       if (r.announcement_stage === "结果公示")
         monthMap[key].results.add(r.projectKey);
-      if (r.priceSampleKey) monthMap[key].prices.add(r.priceSampleKey);
+      if (r.amountSampleKey) monthMap[key].amounts.add(r.amountSampleKey);
     }
 
     const sorted = Object.entries(monthMap).sort((a, b) =>
@@ -74,7 +74,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
       months: sorted.map(([k]) => k),
       projects: sorted.map(([, v]) => v.projects.size),
       results: sorted.map(([, v]) => v.results.size),
-      prices: sorted.map(([, v]) => v.prices.size),
+      amounts: sorted.map(([, v]) => v.amounts.size),
     };
   }, [data]);
 
@@ -94,7 +94,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
         extraCssText: "box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px;",
       },
       legend: {
-        data: ["项目线索", "结果公示", "价格样本"],
+        data: ["项目线索", "结果公示", "公开金额样本"],
         right: 0,
         top: 0,
         icon: "circle",
@@ -131,9 +131,9 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           symbolSize: 6,
         },
         {
-          name: "价格样本",
+          name: "公开金额样本",
           type: "line",
-          data: chartData.prices,
+          data: chartData.amounts,
           lineStyle: { color: "#F59E0B", width: 2 },
           itemStyle: { color: "#F59E0B" },
           symbol: "circle",

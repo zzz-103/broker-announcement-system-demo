@@ -65,13 +65,10 @@ class JobManager:
         self._cancel_requested: set[str] = set()
 
     def start_scraper(self) -> Job:
-        return self._start_job("scraper", self._build_scraper_command)
+        return self._start_staged_job("scraper")
 
     def start_llm(self, *, mode: str = "incremental", overwrite: bool = False) -> Job:
-        return self._start_job(
-            "llm",
-            lambda: self._build_llm_command(mode=mode, overwrite=overwrite),
-        )
+        return self._start_staged_job("llm", llm_mode=mode, llm_overwrite=overwrite)
 
     def start_llm_external(self) -> Job:
         return self._start_job(
@@ -81,13 +78,22 @@ class JobManager:
 
     def start_pipeline(self) -> Job:
         """Start the dual-notice pipeline and its conservative match stages."""
+        return self._start_staged_job("pipeline")
+
+    def _start_staged_job(
+        self,
+        job_type: str,
+        *,
+        llm_mode: str = "incremental",
+        llm_overwrite: bool = False,
+    ) -> Job:
         with self._condition:
             if self._active_operation:
                 raise JobConflictError(self._conflict_message(self._active_operation))
 
             job = Job(
                 job_id=str(uuid.uuid4()),
-                job_type="pipeline",
+                job_type=job_type,
                 status="running",
                 created_at=utc_now(),
                 started_at=utc_now(),
@@ -96,9 +102,13 @@ class JobManager:
             self._events[job.job_id] = deque(maxlen=MAX_LOG_LINES)
             self._event_sequences[job.job_id] = 0
             self._running_job_id = job.job_id
-            self._active_operation = "pipeline"
+            self._active_operation = job_type
 
-        thread = threading.Thread(target=self._run_pipeline, args=(job.job_id,), daemon=True)
+        thread = threading.Thread(
+            target=self._run_staged_job,
+            args=(job.job_id, llm_mode, llm_overwrite),
+            daemon=True,
+        )
         thread.start()
         return job
 
@@ -198,8 +208,15 @@ class JobManager:
             self._terminate_process_tree(process)
             return {"status": "cancelling", "pid": pid}
 
+        if job.job_type == "pipeline":
+            return {"status": "cancelling", "pid": pid}
+
         self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
         return {"status": "cancelled", "pid": pid}
+
+    def _is_cancel_requested(self, job_id: str) -> bool:
+        with self._lock:
+            return job_id in self._cancel_requested
 
     def _run_job(self, job_id: str, command_builder: Any) -> None:
         process: subprocess.Popen[str] | None = None
@@ -302,13 +319,15 @@ class JobManager:
     # Pipeline
     # ------------------------------------------------------------------
 
-    def _run_pipeline(self, job_id: str) -> None:
-        """Run scraper -> LLM -> AI analysis as a single pipeline job.
+    def _run_staged_job(self, job_id: str, llm_mode: str, llm_overwrite: bool) -> None:
+        """Run a scraper, LLM/matching, or complete Pipeline staged job.
 
-        The global ``_active_operation`` lock is already held (set to
-        ``"pipeline"``).  We release it in *finally*.
+        The global ``_active_operation`` lock is already held.  We release it
+        in *finally*.
         """
-        from .ai_analysis import AiAnalysisError, _run_generate_ai_analysis  # local import
+        with self._lock:
+            job_type = self._jobs[job_id].job_type
+        is_pipeline = job_type == "pipeline"
 
         def log(message: str, stream: str = "stdout") -> None:
             self._append_event(
@@ -328,35 +347,64 @@ class JobManager:
                 {
                     "type": "start",
                     "job_id": job_id,
-                    "job_type": "pipeline",
-                    "message": "Pipeline 开始",
+                    "job_type": job_type,
+                    "message": (
+                        "Pipeline 开始"
+                        if is_pipeline
+                        else "LLM 数据处理与匹配开始"
+                        if job_type == "llm"
+                        else "双公告爬虫开始"
+                    ),
                     "timestamp": utc_now(),
                 },
             )
 
-            stages: list[tuple[str, str, Callable[[], tuple[list[str], Path, dict[str, str]]]]] = [
-                ("procurement-scraper", "采购公告爬虫", lambda: self._build_scraper_command("procurement")),
-                ("result-scraper", "结果公告爬虫", lambda: self._build_scraper_command("result")),
-                ("procurement-llm", "采购公告 LLM 结构化", lambda: self._build_llm_command(notice_type="procurement")),
-                ("result-llm", "结果公告 LLM 结构化", lambda: self._build_llm_command(notice_type="result")),
-                ("rule-matching", "规则候选匹配", self._build_rule_matching_command),
-                ("llm-matching", "LLM 双重复核匹配", self._build_llm_matching_command),
-                ("project-merger", "匹配结果汇总", self._build_project_merger_command),
-            ]
+            stages: list[tuple[str, str, Callable[[], tuple[list[str], Path, dict[str, str]]]]] = []
+            if job_type in {"scraper", "pipeline"}:
+                stages.extend([
+                    ("procurement-scraper", "采购公告爬虫", lambda: self._build_scraper_command("procurement")),
+                    ("result-scraper", "结果公告爬虫", lambda: self._build_scraper_command("result")),
+                ])
+            if job_type in {"llm", "pipeline"}:
+                stages.extend([
+                    ("procurement-llm", "采购公告 LLM 结构化", lambda: self._build_llm_command(mode=llm_mode, overwrite=llm_overwrite, notice_type="procurement")),
+                    ("result-llm", "结果公告 LLM 结构化", lambda: self._build_llm_command(mode=llm_mode, overwrite=llm_overwrite, notice_type="result")),
+                    ("rule-matching", "规则候选匹配", self._build_rule_matching_command),
+                    ("llm-matching", "LLM 双重复核匹配", self._build_llm_matching_command),
+                    ("project-merger", "匹配结果汇总", self._build_project_merger_command),
+                ])
             for stage_label, stage_name, command_builder in stages:
+                if self._is_cancel_requested(job_id):
+                    log(f"[{stage_label}] 已收到取消请求，任务停止")
+                    self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
+                    return
                 log(f"[{stage_label}] {stage_name}阶段开始")
                 exit_code = self._execute_stage(job_id, command_builder, stage_label)
+                if self._is_cancel_requested(job_id):
+                    log(f"[{stage_label}] 已取消，任务停止")
+                    self._finish_job(job_id, status="cancelled", exit_code=exit_code, error="管理员手动停止")
+                    return
                 if exit_code != 0:
-                    log(f"[{stage_label}] 失败，退出码 {exit_code}，Pipeline 停止", "stderr")
+                    log(f"[{stage_label}] 失败，退出码 {exit_code}，任务停止", "stderr")
                     self._finish_job(job_id, status="failed", exit_code=exit_code, error=f"{stage_name}失败")
                     return
                 log(f"[{stage_label}] 完成")
 
+            if not is_pipeline:
+                self._finish_job(job_id, status="succeeded", exit_code=0, error=None)
+                return
+
             # Final stage: AI analysis
+            if self._is_cancel_requested(job_id):
+                log("[analysis] 已收到取消请求，Pipeline 停止")
+                self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
+                return
             analysis_enabled = os.getenv("PIPELINE_ANALYSIS_ENABLED", "true").strip().lower()
             if analysis_enabled in ("false", "0", "no", "off"):
                 log("[analysis] skipped (PIPELINE_ANALYSIS_ENABLED=false)")
             else:
+                from .ai_analysis import AiAnalysisError, _run_generate_ai_analysis  # local import
+
                 log("[analysis] 阶段开始")
                 try:
                     analysis_days_str = os.getenv("PIPELINE_ANALYSIS_DAYS", "30")
@@ -365,6 +413,10 @@ class JobManager:
                     except ValueError:
                         analysis_days = 30
                     _run_generate_ai_analysis(days=analysis_days)
+                    if self._is_cancel_requested(job_id):
+                        log("[analysis] 已取消")
+                        self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
+                        return
                     log("[analysis] 完成")
                 except AiAnalysisError as exc:
                     log(f"[analysis] 失败: {exc.detail}", "stderr")
@@ -378,7 +430,13 @@ class JobManager:
             self._finish_job(job_id, status="succeeded", exit_code=0, error=None)
 
         except Exception as exc:
-            self._finish_job(job_id, status="failed", exit_code=None, error=str(exc))
+            if self._is_cancel_requested(job_id):
+                self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
+            else:
+                self._finish_job(job_id, status="failed", exit_code=None, error=str(exc))
+        finally:
+            with self._lock:
+                self._cancel_requested.discard(job_id)
 
     def _execute_stage(
         self,

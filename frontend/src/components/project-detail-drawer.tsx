@@ -2,7 +2,7 @@
 
 import { X, AlertCircle } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
-import { formatDate, formatAmount } from "@/lib/announcement-data";
+import { formatDate, formatAmount, formatAmountInWan } from "@/lib/announcement-data";
 
 interface ProjectDetailDrawerProps {
   record: ProcessedRecord | null;
@@ -89,6 +89,12 @@ export function ProjectDetailDrawer({
             </h3>
             <div className="space-y-2.5">
               <Field
+                label="项目预算"
+                value={formatAmountInWan(record.budget_amount_yuan)}
+                highlight={record.budget_amount_yuan !== null}
+                amountKind="budget"
+              />
+              <Field
                 label="结果公告披露供应商"
                 value={record.normalizedSupplier || "未披露"}
               />
@@ -108,6 +114,7 @@ export function ProjectDetailDrawer({
                     : "未披露"
                 }
                 highlight={record.winning_amount_yuan !== null}
+                amountKind="winning"
               />
             </div>
           </section>
@@ -158,8 +165,8 @@ export function ProjectDetailDrawer({
                 ok={record.normalizedSupplier !== ""}
               />
               <QualityItem
-                label="金额是否披露"
-                ok={record.winning_amount_yuan !== null}
+                label="公开金额是否披露"
+                ok={record.display_amount_yuan !== null}
               />
               <QualityItem
                 label="是否属于非金融科技项目"
@@ -178,11 +185,13 @@ function Field({
   label,
   value,
   highlight,
+  amountKind,
   mono,
 }: {
   label: string;
   value: string;
   highlight?: boolean;
+  amountKind?: "winning" | "budget";
   mono?: boolean;
 }) {
   return (
@@ -190,7 +199,11 @@ function Field({
       <span className="text-[#667085] w-28 shrink-0">{label}</span>
       <span
         className={`flex-1 break-all ${
-          highlight ? "text-[#0F9F8F] font-medium" : "text-[#172033]"
+          highlight
+            ? amountKind === "budget"
+              ? "text-[#2563EB] font-medium"
+              : "text-[#0F9F8F] font-medium"
+            : "text-[#172033]"
         } ${mono ? "font-mono text-[12px]" : ""}`}
       >
         {value}

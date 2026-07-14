@@ -5,6 +5,7 @@ import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
   scoreProject,
   getScoreReason,
+  displayAmountLabel,
   formatDate,
   formatAmount,
 } from "@/lib/announcement-data";
@@ -120,9 +121,10 @@ export function KeyProjectRadar({
                 ) : (
                   <span className="text-[#98A2B3] italic font-normal">招标阶段</span>
                 )}
-                {r.winning_amount_yuan !== null ? (
-                  <span className="text-[#0F9F8F] font-bold tabular-nums text-[12px] shrink-0">
-                    {formatAmount(r.winning_amount_yuan)}
+                {r.display_amount_yuan !== null ? (
+                  <span className={`${r.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"} font-bold tabular-nums text-[12px] shrink-0`}>
+                    <span className="mr-1 text-[10px] font-medium">{displayAmountLabel(r)}</span>
+                    {formatAmount(r.display_amount_yuan)}
                   </span>
                 ) : (
                   <span className="shrink-0 w-4 h-4" />

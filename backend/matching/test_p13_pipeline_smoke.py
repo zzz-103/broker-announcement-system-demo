@@ -65,6 +65,7 @@ class P13PipelineSmokeTest(unittest.TestCase):
                 "package_number": "",
                 "publish_date": "2026-06-01",
                 "procurement_scope_summary": "交易平台",
+                "budget_amount_yuan": "2327300",
                 "source_file": str(root / "p1.md"),
             }
             write_csv(
@@ -115,6 +116,10 @@ class P13PipelineSmokeTest(unittest.TestCase):
             self.assertEqual(merge_summary["excluded_link_count"], len(excluded))
             self.assertEqual(len(accepted), 1)
             self.assertFalse(any(row["result_notice_id"] == "r2" for row in accepted))
+            merged_record = next(row for row in merged if row["document_sha1"] == "p1")
+            self.assertEqual(merged_record["budget_amount_yuan"], "2327300")
+            self.assertEqual(merged_record["winner"], "测试供应商")
+            self.assertEqual(merged_record["winning_amount"], "100")
             self.assertIsNone(project_merger.resolve_procurement_row(results[1], project_merger.prepare_rows(read_csv(procurement_csv))[1]["pm"]))
             self.assertEqual(matcher_summary["result_count"], 3)
             self.assertEqual(

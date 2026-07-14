@@ -18,8 +18,12 @@ interface RawCsvRow {
   project_subcategory?: string;
   project_name?: string;
   procurement_method?: string;
+  budget_amount_yuan?: string;
   winning_supplier?: string;
   winning_amount_yuan?: string;
+  winner?: string;
+  winner_candidates?: string;
+  winning_amount?: string;
   source?: string;
   data_source?: string;
 }
@@ -47,8 +51,11 @@ export interface ProcessedRecord {
   project_subcategory: string;
   project_name_raw: string;
   procurement_method: string;
+  budget_amount_yuan: number | null;
   winning_supplier_raw: string;
   winning_amount_yuan: number | null;
+  display_amount_yuan: number | null;
+  display_amount_kind: "winning" | "budget" | null;
   sourceName: string;
 
   // derived fields
@@ -57,7 +64,7 @@ export interface ProcessedRecord {
   normalizedProjectName: string;
   projectKey: string;
   normalizedSupplier: string;
-  priceSampleKey: string | null;
+  amountSampleKey: string | null;
   primaryDomain: string;
   topicTags: string[];
   isFinTech: boolean;
@@ -221,6 +228,29 @@ function normalizeSupplier(raw: string): string {
   return s;
 }
 
+function candidateSupplierText(raw: string): string {
+  const text = raw.trim();
+  if (!text) return "";
+  try {
+    const candidates: unknown = JSON.parse(text);
+    if (Array.isArray(candidates)) {
+      const names = candidates
+        .filter((candidate): candidate is string => typeof candidate === "string")
+        .map((candidate) => candidate.trim())
+        .filter(Boolean);
+      if (names.length > 0) return names.join("、");
+    }
+  } catch {
+    // Keep non-JSON candidate text as supplied by the backend.
+  }
+  return text;
+}
+
+function parsePositiveAmount(raw: string | undefined): number | null {
+  const parsed = raw?.trim() ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function classifyDomain(
   projectName: string,
   subcategory: string,
@@ -288,21 +318,26 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
     const projectNameRaw = row.project_name?.trim() ?? "";
     const normalizedProjectName = normalizeProjectName(projectNameRaw);
     const projectKey = `${validBrokerName}||${normalizedProjectName}`;
-    const supplierRaw = row.winning_supplier?.trim() ?? "";
+    const supplierRaw =
+      row.winning_supplier?.trim() ||
+      row.winner?.trim() ||
+      candidateSupplierText(row.winner_candidates ?? "");
     const normalizedSupplier = normalizeSupplier(supplierRaw);
 
-    const rawAmount = row.winning_amount_yuan?.trim();
-    const parsedAmount =
-      rawAmount && rawAmount !== "" ? parseFloat(rawAmount) : null;
-    const winningAmount =
-      parsedAmount !== null && !isNaN(parsedAmount) && parsedAmount > 0
-        ? parsedAmount
-        : null;
+    const winningAmount = parsePositiveAmount(
+      row.winning_amount_yuan?.trim() || row.winning_amount,
+    );
+    const budgetAmount = parsePositiveAmount(row.budget_amount_yuan);
 
-    const priceSampleKey =
-      winningAmount !== null
-        ? `${projectKey}||${normalizedSupplier}||${winningAmount}`
+    const displayAmount = winningAmount ?? budgetAmount;
+    const displayAmountKind = winningAmount !== null
+      ? "winning"
+      : budgetAmount !== null
+        ? "budget"
         : null;
+    const amountSampleKey = displayAmount !== null
+      ? `${projectKey}||${displayAmountKind}||${displayAmount}`
+      : null;
 
     const subcategory = row.project_subcategory?.trim() ?? "";
     const category = row.procurement_category?.trim() ?? "";
@@ -335,15 +370,18 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       project_subcategory: subcategory,
       project_name_raw: projectNameRaw,
       procurement_method: procurementMethod,
+      budget_amount_yuan: budgetAmount,
       winning_supplier_raw: supplierRaw,
       winning_amount_yuan: winningAmount,
+      display_amount_yuan: displayAmount,
+      display_amount_kind: displayAmountKind,
       sourceName,
       validBrokerName,
       validPublishDate,
       normalizedProjectName,
       projectKey,
       normalizedSupplier,
-      priceSampleKey,
+      amountSampleKey,
       primaryDomain,
       topicTags,
       isFinTech,
@@ -455,10 +493,22 @@ export function formatAmount(v: number | null): string {
   })}`;
 }
 
+export function formatAmountInWan(v: number | null): string {
+  if (v === null) return "未披露";
+  return `${(v / 10000).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}万元`;
+}
+
+export function displayAmountLabel(record: ProcessedRecord): string {
+  return record.display_amount_kind === "winning" ? "成交金额" : "项目预算";
+}
+
 export function exportCsv(records: ProcessedRecord[]): void {
   const headers = [
     "主体", "项目名称", "金融科技方向", "主题标签", "公告阶段",
-    "采购方式", "结果披露供应商", "公开成交金额", "公告日期",
+    "采购方式", "结果披露供应商", "公开金额类型", "公开金额", "公告日期",
   ];
   const rows = records.map((r) => [
     r.validBrokerName,
@@ -468,7 +518,8 @@ export function exportCsv(records: ProcessedRecord[]): void {
     r.announcement_stage || "待确认",
     r.procurement_method || "方式未识别",
     r.normalizedSupplier || "未披露",
-    r.winning_amount_yuan !== null ? String(r.winning_amount_yuan) : "未披露",
+    r.display_amount_yuan !== null ? displayAmountLabel(r) : "未披露",
+    r.display_amount_yuan !== null ? String(r.display_amount_yuan) : "未披露",
     formatDate(r.validPublishDate),
   ]);
 
@@ -499,8 +550,8 @@ export function scoreProject(r: ProcessedRecord, baseline: Date | null): number 
   if (r.announcement_stage === "结果公示") score += 15;
   // Supplier disclosed
   if (r.normalizedSupplier) score += 10;
-  // Price disclosed
-  if (r.winning_amount_yuan !== null) score += 10;
+  if (r.display_amount_kind === "winning") score += 10;
+  if (r.display_amount_kind === "budget") score += 5;
   // Recent (within 30 days of baseline)
   if (baseline && r.validPublishDate) {
     const diff = baseline.getTime() - r.validPublishDate.getTime();
@@ -519,7 +570,9 @@ export function getScoreReason(r: ProcessedRecord): string {
     reasons.push("具有信创或国产化属性");
   if (r.announcement_stage === "结果公示" && r.normalizedSupplier)
     reasons.push("结果公告已披露供应商");
-  if (r.winning_amount_yuan !== null)
+  if (r.display_amount_kind === "winning")
     reasons.push("公告公开披露成交金额");
+  if (r.display_amount_kind === "budget")
+    reasons.push("公告公开披露项目预算");
   return reasons[0] || "公开招采动态值得关注";
 }

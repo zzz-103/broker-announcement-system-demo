@@ -14,6 +14,7 @@ import {
   Square,
   TerminalSquare,
   Upload,
+  Workflow,
 } from "lucide-react";
 
 import { AdminTaskLogDialog, type AdminTaskLogLine } from "@/components/admin-task-log-dialog";
@@ -75,13 +76,13 @@ const ACTIVE_JOB_STORAGE_KEY = "broker-admin-active-job";
 const INITIAL_CARD_STATE: Record<CardId, TaskCardState> = {
   crawler: {
     status: "idle",
-    summary: "用于抓取最新公告原始 Markdown 数据。",
+    summary: "可选择仅抓取采购与结果公告，或运行完整 Pipeline。",
     logs: [],
-    lastOperationLabel: "一键更新爬虫",
+    lastOperationLabel: "公告采集",
   },
   llm: {
     status: "idle",
-    summary: "先生成候选 CSV，再由管理员手动推送到正式看板。",
+    summary: "默认完成双公告 LLM、匹配与汇总，再由管理员手动推送到正式看板。",
     logs: [],
     lastOperationLabel: "LLM 数据处理",
   },
@@ -126,11 +127,12 @@ function trimLogs(logs: AdminTaskLogLine[]) {
 }
 
 function cardIdForJob(jobType: JobType): CardId {
-  return jobType === "scraper" || jobType === "pipeline" ? "crawler" : "llm";
+  if (jobType === "scraper" || jobType === "pipeline") return "crawler";
+  return "llm";
 }
 
 function labelForOperation(operationId: OperationId): string {
-  if (operationId === "scraper") return "一键更新爬虫";
+  if (operationId === "scraper") return "双公告爬取";
   if (operationId === "llm") return "LLM 数据处理";
   if (operationId === "llm-external") return "外来公告导入";
   if (operationId === "pipeline") return "自动化 Pipeline";
@@ -154,11 +156,17 @@ function isTerminalJobStatus(status: string) {
 }
 
 function jobSuccessSummary(jobType: JobType, label: string): string {
-  if (jobType === "llm" || jobType === "llm-external") {
+  if (jobType === "llm-external") {
     return "LLM 处理完成，候选数据已生成，请点击\u2018推送\u2019更新正式看板。";
   }
+  if (jobType === "llm") {
+    return "双公告 LLM 结构化、规则匹配、LLM 双复核与 merger 已完成；请审核最终合并表后推送正式看板。";
+  }
   if (jobType === "pipeline") {
-    return "双公告爬取、双 LLM 结构化与双重复核匹配已完成；匹配结果已写入 staging。请审核后推送采购公告看板数据。";
+    return "双公告爬取、双 LLM 结构化、规则匹配、LLM 双复核与 merger 已完成；请审核最终合并表后推送正式看板。";
+  }
+  if (jobType === "scraper") {
+    return "采购公告与结果公告爬取完成；尚未运行 LLM、匹配或汇总。";
   }
   return `${label}已完成。`;
 }
@@ -260,6 +268,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   }, []);
 
   const [logDialogCard, setLogDialogCard] = useState<CardId | null>(null);
+  const [crawlerModeDialogOpen, setCrawlerModeDialogOpen] = useState(false);
   const [llmModeDialogOpen, setLlmModeDialogOpen] = useState(false);
 
   const mountedRef = useRef(true);
@@ -378,8 +387,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       const cardId =
         operationId === "ai_analysis"
           ? "ai"
-          : operationId === "scraper" || operationId === "pipeline"
+          : operationId === "scraper"
             ? "crawler"
+            : operationId === "pipeline"
+              ? "crawler"
             : "llm";
 
       setCardSummary(cardId, status, summary, label);
@@ -513,7 +524,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             ? "正在启动双公告爬取、LLM 结构化与匹配 Pipeline..."
           : jobType === "llm-external"
             ? "正在导入外来公告，输出候选 CSV..."
-          : "正在启动 LLM 数据处理，输出候选 CSV...";
+          : "正在启动双公告 LLM、匹配与汇总...";
       const label = beginOperation(jobType, cardId, initialMessage);
       const controller = new AbortController();
       abortRefs.current[jobType]?.abort();
@@ -749,6 +760,14 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     [runJob],
   );
 
+  const chooseCrawlerJob = useCallback(
+    async (jobType: Extract<JobType, "scraper" | "pipeline">) => {
+      setCrawlerModeDialogOpen(false);
+      await runJob(jobType);
+    },
+    [runJob],
+  );
+
   useEffect(() => {
     if (!token || activeOperationRef.current) return;
     const storedJob = readActiveJob();
@@ -893,7 +912,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       return;
     }
 
-    const label = beginOperation("publish", "llm", "正在校验候选 CSV 并推送到正式看板...");
+    const label = beginOperation("publish", "llm", "正在校验最终合并表并推送到正式看板...");
     const controller = new AbortController();
     directAbortRef.current?.abort();
     directAbortRef.current = controller;
@@ -921,7 +940,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       }
       let summary: string;
       if (error instanceof BackendApiError && error.status === 404) {
-        summary = "候选数据文件不存在，请先运行 LLM 生成候选 CSV，再执行推送。";
+        summary = "最终合并表不存在，请先运行完整 Pipeline，再执行推送。";
       } else if (error instanceof BackendApiError) {
         summary = backendErrorMessage(error);
       } else if (error instanceof Error) {
@@ -1013,6 +1032,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   }, [appendLog, beginOperation, finalizeTask, handleUnauthorized, token]);
 
   const handleLogout = useCallback(() => {
+    setCrawlerModeDialogOpen(false);
     setLlmModeDialogOpen(false);
     abortRefs.current.scraper?.abort();
     abortRefs.current.llm?.abort();
@@ -1027,15 +1047,15 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         id: "crawler" as const,
         icon: Globe,
         iconBg: "from-emerald-500 to-teal-600",
-        title: "一键更新爬虫",
-        description: "可单独抓取采购公告，或一键完成双公告爬取、LLM 结构化与匹配。",
+        title: "公告采集",
+        description: "抓取采购公告与结果公告；可选择仅采集，或继续运行完整 Pipeline。",
       },
       {
         id: "llm" as const,
         icon: Database,
         iconBg: "from-blue-500 to-indigo-600",
         title: "LLM 数据处理",
-        description: "生成候选 CSV；外来公告请先放入 external/notices 目录，再点击导入。",
+        description: "默认完成双公告 LLM、匹配与汇总；外来公告仅生成候选 CSV。",
       },
       {
         id: "ai" as const,
@@ -1098,7 +1118,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-3">
+        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
           {cards.map((card) => {
             const state = cardStates[card.id];
             const isBusy = Boolean(activeOperation);
@@ -1205,24 +1225,15 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         </Button>
                       </div>
                     ) : card.id === "crawler" ? (
-                      <div className="flex items-center gap-2 w-full">
-                        <GlowButton
-                          onClick={() => void runJob("pipeline")}
-                          disabled={isBusy}
-                          className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex-[7] flex items-center justify-center gap-1.5"
-                        >
-                          {activeOperation?.id === "pipeline" ? (
-                            <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
-                          ) : "运行完整 Pipeline"}
-                        </GlowButton>
-                        <Button
-                          type="button"
-                          onClick={() => void runJob("scraper")}
-                          disabled={isBusy}
-                          variant="outline"
-                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex-[3]"
-                        >单独爬取</Button>
-                      </div>
+                      <GlowButton
+                        onClick={() => setCrawlerModeDialogOpen(true)}
+                        disabled={isBusy}
+                        className="h-10 w-full text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
+                      >
+                        {activeOperation?.id === "scraper" || activeOperation?.id === "pipeline" ? (
+                          <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
+                        ) : "选择采集方式"}
+                      </GlowButton>
                     ) : (
                       <GlowButton
                         onClick={() => void runAiAnalysis()}
@@ -1249,7 +1260,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           onCancel={
             activeOperation?.id === "scraper" ||
             activeOperation?.id === "llm" ||
-            activeOperation?.id === "llm-external"
+            activeOperation?.id === "llm-external" ||
+            activeOperation?.id === "pipeline"
               ? handleCancel
               : undefined
           }
@@ -1261,7 +1273,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             <div className="text-xs text-blue-800 flex flex-wrap gap-x-6 gap-y-1 leading-relaxed">
               <p>
                 <span className="font-semibold text-blue-900">操作说明：</span>
-                爬虫与 LLM 任务执行中；LLM 成功后仅生成候选 CSV，不会直接刷新正式看板。
+                仅采集会顺序抓取采购公告和结果公告；之后运行 LLM 会自动完成匹配与汇总，且不会自动推送正式看板。
               </p>
               <p>
                 <span className="font-semibold text-blue-900">注意事项：</span>
@@ -1286,12 +1298,48 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         logs={selectedLogCardState?.logs ?? []}
       />
 
+      <Dialog open={crawlerModeDialogOpen} onOpenChange={setCrawlerModeDialogOpen}>
+        <DialogContent className="max-w-md border-[#D9E2EC]">
+          <DialogHeader>
+            <DialogTitle className="text-base text-[#172033]">选择采集方式</DialogTitle>
+            <DialogDescription className="text-[#667085]">
+              两种方式都会依次抓取采购公告和结果公告；完整 Pipeline 不会自动推送正式看板。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 pt-2">
+            <Button
+              type="button"
+              onClick={() => void chooseCrawlerJob("scraper")}
+              variant="outline"
+              className="h-auto min-h-16 justify-start border-emerald-200 px-4 py-3 text-left text-emerald-700 hover:bg-emerald-50"
+            >
+              <Globe className="size-4 shrink-0" />
+              <span>
+                <span className="block text-sm font-semibold">仅爬取双公告</span>
+                <span className="mt-0.5 block text-xs font-normal text-[#667085]">只下载 Markdown，不运行 LLM、匹配或汇总。</span>
+              </span>
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void chooseCrawlerJob("pipeline")}
+              className="h-auto min-h-16 justify-start bg-[#162B49] px-4 py-3 text-left text-white hover:bg-[#1e3a5f]"
+            >
+              <Workflow className="size-4 shrink-0" />
+              <span>
+                <span className="block text-sm font-semibold">运行完整 Pipeline</span>
+                <span className="mt-0.5 block text-xs font-normal text-white/70">继续运行双 LLM、匹配与 merger，完成后人工推送。</span>
+              </span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={llmModeDialogOpen} onOpenChange={setLlmModeDialogOpen}>
         <DialogContent className="max-w-md border-[#D9E2EC]">
           <DialogHeader>
             <DialogTitle className="text-base text-[#172033]">选择 LLM 处理来源</DialogTitle>
             <DialogDescription className="text-[#667085]">
-              选择本次要处理正常爬虫公告，或处理已放入 external/notices 的外来 Markdown。
+              正常公告会处理双公告并自动匹配、汇总；外来 Markdown 仅生成候选 CSV。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 pt-2">
@@ -1301,7 +1349,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               className="h-11 justify-start bg-[#162B49] text-sm font-semibold text-white hover:bg-[#1e3a5f]"
             >
               <Database className="size-4" />
-              处理正常公告
+              处理双公告并匹配
             </Button>
             <Button
               type="button"

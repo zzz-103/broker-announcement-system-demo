@@ -102,15 +102,15 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       .slice(0, 3)
       .map(([s]) => s);
 
-    // Summary 4: Price disclosure rate
-    const priceSamples = uniqueCount(
-      data.filter((r) => r.priceSampleKey).map((r) => r.priceSampleKey!)
+    // Summary 4: Public amount disclosure rate
+    const amountSamples = uniqueCount(
+      data.filter((r) => r.amountSampleKey).map((r) => r.amountSampleKey!)
     );
     const totalProjects = uniqueCount(data.map((r) => r.projectKey));
-    const priceRate =
-      totalProjects > 0 ? ((priceSamples / totalProjects) * 100).toFixed(1) : "0";
+    const amountRate =
+      totalProjects > 0 ? ((amountSamples / totalProjects) * 100).toFixed(1) : "0";
 
-    return { topDomains, topBrokers, topSuppliers, priceSamples, priceRate };
+    return { topDomains, topBrokers, topSuppliers, amountSamples, amountRate };
   }, [data, baseline]);
 
   // Coverage quality
@@ -120,8 +120,8 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
     const validSuppliers = allData.filter(
       (r) => r.normalizedSupplier !== ""
     ).length;
-    const validPrices = allData.filter(
-      (r) => r.winning_amount_yuan !== null
+    const validAmounts = allData.filter(
+      (r) => r.display_amount_yuan !== null
     ).length;
 
     // Duplicate sha1 detection
@@ -137,7 +137,7 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       latestDate: formatDate(baseline),
       dateRate: total > 0 ? ((validDates / total) * 100).toFixed(1) : "0",
       supplierRate: total > 0 ? ((validSuppliers / total) * 100).toFixed(1) : "0",
-      priceRate: total > 0 ? ((validPrices / total) * 100).toFixed(1) : "0",
+      amountRate: total > 0 ? ((validAmounts / total) * 100).toFixed(1) : "0",
       dupCount,
       totalBrokers: uniqueCount(
         allData.filter((r) => r.validBrokerName !== "主体待识别").map((r) => r.validBrokerName)
@@ -198,7 +198,7 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
             {/* 3. 底部辅助说明 */}
             <div className="border-t border-[#F0F2F5] pt-3 mt-3 flex items-center justify-between text-[12px] text-[#667085] flex-wrap gap-2">
               <div>
-                当前拥有有效公开价格样本 <span className="font-bold text-[#0F9F8F] text-[13px]">{summary.priceSamples}</span> 条，价格披露率为 <span className="font-bold text-blue-600 text-[13px]">{summary.priceRate}%</span>。
+                当前拥有有效公开金额样本 <span className="font-bold text-[#0F9F8F] text-[13px]">{summary.amountSamples}</span> 条，金额披露率为 <span className="font-bold text-blue-600 text-[13px]">{summary.amountRate}%</span>。
               </div>
               <div className="text-[11px] text-[#98A2B3]">
                 ℹ️ 数据受到各主体信息披露程度及采集覆盖范围影响。
@@ -244,8 +244,8 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
               color="#0F9F8F"
             />
             <CoverageBar
-              label="价格字段完整率"
-              value={parseFloat(coverage.priceRate)}
+              label="金额字段完整率"
+              value={parseFloat(coverage.amountRate)}
               color="#F59E0B"
             />
           </div>

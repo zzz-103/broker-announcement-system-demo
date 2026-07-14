@@ -3,7 +3,9 @@
 import { useMemo } from "react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
+  displayAmountLabel,
   formatDate,
+  formatAmountInWan,
   uniqueCount,
 } from "@/lib/announcement-data";
 import { Info } from "lucide-react";
@@ -214,14 +216,12 @@ export function SupplierObservationCard({ data }: ObservationProps) {
 
 export function PriceSamplesCard({ data }: ObservationProps) {
   const samples = useMemo(() => {
-    const priceRecords = data.filter(
-      (r) => r.priceSampleKey && r.normalizedSupplier
-    );
-    // Deduplicate by priceSampleKey
+    const amountRecords = data.filter((r) => r.amountSampleKey);
+    // Deduplicate by amount sample key.
     const seen = new Set<string>();
-    const unique = priceRecords.filter((r) => {
-      if (seen.has(r.priceSampleKey!)) return false;
-      seen.add(r.priceSampleKey!);
+    const unique = amountRecords.filter((r) => {
+      if (seen.has(r.amountSampleKey!)) return false;
+      seen.add(r.amountSampleKey!);
       return true;
     });
     // Sort by date desc, take 5
@@ -238,7 +238,7 @@ export function PriceSamplesCard({ data }: ObservationProps) {
     <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between">
       <div>
         <h3 className="text-[14px] font-bold text-[#172033] mb-3.5">
-          公开价格案例
+          公开金额案例
         </h3>
         <div className="space-y-3">
           {samples.map((s, i) => (
@@ -253,9 +253,9 @@ export function PriceSamplesCard({ data }: ObservationProps) {
                 <span className="text-[11px] text-[#667085] truncate max-w-[120px]" title={s.validBrokerName}>
                   {s.validBrokerName}
                 </span>
-                <span className="text-[11px] text-[#0F9F8F] font-bold tabular-nums">
-                  {s.winning_amount_yuan !== null
-                    ? `¥${(s.winning_amount_yuan / 10000).toFixed(1)}万`
+                <span className={`text-[11px] font-bold tabular-nums ${s.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}`}>
+                  {s.display_amount_yuan !== null
+                    ? `${displayAmountLabel(s)} · ${formatAmountInWan(s.display_amount_yuan)}`
                     : ""}
                 </span>
               </div>
