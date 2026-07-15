@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from backend.api.supplemental_seed import CANONICAL_FIELDS
 from backend.llm_table.llm_markdown_table_builder import LLMApiConfig
 from backend.matching import llm_matcher, project_matcher, project_merger
 
@@ -110,6 +111,10 @@ class P13PipelineSmokeTest(unittest.TestCase):
             accepted = read_csv(final_dir / "accepted_links.csv")
             excluded = read_csv(final_dir / "excluded_results.csv")
             merged = read_csv(final_dir / "announcement_table_merged_test.csv")
+            with (final_dir / "announcement_table_merged_test.csv").open(
+                "r", encoding="utf-8-sig", newline=""
+            ) as file:
+                self.assertEqual(next(csv.reader(file)), CANONICAL_FIELDS)
             self.assertEqual(merge_summary["deduplicated_count"], 1)
             self.assertEqual(len(merged), 3)
             self.assertEqual(merge_summary["accepted_link_count"], len(accepted))

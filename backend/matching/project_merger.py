@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from backend.api.supplemental_seed import CANONICAL_FIELDS
 from backend.matching import project_matcher
 
 
@@ -19,7 +20,7 @@ DEFAULT_PROCUREMENT_CSV = ROOT_DIR / "data" / "staging" / "announcement_table.cs
 DEFAULT_RESULT_CSV = ROOT_DIR / "data" / "staging" / "result" / "result_table.csv"
 DEFAULT_VERIFIED_LINKS_CSV = ROOT_DIR / "data" / "staging" / "llm_matching" / "llm_verified_links.csv"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "data" / "staging" / "final"
-MERGER_VERSION = "p13e_project_merger_v1"
+MERGER_VERSION = "p13e_project_merger_v2"
 
 MERGED_RESULT_FIELDS = [
     "result_notice_id",
@@ -440,8 +441,22 @@ def run_merger(
         "merger_version": MERGER_VERSION,
     }
 
+    # Keep record_key internal to matching. The publication input must use the
+    # single canonical schema, regardless of whether the procurement source is
+    # the current 22-column table or the legacy table without is_broker_project.
+    output_rows = merged_rows
+    if "is_broker_project" not in procurement_fields:
+        output_rows = [
+            {**row, "is_broker_project": "true"}
+            for row in merged_rows
+        ]
+
     # All validation and selection completes before the output directory is created.
-    write_csv_atomic(output_dir / "announcement_table_merged_test.csv", procurement_fields + ["record_key"] + MERGED_RESULT_FIELDS, merged_rows)
+    write_csv_atomic(
+        output_dir / "announcement_table_merged_test.csv",
+        CANONICAL_FIELDS,
+        output_rows,
+    )
     write_csv_atomic(output_dir / "accepted_links.csv", ACCEPTED_LINK_FIELDS, accepted_link_rows)
     write_csv_atomic(output_dir / "excluded_results.csv", EXCLUDED_RESULT_FIELDS, excluded)
     write_json_atomic(output_dir / "run_summary.json", summary)
