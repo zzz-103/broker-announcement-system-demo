@@ -814,6 +814,7 @@ Codex 必须遵守：
 - `backend/data/staging/.gitkeep` 已提交，运行时 CSV 通过 `.gitignore` 排除
 - 自动化流水线（Pipeline）一键运行功能（串联 scraper -> llm -> analysis）与 API 触发
 - Pipeline 已扩展为采购/结果双公告爬取、双 LLM 结构化、规则候选匹配、LLM 双重复核和保守汇总；匹配产物仅写入 staging，仍需人工审核后发布
+- 未匹配结果公告可作为独立“结果公示”记录追加到最终看板数据，已匹配结果仍合并到采购公告记录
 - 独立定时任务调度进程（Scheduler），基于 APScheduler 实现 CRON 调度，持有 `X-Scheduler-Token` 安全头进行内部验证触发
 - 任务取消机制：通过 `POST /api/jobs/{job_id}/cancel` 支持中止运行中的子进程或流水线
 - 采购公告与结果公告规则匹配器（`backend/matching/project_matcher.py`），输出匹配、候选分数、未匹配结果和运行摘要

@@ -20,7 +20,7 @@ DEFAULT_PROCUREMENT_CSV = ROOT_DIR / "data" / "staging" / "announcement_table.cs
 DEFAULT_RESULT_CSV = ROOT_DIR / "data" / "staging" / "result" / "result_table.csv"
 DEFAULT_VERIFIED_LINKS_CSV = ROOT_DIR / "data" / "staging" / "llm_matching" / "llm_verified_links.csv"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "data" / "staging" / "final"
-MERGER_VERSION = "p13e_project_merger_v2"
+MERGER_VERSION = "p13e_project_merger_v3"
 
 MERGED_RESULT_FIELDS = [
     "result_notice_id",
@@ -252,6 +252,48 @@ def exclusion_row(link: dict[str, str], result_row: dict[str, str] | None, reaso
     }
 
 
+def standalone_result_row(result_row: dict[str, str], result_notice_id: str) -> dict[str, str]:
+    """Convert an unlinked result notice into a publishable dashboard row."""
+    result_title = normalize_text(result_row.get("title"))
+    winning_amount = normalize_text(result_row.get("winning_amount"))
+    return {
+        "broker_folder": normalize_text(result_row.get("broker_folder")),
+        "markdown_file": normalize_text(result_row.get("markdown_file")),
+        "document_sha1": normalize_text(result_row.get("document_sha1")),
+        "processed_at": normalize_text(result_row.get("processed_at")),
+        "raw_json_path": normalize_text(result_row.get("raw_json_path")),
+        "broker_name": normalize_text(result_row.get("purchaser")),
+        "is_broker_project": normalize_text(result_row.get("is_broker_project")) or "true",
+        "publish_date": normalize_text(result_row.get("publish_date")),
+        "announcement_stage": "结果公示",
+        "procurement_category": "",
+        "project_subcategory": "",
+        "project_name": normalize_text(result_row.get("project_name")) or result_title,
+        "procurement_method": "",
+        "procurement_action": "",
+        "procurement_scope_summary": "",
+        "budget_amount_yuan": "",
+        "ceiling_price_yuan": "",
+        "winning_amount_yuan": winning_amount,
+        "bid_deadline_at": "",
+        "service_period_months": "",
+        "delivery_period_days": "",
+        "winning_supplier": normalize_text(result_row.get("winner")),
+        "result_notice_id": result_notice_id,
+        "result_title": result_title,
+        "result_type": normalize_text(result_row.get("result_type")),
+        "result_status": normalize_text(result_row.get("result_status")),
+        "result_publish_date": normalize_text(result_row.get("publish_date")),
+        "winner": normalize_text(result_row.get("winner")),
+        "winner_candidates": normalize_text(result_row.get("winner_candidates")),
+        "winning_amount": winning_amount,
+        "result_match_method": "unmatched_result_notice",
+        "result_match_confidence": "",
+        "result_notice_count": "1",
+        "result_history_json": "",
+    }
+
+
 def validate_link(
     link: dict[str, str],
     result_rows_by_id: dict[str, dict[str, str]],
@@ -370,6 +412,13 @@ def run_merger(
     for item in accepted:
         accepted_by_procurement[item["procurement_record_key"]].append(item)
 
+    accepted_result_ids = {item["result_notice_id"] for item in accepted}
+    standalone_results = [
+        standalone_result_row(result_row, result_notice_id)
+        for result_notice_id, result_row in result_rows_by_id.items()
+        if result_notice_id not in accepted_result_ids
+    ]
+
     merged_rows: list[dict[str, Any]] = []
     for procurement_row in procurement_rows:
         merged = dict(procurement_row)
@@ -433,6 +482,7 @@ def run_merger(
         "verified_link_count": len(links),
         "accepted_link_count": len(accepted_link_rows),
         "excluded_link_count": len(excluded),
+        "standalone_result_count": len(standalone_results),
         "merged_procurement_count": len(accepted_by_procurement),
         "multi_result_project_count": sum(len(items) > 1 for items in accepted_by_procurement.values()),
         "missing_procurement_count": missing_procurement_count,
@@ -444,11 +494,11 @@ def run_merger(
     # Keep record_key internal to matching. The publication input must use the
     # single canonical schema, regardless of whether the procurement source is
     # the current 22-column table or the legacy table without is_broker_project.
-    output_rows = merged_rows
+    output_rows = [*merged_rows, *standalone_results]
     if "is_broker_project" not in procurement_fields:
         output_rows = [
             {**row, "is_broker_project": "true"}
-            for row in merged_rows
+            for row in output_rows
         ]
 
     # All validation and selection completes before the output directory is created.

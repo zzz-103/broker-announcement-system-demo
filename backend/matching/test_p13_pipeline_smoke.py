@@ -116,11 +116,16 @@ class P13PipelineSmokeTest(unittest.TestCase):
             ) as file:
                 self.assertEqual(next(csv.reader(file)), CANONICAL_FIELDS)
             self.assertEqual(merge_summary["deduplicated_count"], 1)
-            self.assertEqual(len(merged), 3)
+            self.assertEqual(len(merged), 5)
             self.assertEqual(merge_summary["accepted_link_count"], len(accepted))
             self.assertEqual(merge_summary["excluded_link_count"], len(excluded))
+            self.assertEqual(merge_summary["standalone_result_count"], 2)
             self.assertEqual(len(accepted), 1)
             self.assertFalse(any(row["result_notice_id"] == "r2" for row in accepted))
+            standalone = [row for row in merged if row["result_notice_id"] in {"r2", "r3"}]
+            self.assertEqual(len(standalone), 2)
+            self.assertTrue(all(row["announcement_stage"] == "结果公示" for row in standalone))
+            self.assertTrue(all(row["result_match_method"] == "unmatched_result_notice" for row in standalone))
             merged_record = next(row for row in merged if row["document_sha1"] == "p1")
             self.assertEqual(merged_record["budget_amount_yuan"], "2327300")
             self.assertEqual(merged_record["winner"], "测试供应商")

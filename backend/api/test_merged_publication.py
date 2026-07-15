@@ -193,17 +193,24 @@ class MergedPublicationTests(unittest.TestCase):
         self.assertIsNotNone(publish_response.json()["meta"]["backup_file"])
 
         published_rows = read_csv(self.target_path)
-        self.assertEqual(len(published_rows), 1)
-        published = published_rows[0]
+        self.assertEqual(len(published_rows), 2)
+        published = next(row for row in published_rows if row["result_notice_id"] == "result-verified")
         self.assertEqual(published["budget_amount_yuan"], "2327300")
         self.assertEqual(published["winner_candidates"], '["候选供应商甲", "候选供应商乙"]')
         self.assertEqual(published["winning_amount"], "1980000")
         self.assertEqual(published["result_notice_id"], "result-verified")
         self.assertNotEqual(published["winning_amount"], "9999999")
 
+        standalone = next(row for row in published_rows if row["result_notice_id"] == "result-review")
+        self.assertEqual(standalone["announcement_stage"], "结果公示")
+        self.assertEqual(standalone["result_match_method"], "unmatched_result_notice")
+        self.assertEqual(standalone["project_name"], "测试网络采购项目")
+
         data_response = self.client.get("/api/data/announcements", headers=headers)
         self.assertEqual(data_response.status_code, 200)
-        record = data_response.json()["records"][0]
+        record = next(
+            row for row in data_response.json()["records"] if row["result_notice_id"] == "result-verified"
+        )
         self.assertEqual(record["budget_amount_yuan"], "2327300")
         self.assertEqual(record["winner_candidates"], '["候选供应商甲", "候选供应商乙"]')
         self.assertEqual(record["winning_amount"], "1980000")
