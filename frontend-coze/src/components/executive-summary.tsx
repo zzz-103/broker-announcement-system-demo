@@ -124,8 +124,14 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       (r) => r.display_amount_yuan !== null
     ).length;
 
-    // Source-document identifiers are intentionally not published in the Coze data snapshot.
-    const dupCount = 0;
+    // Duplicate sha1 detection
+    const shaMap: Record<string, Set<string>> = {};
+    for (const r of allData) {
+      if (!r.document_sha1) continue;
+      if (!shaMap[r.document_sha1]) shaMap[r.document_sha1] = new Set();
+      shaMap[r.document_sha1].add(r.markdown_file);
+    }
+    const dupCount = Object.values(shaMap).filter((s) => s.size > 1).length;
 
     return {
       latestDate: formatDate(baseline),

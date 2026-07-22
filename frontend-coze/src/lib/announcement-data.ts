@@ -1,6 +1,6 @@
 interface StaticAnnouncementsResponse {
   records: Record<string, string>[];
-  meta: { count: number; updated_at: string | null };
+  updatedAt: string | null;
 }
 
 interface StaticManifest {
@@ -13,7 +13,6 @@ function parseCsv(text: string): Record<string, string>[] {
   let row: string[] = [];
   let cell = "";
   let quoted = false;
-
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     const next = text[index + 1];
@@ -35,16 +34,12 @@ function parseCsv(text: string): Record<string, string>[] {
       cell += char;
     }
   }
-
   if (cell !== "" || row.length > 0) {
     row.push(cell);
     if (row.some((value) => value.trim() !== "")) rows.push(row);
   }
-
   const headers = rows.shift()?.map((header) => header.replace(/^\uFEFF/, "").trim()) ?? [];
-  return rows.map((values) =>
-    Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""]))
-  );
+  return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])));
 }
 
 async function fetchStaticAnnouncements(): Promise<StaticAnnouncementsResponse> {
@@ -62,13 +57,18 @@ async function fetchStaticAnnouncements(): Promise<StaticAnnouncementsResponse> 
       updatedAt = manifest.data_updated_at ?? manifest.announcement_updated_at ?? null;
     }
   } catch {
-    // The CSV remains usable when optional manifest metadata is unavailable.
+    // The CSV remains usable when optional metadata is unavailable.
   }
-  return { records, meta: { count: records.length, updated_at: updatedAt } };
+  return { records, updatedAt };
 }
 
 // ─── Raw CSV row ───
 interface RawCsvRow {
+  broker_folder?: string;
+  markdown_file?: string;
+  document_sha1?: string;
+  processed_at?: string;
+  raw_json_path?: string;
   broker_name?: string;
   is_broker_project?: string;
   publish_date?: string;
@@ -96,6 +96,12 @@ export class DataNotGeneratedError extends Error {
 
 // ─── Processed record ───
 export interface ProcessedRecord {
+  // raw fields
+  broker_folder: string;
+  markdown_file: string;
+  document_sha1: string;
+  processed_at: string;
+  raw_json_path: string;
   broker_name_raw: string;
   is_broker_project: boolean | null;
   publish_date_raw: string;
@@ -410,6 +416,11 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
     ].join("\n").toLowerCase();
 
     return {
+      broker_folder: row.broker_folder?.trim() ?? "",
+      markdown_file: row.markdown_file?.trim() ?? "",
+      document_sha1: row.document_sha1?.trim() ?? "",
+      processed_at: row.processed_at?.trim() ?? "",
+      raw_json_path: row.raw_json_path?.trim() ?? "",
       broker_name_raw: brokerNameRaw,
       is_broker_project: isBrokerProject,
       publish_date_raw: publishDateRaw,
@@ -465,7 +476,7 @@ export async function loadAndProcessData(): Promise<LoadedAnnouncementData> {
   const data = await fetchStaticAnnouncements();
   return {
     records: data.records.length === 0 ? [] : processRecords(data.records as RawCsvRow[]),
-    updatedAt: data.meta.updated_at,
+    updatedAt: data.updatedAt,
   };
 }
 

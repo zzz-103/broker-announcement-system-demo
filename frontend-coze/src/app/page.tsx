@@ -1,109 +1,501 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AiSummary } from "@/components/ai-summary";
-import { CozeAdminPanel } from "@/components/coze-admin-panel";
-import { CozeFeedbackDialog } from "@/components/coze-feedback-dialog";
-import { CozeHeader } from "@/components/coze-header";
-import { CozeLoginPanel } from "@/components/coze-login-panel";
-import { DataDefinitionModal } from "@/components/data-definition-modal";
+import { useCallback, useDeferredValue, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
+import dynamic from "next/dynamic";
+import {
+  DataNotGeneratedError,
+  loadAndProcessData,
+  getDataBaseline,
+  getDashboardStatistics,
+  getValidBrokerName,
+  exportCsv,
+  type ProcessedRecord,
+} from "@/lib/announcement-data";
+import { useFilterStore } from "@/store/filter-store";
+import { useAuthStore } from "@/store/auth-store";
+import { recordDashboardView, type FeedbackCategory } from "@/lib/local-platform-service";
+import { getAuditContext } from "@/lib/audit-context";
+import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardFilters } from "@/components/dashboard-filters";
 import { DashboardTabs } from "@/components/dashboard-tabs";
-import { ExecutiveSummary } from "@/components/executive-summary";
+import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import { MetricCards } from "@/components/metric-cards";
-import { ProcurementTrendChart, DomainDistributionChart, StageDistributionChart } from "@/components/charts";
-import { BrokerActivityCard, SupplierObservationCard, PriceSamplesCard } from "@/components/observation-cards";
-import { KeyProjectRadar } from "@/components/key-project-radar";
-import { ProjectDetailDrawer } from "@/components/project-detail-drawer";
-import { ProjectTable } from "@/components/project-table";
-import { DataNotGeneratedError, getDashboardStatistics, getDataBaseline, getValidBrokerName, loadAndProcessData, type ProcessedRecord } from "@/lib/announcement-data";
-import { useAuthStore } from "@/store/auth-store";
-import { useFilterStore } from "@/store/filter-store";
+import { ExecutiveSummary } from "@/components/executive-summary";
+import { FeedbackDialog } from "@/components/feedback-dialog";
 
-export default function Page() {
-  const { user, restoreSession } = useAuthStore();
-  useEffect(() => restoreSession(), [restoreSession]);
-  return user ? <AuthenticatedApp /> : <CozeLoginPanel />;
-}
+// ─── Dynamic imports for heavy components (code splitting) ───
+const AdminDashboard = dynamic(
+  () => import("@/components/admin-dashboard").then((m) => m.AdminDashboard),
+  { ssr: false }
+);
+const AiSummary = dynamic(
+  () => import("@/components/ai-summary").then((m) => m.AiSummary),
+  { ssr: false, loading: () => <div className="h-48 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+);
+const ProcurementTrendChart = dynamic(
+  () => import("@/components/charts").then((m) => m.ProcurementTrendChart),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+);
+const DomainDistributionChart = dynamic(
+  () => import("@/components/charts").then((m) => m.DomainDistributionChart),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+);
+const StageDistributionChart = dynamic(
+  () => import("@/components/charts").then((m) => m.StageDistributionChart),
+  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+);
+const BrokerActivityCard = dynamic(
+  () => import("@/components/observation-cards").then((m) => m.BrokerActivityCard),
+  { ssr: false }
+);
+const SupplierObservationCard = dynamic(
+  () => import("@/components/observation-cards").then((m) => m.SupplierObservationCard),
+  { ssr: false }
+);
+const PriceSamplesCard = dynamic(
+  () => import("@/components/observation-cards").then((m) => m.PriceSamplesCard),
+  { ssr: false }
+);
+const KeyProjectRadar = dynamic(
+  () => import("@/components/key-project-radar").then((m) => m.KeyProjectRadar),
+  { ssr: false }
+);
+const ProjectTable = dynamic(
+  () => import("@/components/project-table").then((m) => m.ProjectTable),
+  { ssr: false }
+);
+const ProjectDetailDrawer = dynamic(
+  () => import("@/components/project-detail-drawer").then((m) => m.ProjectDetailDrawer),
+  { ssr: false }
+);
+const DataDefinitionModal = dynamic(
+  () => import("@/components/data-definition-modal").then((m) => m.DataDefinitionModal),
+  { ssr: false }
+);
 
-function AuthenticatedApp() {
-  const { user, logout } = useAuthStore();
-  const [records, setRecords] = useState<ProcessedRecord[]>([]);
-  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
-  const [dataVersion, setDataVersion] = useState("");
-  const [dataMessage, setDataMessage] = useState("正在加载看板数据...");
-  const [definitionOpen, setDefinitionOpen] = useState(false);
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
+const DOMAIN_OPTIONS = [
+  "AI与智能化",
+  "数据治理与数据平台",
+  "财富管理与客户经营",
+  "交易、柜台与核心系统",
+  "APP与数字化渠道",
+  "网络安全与监管科技",
+  "云计算、算力与基础设施",
+  "IT运维与技术服务",
+  "投研资讯与金融数据",
+  "非金融科技及其他",
+];
+
+export default function Dashboard() {
+  const [allData, setAllData] = useState<ProcessedRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
+  const [dataMessage, setDataMessage] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] =
+    useState<ProcessedRecord | null>(null);
+  const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<"ai" | "overview" | "table">("overview");
-  const [selectedProject, setSelectedProject] = useState<ProcessedRecord | null>(null);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [dataVersion, setDataVersion] = useState(0);
+  const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
+  const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
+
+  // Auth state
+  const { isLoggedIn, isAdmin, username, logout, token } = useAuthStore();
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !token || showDashboard) return;
+    recordDashboardView(token, getAuditContext());
+  }, [isLoggedIn, showDashboard, token]);
+
+  // Header height measurement for sticky tab bar positioning
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(72);
+
+  // Broker tags: limit to 2 rows, sorted by data volume
   const brokerTagsRef = useRef<HTMLDivElement>(null);
   const [visibleBrokerCount, setVisibleBrokerCount] = useState(999);
   const [showAllBrokers, setShowAllBrokers] = useState(false);
-  const filters = useFilterStore();
 
-  useEffect(() => {
-    Promise.all([
-      loadAndProcessData(),
-      fetch("/data/manifest.json", { cache: "no-store" }).then((response): Promise<{ version?: string }> => response.ok ? response.json() as Promise<{ version?: string }> : Promise.resolve({})),
-    ])
-      .then(([loaded, manifest]) => {
-        setRecords(loaded.records);
-        setUpdatedAt(loaded.updatedAt);
-        setDataVersion(manifest.version || "未标记");
-        setDataMessage(loaded.records.length ? "" : "当前没有可展示数据，请替换 public/data 中的测试文件。");
-      })
-      .catch((reason: unknown) => setDataMessage(reason instanceof DataNotGeneratedError ? reason.message : "看板数据加载失败"));
+  const {
+    search,
+    timeRange,
+    brokerNames,
+    primaryDomain,
+    announcementStage,
+    procurementMethod,
+    finTechOnly,
+    detailFilter,
+    setSearch,
+    setTimeRange,
+    setBrokerNames,
+    toggleBrokerName,
+    setPrimaryDomain,
+    setAnnouncementStage,
+    setProcurementMethod,
+    setFinTechOnly,
+    setDetailFilter,
+    resetAll,
+  } = useFilterStore();
+
+  const refreshData = useCallback(() => {
+    setDataVersion((version) => version + 1);
   }, []);
 
-  const baseline = useMemo(() => getDataBaseline(records), [records]);
-  const statistics = useMemo(() => getDashboardStatistics(records), [records]);
-  const methodOptions = useMemo(() => Array.from(new Set(records.map((record) => record.procurement_method).filter(Boolean))).sort(), [records]);
-  const baseFiltered = useMemo(() => {
-    let result = records;
-    if (filters.finTechOnly) result = result.filter((record) => record.isFinTech);
-    if (baseline && filters.timeRange !== "all") {
-      const days = filters.timeRange === "30d" ? 30 : 90;
-      const cutoff = filters.timeRange === "year" ? new Date(baseline.getFullYear(), 0, 1) : new Date(baseline.getTime() - days * 86400000);
-      result = result.filter((record) => record.validPublishDate && record.validPublishDate >= cutoff);
+  // Only load data after login
+  useEffect(() => {
+    if (!isLoggedIn || !token) return;
+    setIsLoading(true);
+    setDataStatus("loading");
+    setDataMessage(null);
+    loadAndProcessData()
+      .then(({ records, updatedAt }) => {
+        setAllData(records);
+        setDataUpdatedAt(updatedAt);
+        setDataStatus(records.length === 0 ? "empty" : "ready");
+        setDataMessage(
+          records.length === 0
+            ? "当前没有可展示数据，请替换 public/data 中的静态文件。"
+            : null
+        );
+        setIsLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DataNotGeneratedError) {
+          setAllData([]);
+          setDataUpdatedAt(null);
+          setDataStatus("empty");
+          setDataMessage(err.message);
+        } else {
+          setAllData([]);
+          setDataUpdatedAt(null);
+          setDataStatus("error");
+          setDataMessage(err instanceof Error ? err.message : "数据加载失败");
+        }
+        setIsLoading(false);
+      });
+  }, [dataVersion, isLoggedIn, token]);
+
+  const baseline = useMemo(() => getDataBaseline(allData), [allData]);
+  const dashboardStatistics = useMemo(() => getDashboardStatistics(allData), [allData]);
+  const deferredSearch = useDeferredValue(search.toLowerCase());
+
+  const methodOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of allData) {
+      if (r.procurement_method) set.add(r.procurement_method);
     }
-    const query = filters.search.trim().toLowerCase();
-    if (query) result = result.filter((record) => record.searchText.includes(query));
-    if (filters.primaryDomain) result = result.filter((record) => record.primaryDomain === filters.primaryDomain);
-    if (filters.announcementStage) result = result.filter((record) => record.announcement_stage === filters.announcementStage);
-    if (filters.procurementMethod) result = result.filter((record) => record.procurement_method === filters.procurementMethod);
-    if (filters.detailFilter?.hasPrice === "true") result = result.filter((record) => record.display_amount_yuan !== null);
+    return Array.from(set).sort();
+  }, [allData]);
+
+  // Apply all filters except broker multi-select so broker options do not disappear
+  // because of their own selection.
+  const dataBeforeBrokerFilter = useMemo(() => {
+    let result = allData;
+
+    // FinTech only
+    if (finTechOnly) {
+      result = result.filter((r) => r.isFinTech);
+    }
+
+    // Time range
+    if (baseline && timeRange !== "all") {
+      const now = baseline;
+      let cutoff: Date | null = null;
+      if (timeRange === "30d")
+        cutoff = new Date(now.getTime() - 30 * 86400000);
+      else if (timeRange === "90d")
+        cutoff = new Date(now.getTime() - 90 * 86400000);
+      else if (timeRange === "year")
+        cutoff = new Date(now.getFullYear(), 0, 1);
+      if (cutoff) {
+        result = result.filter(
+          (r) => r.validPublishDate && r.validPublishDate >= cutoff!
+        );
+      }
+    }
+
+    // Search
+    if (deferredSearch) {
+      result = result.filter((r) => r.searchText.includes(deferredSearch));
+    }
+
+    if (primaryDomain)
+      result = result.filter((r) => r.primaryDomain === primaryDomain);
+    if (announcementStage)
+      result = result.filter((r) => r.announcement_stage === announcementStage);
+    if (procurementMethod)
+      result = result.filter((r) => r.procurement_method === procurementMethod);
+
+    // Detail filter (from metric card clicks)
+    if (detailFilter) {
+      if (detailFilter.hasPrice === "true") {
+        result = result.filter((r) => r.display_amount_yuan !== null);
+      }
+    }
+
     return result;
-  }, [baseline, filters.announcementStage, filters.detailFilter, filters.finTechOnly, filters.primaryDomain, filters.procurementMethod, filters.search, filters.timeRange, records]);
-  const brokerOptions = useMemo(() => Array.from(new Set(baseFiltered.map(getValidBrokerName).filter((name): name is string => Boolean(name)))).sort(), [baseFiltered]);
-  const allBrokerOptions = useMemo(() => statistics.brokerNames.slice().sort(), [statistics.brokerNames]);
-  const filteredData = useMemo(() => filters.brokerNames.length ? baseFiltered.filter((record) => { const name = getValidBrokerName(record); return name ? filters.brokerNames.includes(name) : false; }) : baseFiltered, [baseFiltered, filters.brokerNames]);
-  const sortedBrokers = useMemo(() => statistics.brokerNames.slice().sort((a, b) => a.localeCompare(b, "zh-Hans-CN")), [statistics.brokerNames]);
-  const hasFilters = Boolean(filters.search || filters.brokerNames.length || filters.primaryDomain || filters.announcementStage || filters.procurementMethod || filters.timeRange !== "90d" || !filters.finTechOnly || filters.detailFilter);
+  }, [
+    allData,
+    finTechOnly,
+    timeRange,
+    baseline,
+    deferredSearch,
+    primaryDomain,
+    announcementStage,
+    procurementMethod,
+    detailFilter,
+  ]);
+
+  // Options for dropdowns: derived from real data after other filters only.
+  const brokerOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of dataBeforeBrokerFilter) {
+      const brokerName = getValidBrokerName(r);
+      if (brokerName) set.add(brokerName);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  }, [dataBeforeBrokerFilter]);
+
+  const allBrokerOptions = useMemo(
+    () => [...dashboardStatistics.brokerNames].sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
+    [dashboardStatistics.brokerNames]
+  );
 
   useEffect(() => {
-    if (!brokerTagsRef.current) return;
-    const update = () => setVisibleBrokerCount(showAllBrokers ? sortedBrokers.length : Math.max(1, Math.floor((brokerTagsRef.current?.offsetWidth || 600) / 120)) * 2);
+    if (brokerNames.length === 0) return;
+    const validOptions = new Set(brokerOptions);
+    const nextBrokerNames = brokerNames.filter((name) => validOptions.has(name));
+    if (nextBrokerNames.length !== brokerNames.length) {
+      setBrokerNames(nextBrokerNames);
+    }
+  }, [brokerNames, brokerOptions, setBrokerNames]);
+
+  // Final filtered data
+  const filteredData = useMemo(() => {
+    if (brokerNames.length === 0) return dataBeforeBrokerFilter;
+    const selectedBrokers = new Set(brokerNames);
+    return dataBeforeBrokerFilter.filter((r) => {
+      const brokerName = getValidBrokerName(r);
+      return brokerName !== null && selectedBrokers.has(brokerName);
+    });
+  }, [brokerNames, dataBeforeBrokerFilter]);
+
+  // Sort brokers by data volume (most records first)
+  const sortedBrokers = useMemo(() => {
+    const countMap = new Map<string, number>();
+    dataBeforeBrokerFilter.forEach((r) => {
+      const brokerName = getValidBrokerName(r);
+      if (brokerName) {
+        countMap.set(brokerName, (countMap.get(brokerName) || 0) + 1);
+      }
+    });
+    return [...countMap.keys()].sort((a, b) => {
+      const countDiff = (countMap.get(b) || 0) - (countMap.get(a) || 0);
+      return countDiff || a.localeCompare(b, "zh-Hans-CN");
+    });
+  }, [dataBeforeBrokerFilter]);
+
+  // Measure header height for sticky tab bar positioning
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
+    const update = () => setHeaderHeight(header.offsetHeight);
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(brokerTagsRef.current);
+    const ro = new ResizeObserver(update);
+    ro.observe(header);
+    return () => ro.disconnect();
+  }, []);
+
+  // Measure broker tags container and calculate visible count (max 2 rows)
+  useLayoutEffect(() => {
+    const container = brokerTagsRef.current;
+    if (!container || sortedBrokers.length === 0) return;
+
+    const measure = () => {
+      const containerWidth = container.offsetWidth;
+      // Estimate tag width: ~12px per char + 20px padding + 6px gap
+      const avgTagWidth = 110; // average tag width in px
+      const gap = 6;
+      const tagsPerRow = Math.max(1, Math.floor((containerWidth + gap) / (avgTagWidth + gap)));
+      setVisibleBrokerCount(showAllBrokers ? sortedBrokers.length : tagsPerRow * 2);
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
     return () => observer.disconnect();
-  }, [showAllBrokers, sortedBrokers.length]);
+  }, [sortedBrokers, showAllBrokers]);
 
-  if (!user) return <CozeLoginPanel />;
-  if (adminOpen && user.isAdmin) return <CozeAdminPanel currentUserId={user.id} onBack={() => setAdminOpen(false)} />;
+  const hasFilters = Boolean(
+    search ||
+    brokerNames.length > 0 ||
+    primaryDomain ||
+    announcementStage ||
+    procurementMethod ||
+    timeRange !== "90d" ||
+    !finTechOnly ||
+    detailFilter
+  );
 
-  return <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#F4F7FB]">
-    <CozeHeader user={user} baseline={baseline} brokerCount={statistics.brokerCount} data={filteredData} onDefinition={() => setDefinitionOpen(true)} onFeedback={() => setFeedbackOpen(true)} onAdmin={() => setAdminOpen(true)} onLogout={logout} />
-    <main className="mx-auto max-w-[1600px] space-y-4 px-3 py-4 sm:px-8 sm:py-5">
-      {dataMessage && <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">{dataMessage}</div>}
-      {dataVersion && <div className="text-right text-[11px] text-[#98A2B3]">数据版本：{dataVersion}{updatedAt ? " · 更新于 " + new Date(updatedAt).toLocaleString("zh-CN") : ""}</div>}
-      <DashboardFilters search={filters.search} setSearch={filters.setSearch} timeRange={filters.timeRange} setTimeRange={filters.setTimeRange} brokerNames={filters.brokerNames} setBrokerNames={filters.setBrokerNames} toggleBrokerName={filters.toggleBrokerName} primaryDomain={filters.primaryDomain} setPrimaryDomain={filters.setPrimaryDomain} announcementStage={filters.announcementStage} setAnnouncementStage={filters.setAnnouncementStage} procurementMethod={filters.procurementMethod} setProcurementMethod={filters.setProcurementMethod} finTechOnly={filters.finTechOnly} setFinTechOnly={filters.setFinTechOnly} hasFilters={hasFilters} resetAll={filters.resetAll} brokerOptions={brokerOptions} allBrokerOptions={allBrokerOptions} methodOptions={methodOptions} sortedBrokers={sortedBrokers} visibleBrokerCount={visibleBrokerCount} showAllBrokers={showAllBrokers} setShowAllBrokers={setShowAllBrokers} brokerTagsRef={brokerTagsRef} />
-      <DashboardTabs activeTab={activeTab} setActiveTab={setActiveTab} filteredCount={filteredData.length} headerHeight={72} />
-      {activeTab === "ai" ? <AiSummary /> : activeTab === "table" ? <ProjectTable data={filteredData} onSelectProject={setSelectedProject} /> : <><MetricCards data={filteredData} baseline={baseline} statistics={statistics} updatedAt={updatedAt} /><ExecutiveSummary data={filteredData} allData={records} baseline={baseline} /><div className="grid grid-cols-1 gap-3 md:grid-cols-6 lg:grid-cols-12 sm:gap-4"><ProcurementTrendChart data={filteredData} /><DomainDistributionChart data={filteredData} /><StageDistributionChart data={filteredData} /></div><div className="grid grid-cols-1 gap-3 md:grid-cols-6 lg:grid-cols-12 sm:gap-4"><BrokerActivityCard data={filteredData} baseline={baseline} /><SupplierObservationCard data={filteredData} /><PriceSamplesCard data={filteredData} /></div><KeyProjectRadar data={filteredData} baseline={baseline} onSelectProject={setSelectedProject} /></>}
-    </main>
-    <ProjectDetailDrawer record={selectedProject} onClose={() => setSelectedProject(null)} />
-    <DataDefinitionModal open={definitionOpen} onClose={() => setDefinitionOpen(false)} />
-    <CozeFeedbackDialog user={user} open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
-  </div>;
+  const openFeedback = useCallback((category?: FeedbackCategory, brokerName = "") => {
+    setFeedbackCategory(category);
+    setFeedbackBrokerName(brokerName);
+    setFeedbackOpen(true);
+  }, []);
+
+  // Show login page if not logged in
+  if (!isLoggedIn) {
+    return <LoginPageWithApply />;
+  }
+
+  // Show admin dashboard if admin requested it
+  if (showDashboard && isAdmin) {
+    return (
+      <AdminDashboard
+        onBack={() => setShowDashboard(false)}
+        onDataRefresh={refreshData}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
+      {/* ─── Top Navigation ─── */}
+      <DashboardHeader
+        username={username}
+        totalBrokers={dashboardStatistics.brokerCount}
+        baseline={baseline}
+        filteredData={filteredData}
+        isAdmin={isAdmin}
+        showDashboard={showDashboard}
+        onShowModal={() => setShowModal(true)}
+        onExport={() => exportCsv(filteredData)}
+        onOpenFeedback={() => openFeedback()}
+        onShowDashboard={setShowDashboard}
+        onLogout={logout}
+      />
+
+      {/* ─── Main Content ─── */}
+      <main className="mx-auto max-w-[1600px] min-w-0 px-3 py-4 space-y-4 sm:px-8 sm:py-5">
+        {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
+          <div
+            className={`rounded-[10px] border px-4 py-3 text-[13px] ${
+              dataStatus === "error"
+                ? "border-red-100 bg-red-50 text-red-600"
+                : "border-amber-100 bg-amber-50 text-amber-700"
+            }`}
+          >
+            {isLoading
+              ? "正在加载看板数据..."
+              : dataMessage || "当前没有可展示数据，请替换 public/data 中的静态文件。"}
+          </div>
+        )}
+
+        {/* Global Filter Bar */}
+        <DashboardFilters
+          search={search}
+          setSearch={setSearch}
+          timeRange={timeRange}
+          setTimeRange={setTimeRange}
+          brokerNames={brokerNames}
+          setBrokerNames={setBrokerNames}
+          toggleBrokerName={toggleBrokerName}
+          primaryDomain={primaryDomain}
+          setPrimaryDomain={setPrimaryDomain}
+          announcementStage={announcementStage}
+          setAnnouncementStage={setAnnouncementStage}
+          procurementMethod={procurementMethod}
+          setProcurementMethod={setProcurementMethod}
+          finTechOnly={finTechOnly}
+          setFinTechOnly={setFinTechOnly}
+          hasFilters={hasFilters}
+          resetAll={resetAll}
+          brokerOptions={brokerOptions}
+          allBrokerOptions={allBrokerOptions}
+          onMissingBrokerSearch={dataStatus === "ready" && !search.trim() ? (brokerName) => openFeedback("broker_request", brokerName) : undefined}
+          methodOptions={methodOptions}
+          sortedBrokers={sortedBrokers}
+          visibleBrokerCount={visibleBrokerCount}
+          showAllBrokers={showAllBrokers}
+          setShowAllBrokers={setShowAllBrokers}
+          brokerTagsRef={brokerTagsRef}
+        />
+
+        {/* Tab Bar - Sticky below header */}
+        <DashboardTabs
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          filteredCount={filteredData.length}
+          headerHeight={headerHeight}
+        />
+
+        {/* Tab Content */}
+        {activeTab === "ai" ? (
+          <AiSummary />
+        ) : activeTab === "overview" ? (
+          <>
+            {/* Metric Cards */}
+            <MetricCards data={filteredData} baseline={baseline} statistics={dashboardStatistics} updatedAt={dataUpdatedAt} />
+
+            {/* Executive Summary */}
+            <ExecutiveSummary data={filteredData} allData={allData} baseline={baseline} />
+
+            {/* Charts */}
+            <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4">
+              <ProcurementTrendChart data={filteredData} />
+              <DomainDistributionChart data={filteredData} />
+              <StageDistributionChart data={filteredData} />
+            </div>
+
+            {/* Observation Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4">
+              <BrokerActivityCard data={filteredData} baseline={baseline} />
+              <SupplierObservationCard data={filteredData} />
+              <PriceSamplesCard data={filteredData} />
+            </div>
+
+            {/* Key Project Radar */}
+            <KeyProjectRadar
+              data={filteredData}
+              baseline={baseline}
+              onSelectProject={setSelectedProject}
+            />
+          </>
+        ) : (
+          /* Project Table Tab */
+          <ProjectTable
+            data={filteredData}
+            onSelectProject={setSelectedProject}
+          />
+        )}
+      </main>
+
+      {/* Drawer */}
+      <ProjectDetailDrawer
+        record={selectedProject}
+        onClose={() => setSelectedProject(null)}
+      />
+
+      {/* Modal */}
+      <DataDefinitionModal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+      />
+
+      <FeedbackDialog
+        open={feedbackOpen}
+        onOpenChange={setFeedbackOpen}
+        initialCategory={feedbackCategory}
+        initialBrokerName={feedbackBrokerName}
+      />
+    </div>
+  );
 }
