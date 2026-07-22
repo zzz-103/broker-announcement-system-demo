@@ -1,7 +1,8 @@
 {
-  "version": "demo-2026-07-22",
-  "data_updated_at": "2026-07-22T00:00:00+08:00",
-  "analysis_updated_at": "2026-07-22T00:00:00+08:00",
-  "announcement_count": 4,
-  "note": "展示版测试数据；正式部署前请替换为脱敏公开数据。"
+  "version": "local-e1cfaec1a2146967",
+  "updated_at": "2026-07-14T02:30:23.133699+00:00",
+  "data_updated_at": "2026-07-14T02:30:23.133699+00:00",
+  "record_count": 11151,
+  "announcement_count": 11151,
+  "analysis_updated_at": "2026-07-14T02:30:23.133699+00:00"
 }

@@ -44,7 +44,7 @@ function eventDetail(event: AuditEventRecord): string {
 }
 
 export function AuditRecordsManager() {
-  const [summary, setSummary] = useState<ReturnType<typeof getAuditSummary> | null>(null);
+  const [summary, setSummary] = useState<Awaited<ReturnType<typeof getAuditSummary>> | null>(null);
   const [events, setEvents] = useState<AuditEventRecord[]>([]);
   const [meta, setMeta] = useState<AdminListMeta>(EMPTY_META);
   const [eventType, setEventType] = useState<AuditEventType | "">("");
@@ -58,8 +58,10 @@ export function AuditRecordsManager() {
     setIsLoading(true);
     setError("");
     try {
-      const nextSummary = getAuditSummary();
-      const nextEvents = listAuditEvents(eventType, { page: requestedPage, pageSize: AUDIT_PAGE_SIZE, query });
+      const [nextSummary, nextEvents] = await Promise.all([
+        getAuditSummary(),
+        listAuditEvents(eventType, { page: requestedPage, pageSize: AUDIT_PAGE_SIZE, query }),
+      ]);
       setSummary(nextSummary);
       setEvents(nextEvents.events);
       setMeta(nextEvents.meta);

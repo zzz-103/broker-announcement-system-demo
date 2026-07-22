@@ -1,12 +1,9 @@
 import { create } from "zustand";
 import {
-  clearSession,
-  createDemoAdmin,
-  getDemoUser,
-  getSessionUserId,
+  applyForUser,
+  getCurrentUser,
   loginDemoUser,
-  registerDemoUser,
-  setSessionUser,
+  logoutDemoUser,
   type DemoUser,
 } from "@/lib/local-platform-service";
 
@@ -17,11 +14,11 @@ interface AuthState {
   username: string;
   token: string | null;
   error: string;
-  restoreSession: () => void;
+  restoreSession: () => Promise<void>;
   login: (username: string, password: string) => Promise<boolean>;
   register: (input: { username: string; password: string; name: string; email: string; department: string }) => Promise<void>;
   createAdmin: (input: { username: string; password: string; name: string }) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   clearAuth: (message?: string) => void;
 }
 
@@ -38,14 +35,16 @@ function stateForUser(user: DemoUser | null) {
 export const useAuthStore = create<AuthState>((set) => ({
   ...stateForUser(null),
   error: "",
-  restoreSession: () => {
-    const userId = getSessionUserId();
-    set({ ...stateForUser(userId ? getDemoUser(userId) : null), error: "" });
+  restoreSession: async () => {
+    try {
+      set({ ...stateForUser(await getCurrentUser()), error: "" });
+    } catch (error) {
+      set({ ...stateForUser(null), error: error instanceof Error ? error.message : "会话恢复失败" });
+    }
   },
   login: async (username, password) => {
     try {
       const user = await loginDemoUser(username, password);
-      setSessionUser(user.id);
       set({ ...stateForUser(user), error: "" });
       return true;
     } catch (error) {
@@ -54,17 +53,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
   register: async (input) => {
-    await registerDemoUser(input);
+    await applyForUser({ name: input.name, email: input.email, department: input.department });
   },
   createAdmin: async (input) => {
-    await createDemoAdmin(input);
+    await applyForUser({ name: input.name, email: "admin@example.invalid", department: "" });
   },
-  logout: () => {
-    clearSession();
-    set({ ...stateForUser(null), error: "" });
+  logout: async () => {
+    try {
+      await logoutDemoUser();
+    } finally {
+      set({ ...stateForUser(null), error: "" });
+    }
   },
   clearAuth: (message = "") => {
-    clearSession();
+    set({ ...stateForUser(null), error: "" });
     set({ ...stateForUser(null), error: message });
   },
 }));

@@ -34,7 +34,7 @@ export function FeedbackManager() {
     setIsLoading(true);
     setError("");
     try {
-      setFeedback(listDemoFeedback());
+      setFeedback(await listDemoFeedback());
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {
@@ -52,8 +52,8 @@ export function FeedbackManager() {
     setUpdatingId(entry.id);
     setError("");
     try {
-      updateDemoFeedbackStatus(entry.id, nextStatus);
-      setFeedback(listDemoFeedback());
+      await updateDemoFeedbackStatus(entry.id, nextStatus);
+      setFeedback(await listDemoFeedback());
     } catch (requestError) {
       setError(errorMessage(requestError));
     } finally {

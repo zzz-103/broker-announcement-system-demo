@@ -12,6 +12,7 @@ export interface DemoUser {
   status: DemoUserStatus;
   isAdmin: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface LoginLog {
@@ -44,7 +45,7 @@ export interface AdminListMeta {
 export interface FeedbackRecord {
   id: string;
   userId: string;
-  category: "broker_request" | "data_issue" | "product_suggestion";
+  category: FeedbackCategory;
   brokerName: string;
   message: string;
   relatedContext: string;
@@ -53,206 +54,120 @@ export interface FeedbackRecord {
   processedAt: string | null;
 }
 
-interface StoredUser extends DemoUser {
-  passwordHash: string;
+interface ApiErrorPayload {
+  detail?: string;
 }
 
-const KEYS = {
-  users: "broker-coze-demo-users",
-  logs: "broker-coze-demo-login-logs",
-  feedback: "broker-coze-demo-feedback",
-  session: "broker-coze-demo-session",
-  audit: "broker-coze-demo-audit",
-} as const;
-
-function read<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
+async function request<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
+    throw new Error(payload?.detail || "请求失败，请稍后重试");
   }
+  return response.json() as Promise<T>;
 }
 
-function write<T>(key: string, value: T): void {
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
-function createId(prefix: string): string {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return prefix + "_" + (uuid || String(Date.now()) + "_" + Math.random().toString(36).slice(2));
-}
-
-async function hashPassword(password: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(password));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function publicUser(user: StoredUser): DemoUser {
-  const { passwordHash: _passwordHash, ...safeUser } = user;
-  return safeUser;
-}
-
-function requireBrowser(): void {
-  if (typeof window === "undefined") throw new Error("演示用户服务只能在浏览器中运行");
-}
-
-export function getSessionUserId(): string | null {
-  return typeof window === "undefined" ? null : window.sessionStorage.getItem(KEYS.session);
-}
-
-export function setSessionUser(userId: string): void {
-  window.sessionStorage.setItem(KEYS.session, userId);
-}
-
-export function clearSession(): void {
-  window.sessionStorage.removeItem(KEYS.session);
-}
-
-export function getDemoUser(userId: string): DemoUser | null {
-  const user = read<StoredUser[]>(KEYS.users, []).find((item) => item.id === userId);
-  return user ? publicUser(user) : null;
-}
-
-export function listDemoUsers(): DemoUser[] {
-  return read<StoredUser[]>(KEYS.users, []).map(publicUser);
-}
-
-export function hasDemoAdmin(): boolean {
-  return read<StoredUser[]>(KEYS.users, []).some((user) => user.isAdmin);
-}
-
-function addAuditEvent(event: Omit<AuditEventRecord, "id" | "created_at">): void {
-  const record: AuditEventRecord = { ...event, id: createId("audit"), created_at: new Date().toISOString() };
-  write(KEYS.audit, [...read<AuditEventRecord[]>(KEYS.audit, []), record].slice(-1000));
-}
-
-export async function recordQrVisit(context: { visitor_id: string; source: string }): Promise<void> {
-  requireBrowser();
-  addAuditEvent({ event_type: "qr_visit", user_id: null, username: null, role: null, source: context.source, metadata: { visitor_id: context.visitor_id } });
-}
-
-export function recordDashboardView(userId: string, context: { visitor_id?: string; source?: string }): void {
-  requireBrowser();
-  const user = getDemoUser(userId);
-  addAuditEvent({ event_type: "dashboard_view", user_id: userId, username: user?.username ?? null, role: user?.isAdmin ? "admin" : "user", source: context.source ?? null, metadata: context.visitor_id ? { visitor_id: context.visitor_id } : {} });
-}
-
-export async function createDemoAdmin(input: { username: string; password: string; name: string }): Promise<DemoUser> {
-  requireBrowser();
-  const users = read<StoredUser[]>(KEYS.users, []);
-  if (users.some((user) => user.isAdmin)) throw new Error("演示管理员已经存在");
-  if (!input.username.trim() || input.password.length < 8 || !input.name.trim()) throw new Error("请输入姓名、用户名和至少 8 位密码");
-  const user: StoredUser = { id: createId("user"), username: input.username.trim(), passwordHash: await hashPassword(input.password), name: input.name.trim(), email: "", department: "", status: "active", isAdmin: true, createdAt: new Date().toISOString() };
-  write(KEYS.users, [...users, user]);
-  return publicUser(user);
-}
-
-export async function registerDemoUser(input: { username: string; password: string; name: string; email: string; department: string }): Promise<DemoUser> {
-  requireBrowser();
-  const users = read<StoredUser[]>(KEYS.users, []);
-  if (users.some((user) => user.username === input.username.trim())) throw new Error("用户名已存在");
-  if (!input.username.trim() || input.password.length < 8 || !input.name.trim()) throw new Error("请填写完整信息，密码至少 8 位");
-  const user: StoredUser = { id: createId("user"), username: input.username.trim(), passwordHash: await hashPassword(input.password), name: input.name.trim(), email: input.email.trim(), department: input.department.trim(), status: "pending", isAdmin: false, createdAt: new Date().toISOString() };
-  write(KEYS.users, [...users, user]);
-  return publicUser(user);
-}
-
-export async function applyForUser(input: { name: string; email: string; department: string; visitor_id?: string; source?: string }): Promise<{ username: string; initial_password: string; user: DemoUser }> {
-  requireBrowser();
-  if (!input.name.trim() || !input.email.trim() || !input.department.trim()) throw new Error("请填写完整申请信息");
-  const users = read<StoredUser[]>(KEYS.users, []);
-  const base = input.email.trim().split("@")[0].replace(/[^A-Za-z0-9_.-]/g, "_") || "user";
-  let username = base;
-  let suffix = 1;
-  while (users.some((user) => user.username === username)) username = `${base}${suffix++}`;
-  const initial_password = `demo${Math.random().toString(36).slice(2, 8)}`;
-  const user: StoredUser = { id: createId("user"), username, passwordHash: await hashPassword(initial_password), name: input.name.trim(), email: input.email.trim(), department: input.department.trim(), status: "active", isAdmin: false, createdAt: new Date().toISOString() };
-  write(KEYS.users, [...users, user]);
-  addAuditEvent({ event_type: "qualification_application", user_id: user.id, username: user.username, role: "user", source: input.source ?? null, metadata: { name: user.name, email: user.email, department: user.department, result: "success", ...(input.visitor_id ? { visitor_id: input.visitor_id } : {}) } });
-  return { username, initial_password, user: publicUser(user) };
+export async function getCurrentUser(): Promise<DemoUser | null> {
+  const response = await fetch("/api/auth/session", { credentials: "include", cache: "no-store" });
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error("会话恢复失败");
+  const payload = await response.json() as { user: DemoUser };
+  return payload.user;
 }
 
 export async function loginDemoUser(username: string, password: string): Promise<DemoUser> {
-  requireBrowser();
-  const users = read<StoredUser[]>(KEYS.users, []);
-  const user = users.find((item) => item.username === username.trim());
-  const passwordHash = await hashPassword(password);
-  const success = Boolean(user && user.status === "active" && user.passwordHash === passwordHash);
-  const logs = read<LoginLog[]>(KEYS.logs, []);
-  write(KEYS.logs, [...logs, { id: createId("login"), userId: user?.id || null, username: username.trim(), success, createdAt: new Date().toISOString() }].slice(-500));
-  if (success && user) addAuditEvent({ event_type: "login_success", user_id: user.id, username: user.username, role: user.isAdmin ? "admin" : "user", source: null, metadata: {} });
-  if (!user) throw new Error("用户名或密码错误");
-  if (user.status === "pending") throw new Error("账号正在等待管理员审批");
-  if (user.status === "disabled") throw new Error("账号已被禁用");
-  if (!success) throw new Error("用户名或密码错误");
-  return publicUser(user);
-}
-
-export function updateDemoUserStatus(userId: string, status: DemoUserStatus, currentUserId: string): void {
-  requireBrowser();
-  if (userId === currentUserId && status !== "active") throw new Error("不能禁用当前登录管理员");
-  const users = read<StoredUser[]>(KEYS.users, []);
-  write(KEYS.users, users.map((user) => user.id === userId ? { ...user, status } : user));
-}
-
-export function listLoginLogs(): LoginLog[] {
-  return read<LoginLog[]>(KEYS.logs, []).slice().reverse();
-}
-
-export function listAuditEvents(eventType: AuditEventType | "", options: { page: number; pageSize: number; query: string }): { events: AuditEventRecord[]; meta: AdminListMeta } {
-  const query = options.query.trim().toLowerCase();
-  const filtered = read<AuditEventRecord[]>(KEYS.audit, []).slice().reverse().filter((event) => {
-    if (eventType && event.event_type !== eventType) return false;
-    if (!query) return true;
-    return JSON.stringify(event).toLowerCase().includes(query);
+  const payload = await request<{ user: DemoUser }>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
   });
-  const totalPages = Math.max(1, Math.ceil(filtered.length / options.pageSize));
-  const page = Math.min(Math.max(1, options.page), totalPages);
-  const start = (page - 1) * options.pageSize;
-  return { events: filtered.slice(start, start + options.pageSize), meta: { page, page_size: options.pageSize, total: filtered.length, total_pages: totalPages, q: options.query } };
+  return payload.user;
 }
 
-export function getAuditSummary() {
-  const events = read<AuditEventRecord[]>(KEYS.audit, []);
-  const day = new Date().toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" });
-  const today = events.filter((event) => new Date(event.created_at).toLocaleDateString("zh-CN", { timeZone: "Asia/Shanghai" }) === day);
-  return {
-    timezone: "Asia/Shanghai",
-    today_qr_visits: today.filter((event) => event.event_type === "qr_visit").length,
-    today_qualification_applicants: today.filter((event) => event.event_type === "qualification_application").length,
-    today_login_users: today.filter((event) => event.event_type === "login_success").length,
-    today_dashboard_users: today.filter((event) => event.event_type === "dashboard_view").length,
-    total_events: events.length,
-    qr_visits: events.filter((event) => event.event_type === "qr_visit").length,
-    qualification_applications: events.filter((event) => event.event_type === "qualification_application").length,
-    successful_logins: events.filter((event) => event.event_type === "login_success").length,
-    dashboard_views: events.filter((event) => event.event_type === "dashboard_view").length,
-  };
+export async function logoutDemoUser(): Promise<void> {
+  await request<{ ok: boolean }>("/api/auth/logout", { method: "POST", body: "{}" });
+}
+
+export async function applyForUser(input: { name: string; email: string; department: string; visitor_id?: string; source?: string }): Promise<{ username: string; initial_password: string; user: DemoUser }> {
+  const payload = await request<{ username: string; user: DemoUser; initial_password_notice?: string }>("/api/auth/apply", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return { username: payload.username, user: payload.user, initial_password: "123456" };
+}
+
+export async function recordQrVisit(context: { visitor_id: string; source: string }): Promise<void> {
+  await request<{ ok: boolean }>("/api/audit/qr-visit", { method: "POST", body: JSON.stringify(context) });
+}
+
+export async function recordDashboardView(_userId: string, context: { visitor_id?: string; source?: string }): Promise<void> {
+  await request<{ ok: boolean }>("/api/audit/dashboard-view", { method: "POST", body: JSON.stringify(context) });
+}
+
+export async function listDemoUsers(page = 1, query = ""): Promise<{ users: DemoUser[]; meta: AdminListMeta }> {
+  const params = new URLSearchParams({ page: String(page), page_size: "4", q: query });
+  return request<{ users: DemoUser[]; meta: AdminListMeta }>(`/api/admin/users?${params.toString()}`);
 }
 
 export async function createAdminUser(input: { name: string; email: string; department: string }): Promise<{ user: DemoUser; initial_password: string }> {
-  const result = await applyForUser({ ...input });
-  const users = read<StoredUser[]>(KEYS.users, []);
-  const updated = users.map((user) => user.id === result.user.id ? { ...user, isAdmin: false, status: "active" as const } : user);
-  write(KEYS.users, updated);
-  return { user: result.user, initial_password: result.initial_password };
+  const payload = await request<{ user: DemoUser }>("/api/admin/users", { method: "POST", body: JSON.stringify(input) });
+  return { user: payload.user, initial_password: "123456" };
 }
 
-export function submitDemoFeedback(input: Omit<FeedbackRecord, "id" | "status" | "createdAt" | "processedAt">): FeedbackRecord {
-  requireBrowser();
-  const record: FeedbackRecord = { ...input, id: createId("feedback"), status: "pending", createdAt: new Date().toISOString(), processedAt: null };
-  write(KEYS.feedback, [...read<FeedbackRecord[]>(KEYS.feedback, []), record]);
-  return record;
+export async function updateDemoUserStatus(userId: string, status: DemoUserStatus, _currentUserId: string): Promise<DemoUser> {
+  const payload = await request<{ user: DemoUser }>(`/api/admin/users/${encodeURIComponent(userId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  return payload.user;
 }
 
-export function listDemoFeedback(): FeedbackRecord[] {
-  return read<FeedbackRecord[]>(KEYS.feedback, []).slice().reverse();
+export async function listAuditEvents(eventType: AuditEventType | "", options: { page: number; pageSize: number; query: string }): Promise<{ events: AuditEventRecord[]; meta: AdminListMeta }> {
+  const params = new URLSearchParams({ page: String(options.page), page_size: String(options.pageSize), q: options.query });
+  if (eventType) params.set("event_type", eventType);
+  return request<{ events: AuditEventRecord[]; meta: AdminListMeta }>(`/api/admin/audit/events?${params.toString()}`);
 }
 
-export function updateDemoFeedbackStatus(feedbackId: string, status: FeedbackStatus): void {
-  requireBrowser();
-  const feedback = read<FeedbackRecord[]>(KEYS.feedback, []);
-  write(KEYS.feedback, feedback.map((item) => item.id === feedbackId ? { ...item, status, processedAt: status === "processed" ? new Date().toISOString() : null } : item));
+export async function getAuditSummary() {
+  return request<{
+    timezone: string;
+    today_qr_visits: number;
+    today_qualification_applicants: number;
+    today_login_users: number;
+    today_dashboard_users: number;
+    total_events: number;
+    qr_visits: number;
+    qualification_applications: number;
+    successful_logins: number;
+    dashboard_views: number;
+  }>("/api/admin/audit/summary");
+}
+
+export async function submitDemoFeedback(input: Omit<FeedbackRecord, "id" | "status" | "createdAt" | "processedAt">): Promise<FeedbackRecord> {
+  const payload = await request<{ feedback: FeedbackRecord }>("/api/feedback", {
+    method: "POST",
+    body: JSON.stringify({
+      category: input.category,
+      brokerName: input.brokerName,
+      message: input.message,
+      relatedContext: input.relatedContext,
+    }),
+  });
+  return payload.feedback;
+}
+
+export async function listDemoFeedback(): Promise<FeedbackRecord[]> {
+  const payload = await request<{ feedback: FeedbackRecord[] }>("/api/admin/feedback");
+  return payload.feedback;
+}
+
+export async function updateDemoFeedbackStatus(feedbackId: string, status: FeedbackStatus): Promise<FeedbackRecord> {
+  const payload = await request<{ feedback: FeedbackRecord }>(`/api/admin/feedback/${encodeURIComponent(feedbackId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+  return payload.feedback;
 }

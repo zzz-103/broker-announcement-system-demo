@@ -107,12 +107,12 @@ export default function Dashboard() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
 
   useEffect(() => {
-    restoreSession();
+    void restoreSession();
   }, [restoreSession]);
 
   useEffect(() => {
     if (!isLoggedIn || !token || showDashboard) return;
-    recordDashboardView(token, getAuditContext());
+    void recordDashboardView(token, getAuditContext()).catch(() => undefined);
   }, [isLoggedIn, showDashboard, token]);
 
   // Header height measurement for sticky tab bar positioning
@@ -380,7 +380,7 @@ export default function Dashboard() {
         onExport={() => exportCsv(filteredData)}
         onOpenFeedback={() => openFeedback()}
         onShowDashboard={setShowDashboard}
-        onLogout={logout}
+        onLogout={() => void logout()}
       />
 
       {/* ─── Main Content ─── */}

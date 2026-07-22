@@ -5,13 +5,15 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "node scripts/start-static.mjs",
+    "start": "next start",
+    "sync-data": "python3 scripts/sync-local-data.py",
     "ts-check": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "preinstall": "only-allow pnpm"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.20",
+    "@radix-ui/react-slot": "^1.3.0",
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

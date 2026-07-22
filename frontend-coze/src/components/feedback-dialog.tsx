@@ -81,7 +81,7 @@ export function FeedbackDialog({
     setError("");
     setIsSubmitting(true);
     try {
-      submitDemoFeedback({
+      await submitDemoFeedback({
         userId: user.id,
         category,
         brokerName: normalizedBrokerName,

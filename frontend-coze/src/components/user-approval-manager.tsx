@@ -72,13 +72,10 @@ export function UserApprovalManager() {
     setIsLoading(true);
     setError("");
     try {
-      const normalizedQuery = query.toLowerCase();
-      const allUsers = listDemoUsers().filter((item) => !normalizedQuery || [item.name, item.username, item.email, item.department].join(" ").toLowerCase().includes(normalizedQuery));
-      const totalPages = Math.max(1, Math.ceil(allUsers.length / USER_PAGE_SIZE));
-      const effectivePage = Math.min(Math.max(1, requestedPage), totalPages);
-      setUsers(allUsers.slice((effectivePage - 1) * USER_PAGE_SIZE, effectivePage * USER_PAGE_SIZE));
-      setMeta({ page: effectivePage, page_size: USER_PAGE_SIZE, total: allUsers.length, total_pages: totalPages, q: query });
-      if (effectivePage !== page) setPage(effectivePage);
+      const result = await listDemoUsers(requestedPage, query);
+      setUsers(result.users);
+      setMeta(result.meta);
+      if (result.meta.page !== page) setPage(result.meta.page);
     } catch (error) {
       setError(errorMessage(error));
     } finally {
@@ -131,7 +128,7 @@ export function UserApprovalManager() {
     setDeletingId(user.id);
     setError("");
     try {
-      updateDemoUserStatus(user.id, user.status === "active" ? "disabled" : "active", currentUser?.id ?? "");
+      await updateDemoUserStatus(user.id, user.status === "active" ? "disabled" : "active", currentUser?.id ?? "");
       await loadUsers();
     } catch (error) {
       setError(errorMessage(error));

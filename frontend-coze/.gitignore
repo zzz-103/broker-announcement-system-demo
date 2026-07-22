@@ -2,3 +2,7 @@ node_modules/
 .next/
 out/
 *.tsbuildinfo
+.runtime/
+/.runtime.example/*
+!/.runtime.example/README.md
+/migration/users-import.json
