@@ -2,6 +2,25 @@
 
 适用于 macOS 开发和 Windows 10/11 内网生产部署。生产架构只有两个常驻进程：单 worker FastAPI 与独立调度器；Next.js 仅在构建时使用。
 
+快捷发布流程
+# 1. 进入源码目录，拉取最新代码
+cd D:\broker-announcement-system-demo
+git pull --ff-only
+
+# 2. 修改版本号
+notepad frontend\package.json
+# 将 "version": "1.3.1" 改为例如 "1.3.2"
+
+# 3. 提交并推送版本号
+git add frontend\package.json
+git commit -m "release: v1.3.2"
+git push
+
+# 4. 进入正式部署目录，一键发布
+cd D:\broker-system
+.\deploy-release.ps1 -Version 1.3.2
+
+
 ## 1. Windows 首次准备
 
 在项目根目录执行：
@@ -114,3 +133,5 @@ pnpm build
 - 409：已有互斥任务或操作运行中。
 - 修改 `.env` 或重新构建前端后，必须重启对应服务。
 - 真实爬虫和真实 LLM 调用会访问外部服务，应在明确授权和有效配置下单独验收。
+
+
