@@ -1,0 +1,5 @@
+﻿broker_name,is_broker_project,publish_date,announcement_stage,procurement_category,project_subcategory,project_name,procurement_method,budget_amount_yuan,winning_supplier,winning_amount_yuan,source
+世纪证券,true,2026-07-10,采购招标,IT软硬件,数据平台,数据治理平台能力扩展项目,公开招标,680000,,,
+世纪证券,true,2026-07-08,结果公示,IT软硬件,网络与信息安全,办公网络安全设备维保项目,竞争性磋商,420000,深圳示例科技有限公司,398000,
+国泰海通证券,true,2026-06-28,采购招标,IT软硬件,云计算与基础设施,云资源池扩容采购项目,询价采购,1250000,,,
+中信证券,true,2026-06-20,结果公示,专业及金融服务,行政采购,办公区域服务采购项目,公开招标,180000,示例服务有限公司,175000,
