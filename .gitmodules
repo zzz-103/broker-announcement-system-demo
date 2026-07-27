@@ -1,3 +1,3 @@
 [submodule "broker-app-watch"]
 	path = broker-app-watch
-	url = ./broker-app-watch
+	url = https://github.com/zzz-103/broker-announcement-system-demo-broker-app-watch.git
