@@ -2,6 +2,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import {
   DataNotGeneratedError,
   loadAndProcessData,
@@ -23,8 +24,22 @@ import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import type { FeedbackCategory } from "@/lib/api/backend-client";
+import type { ActiveModule } from "@/components/app-watch/module-switcher";
 
-// ─── Dynamic imports for heavy components (code splitting) ───
+const DOMAIN_OPTIONS = [
+  "AI 与智能化",
+  "数据治理与数据平台",
+  "财富管理与客户经营",
+  "交易、柜台与核心系统",
+  "APP 与数字化渠道",
+  "网络安全与监管科技",
+  "云计算、算力与基础设施",
+  "IT 运维与技术服务",
+  "投研资讯与金融数据",
+  "非金融科技及其他",
+];
+
+// Dynamic imports for heavy components (code splitting)
 const AdminDashboard = dynamic(
   () => import("@/components/admin-dashboard").then((m) => m.AdminDashboard),
   { ssr: false }
@@ -74,20 +89,8 @@ const DataDefinitionModal = dynamic(
   { ssr: false }
 );
 
-const DOMAIN_OPTIONS = [
-  "AI与智能化",
-  "数据治理与数据平台",
-  "财富管理与客户经营",
-  "交易、柜台与核心系统",
-  "APP与数字化渠道",
-  "网络安全与监管科技",
-  "云计算、算力与基础设施",
-  "IT运维与技术服务",
-  "投研资讯与金融数据",
-  "非金融科技及其他",
-];
-
 export default function Dashboard() {
+  const router = useRouter();
   const [allData, setAllData] = useState<ProcessedRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
@@ -102,6 +105,32 @@ export default function Dashboard() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
+  const [activeModule, setActiveModule] = useState<ActiveModule>("procurement");
+
+  // Detect path changes and update activeModule accordingly
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const path = window.location.pathname;
+      if (path === "/app-updates") {
+        setActiveModule("app-watch");
+      } else {
+        setActiveModule("procurement");
+      }
+    };
+
+    // Initial check
+    handleLocationChange();
+
+    // Listen to popstate events (browser back/forward)
+    const handlePopState = () => {
+      handleLocationChange();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   // Auth state
   const { isLoggedIn, isAdmin, username, logout, token, clearAuth } = useAuthStore();
@@ -374,7 +403,7 @@ export default function Dashboard() {
       />
     );
   }
-
+  
   return (
     <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
       {/* ─── Top Navigation ─── */}
@@ -385,6 +414,7 @@ export default function Dashboard() {
         filteredData={filteredData}
         isAdmin={isAdmin}
         showDashboard={showDashboard}
+        activeModule={activeModule}
         onShowModal={() => setShowModal(true)}
         onExport={() => exportCsv(filteredData)}
         onOpenFeedback={() => openFeedback()}

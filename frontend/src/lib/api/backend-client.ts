@@ -11,7 +11,7 @@ function buildApiUrl(path: string): string {
 }
 
 export type JobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
-export type JobType = "scraper" | "llm" | "pipeline" | "llm-external";
+export type JobType = "scraper" | "llm" | "pipeline" | "llm-external" | "app-watch";
 
 export interface LoginResponse {
   token: string;
@@ -117,6 +117,14 @@ export type JobEvent =
     };
 
 export interface AnnouncementsResponse {
+  records: Record<string, string>[];
+  meta: {
+    count: number;
+    updated_at: string | null;
+  };
+}
+
+export interface AppReleasesResponse {
   records: Record<string, string>[];
   meta: {
     count: number;
@@ -384,6 +392,14 @@ export function cancelJob(jobId: string, token: string): Promise<{ status: strin
 
 export function fetchAnnouncements(token: string): Promise<AnnouncementsResponse> {
   return requestJson<AnnouncementsResponse>("/api/data/announcements", {}, token);
+}
+
+export function fetchAppReleases(token: string): Promise<AppReleasesResponse> {
+  return requestJson<AppReleasesResponse>("/api/app-releases", {}, token);
+}
+
+export function startAppWatchJob(token: string): Promise<StartJobResponse> {
+  return startJob("app-watch", token);
 }
 
 export function getAiAnalysis(token: string): Promise<AiAnalysisResponse> {

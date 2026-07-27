@@ -10,11 +10,13 @@ import {
   Globe,
   LogOut,
   RefreshCw,
+  Smartphone,
   Sparkles,
   Square,
   TerminalSquare,
   Upload,
   Workflow,
+  LayoutGrid,
 } from "lucide-react";
 
 import { AdminTaskLogDialog, type AdminTaskLogLine } from "@/components/admin-task-log-dialog";
@@ -53,8 +55,8 @@ interface DashboardProps {
   onDataRefresh?: () => void;
 }
 
-type CardId = "crawler" | "llm" | "ai";
-type OperationId = "scraper" | "llm" | "pipeline" | "llm-external" | "publish" | "ai_analysis";
+type CardId = "crawler" | "llm" | "ai" | "app-watch";
+type OperationId = "scraper" | "llm" | "pipeline" | "llm-external" | "publish" | "ai_analysis" | "app-watch";
 
 interface TaskCardState {
   status: JobStatus;
@@ -92,6 +94,12 @@ const INITIAL_CARD_STATE: Record<CardId, TaskCardState> = {
     logs: [],
     lastOperationLabel: "AI 情报分析",
   },
+  "app-watch": {
+    status: "idle",
+    summary: "抓取各券商 App 更新并做 LLM 结构化，写入 App 更新看板。",
+    logs: [],
+    lastOperationLabel: "券商App更新",
+  },
 };
 
 const IDLE_PROGRESS: AdminTaskProgressState = {
@@ -128,6 +136,7 @@ function trimLogs(logs: AdminTaskLogLine[]) {
 
 function cardIdForJob(jobType: JobType): CardId {
   if (jobType === "scraper" || jobType === "pipeline") return "crawler";
+  if (jobType === "app-watch") return "app-watch";
   return "llm";
 }
 
@@ -136,6 +145,7 @@ function labelForOperation(operationId: OperationId): string {
   if (operationId === "llm") return "LLM 数据处理";
   if (operationId === "llm-external") return "外来公告导入";
   if (operationId === "pipeline") return "自动化 Pipeline";
+  if (operationId === "app-watch") return "券商App更新";
   if (operationId === "publish") return "推送";
   return "AI 情报分析";
 }
@@ -168,6 +178,9 @@ function jobSuccessSummary(jobType: JobType, label: string): string {
   if (jobType === "scraper") {
     return "采购公告与结果公告爬取完成；尚未运行 LLM、匹配或汇总。";
   }
+  if (jobType === "app-watch") {
+    return "券商 App 更新采集与 LLM 结构化已完成，可在 App 更新看板查看最新数据。";
+  }
   return `${label}已完成。`;
 }
 
@@ -185,7 +198,8 @@ function readActiveJob(): { job_id: string; job_type: JobType } | null {
       (parsed.job_type === "scraper" ||
         parsed.job_type === "llm" ||
         parsed.job_type === "pipeline" ||
-        parsed.job_type === "llm-external")
+        parsed.job_type === "llm-external" ||
+        parsed.job_type === "app-watch")
     ) {
       return { job_id: parsed.job_id, job_type: parsed.job_type };
     }
@@ -279,6 +293,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     llm: null,
     pipeline: null,
     "llm-external": null,
+    "app-watch": null,
   });
   const streamingJobIdRef = useRef<string>("");
   // Ref tracking the current job_id for SSE jobs so cancel can call the API
@@ -293,6 +308,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     "llm-external": null,
     publish: null,
     ai_analysis: null,
+    "app-watch": null,
   });
 
   const clearProgressResetTimer = useCallback(() => {
@@ -311,6 +327,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       abortRefs.current.llm?.abort();
       abortRefs.current.pipeline?.abort();
       abortRefs.current["llm-external"]?.abort();
+      abortRefs.current["app-watch"]?.abort();
       directAbortRef.current?.abort();
 
       // Clear any active polling timers
@@ -320,6 +337,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       if (pollingTimerRef.current["llm-external"]) clearInterval(pollingTimerRef.current["llm-external"]);
       if (pollingTimerRef.current.publish) clearInterval(pollingTimerRef.current.publish);
       if (pollingTimerRef.current.ai_analysis) clearInterval(pollingTimerRef.current.ai_analysis);
+      if (pollingTimerRef.current["app-watch"]) clearInterval(pollingTimerRef.current["app-watch"]);
     };
   }, [clearProgressResetTimer]);
 
@@ -387,11 +405,13 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       const cardId =
         operationId === "ai_analysis"
           ? "ai"
-          : operationId === "scraper"
-            ? "crawler"
-            : operationId === "pipeline"
+          : operationId === "app-watch"
+            ? "app-watch"
+            : operationId === "scraper"
               ? "crawler"
-            : "llm";
+              : operationId === "pipeline"
+                ? "crawler"
+              : "llm";
 
       setCardSummary(cardId, status, summary, label);
       setProgressState({
@@ -524,6 +544,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             ? "正在启动双公告爬取、LLM 结构化与匹配 Pipeline..."
           : jobType === "llm-external"
             ? "正在导入外来公告，输出候选 CSV..."
+          : jobType === "app-watch"
+            ? "正在启动券商 App 更新采集与 LLM 结构化..."
           : "正在启动双公告 LLM、匹配与汇总...";
       const label = beginOperation(jobType, cardId, initialMessage);
       const controller = new AbortController();
@@ -960,7 +982,14 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const handleCancel = useCallback(async () => {
     if (!activeOperationRef.current || !token) return;
     const op = activeOperationRef.current;
-    if (op.id !== "scraper" && op.id !== "llm" && op.id !== "llm-external" && op.id !== "pipeline") return;
+    if (
+      op.id !== "scraper" &&
+      op.id !== "llm" &&
+      op.id !== "llm-external" &&
+      op.id !== "pipeline" &&
+      op.id !== "app-watch"
+    )
+      return;
     if (!window.confirm(`确定停止当前${op.label}任务吗？`)) return;
 
     const jobId = currentJobIdRef.current;
@@ -1038,6 +1067,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     abortRefs.current.llm?.abort();
     abortRefs.current["llm-external"]?.abort();
     abortRefs.current.pipeline?.abort();
+    abortRefs.current["app-watch"]?.abort();
     logout();
   }, [logout]);
 
@@ -1063,6 +1093,13 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         iconBg: "from-fuchsia-500 to-pink-600",
         title: "AI 情报分析",
         description: "基于当前正式看板数据生成近 30 天的 AI 情报分析。",
+      },
+      {
+        id: "app-watch" as const,
+        icon: Smartphone,
+        iconBg: "from-sky-500 to-cyan-600",
+        title: "券商 App 更新",
+        description: "抓取各券商 App 更新公告并做 LLM 结构化，写入 App 更新看板。",
       },
     ],
     [],
@@ -1234,6 +1271,27 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
                         ) : "选择采集方式"}
                       </GlowButton>
+                    ) : card.id === "app-watch" ? (
+                      <div className="flex flex-col gap-2 w-full">
+                        <GlowButton
+                          onClick={() => void runJob("app-watch")}
+                          disabled={isBusy}
+                          className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
+                        >
+                          {activeOperation?.id === "app-watch" ? (
+                            <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
+                          ) : "运行更新采集"}
+                        </GlowButton>
+                        <button
+                          onClick={() => window.open('/app-updates', '_blank')}
+                          disabled={isBusy}
+                          variant="outline"
+                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex items-center justify-center gap-1 transition-all"
+                        >
+                          <LayoutGrid className="size-3.5" />
+                          前往 App 更新看板
+                        </button>
+                      </div>
                     ) : (
                       <GlowButton
                         onClick={() => void runAiAnalysis()}
@@ -1261,7 +1319,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             activeOperation?.id === "scraper" ||
             activeOperation?.id === "llm" ||
             activeOperation?.id === "llm-external" ||
-            activeOperation?.id === "pipeline"
+            activeOperation?.id === "pipeline" ||
+            activeOperation?.id === "app-watch"
               ? handleCancel
               : undefined
           }

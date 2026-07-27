@@ -41,6 +41,22 @@ RUN pip install --no-cache-dir -r /app/backend/api/requirements.txt
 
 # Copy backend codebase
 COPY backend /app/backend
+
+# Install broker-app-watch into an isolated venv (dependency isolation per design).
+# The heavy OCR extra is intentionally excluded; the pazq/平安证券 image-OCR source
+# is disabled via BAW_DISABLED_BROKERS so rapidocr-onnxruntime is not required.
+COPY broker-app-watch /app/broker-app-watch
+RUN python -m venv /app/broker-app-watch/.venv \
+    && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir -e /app/broker-app-watch
+
+# broker-app-watch subprocess configuration (consumed by backend JobManager)
+ENV APP_WATCH_PYTHON_EXECUTABLE=/app/broker-app-watch/.venv/bin/python
+ENV APP_WATCH_WORKING_DIR=/app/broker-app-watch
+ENV APP_RELEASES_CSV_PATH=/app/broker-app-watch/data/exports/app_releases.csv
+ENV APP_WATCH_LLM_CONFIG_PATH=/app/backend/config/llm_api_config.json
+ENV BAW_DISABLED_BROKERS=pazq
+
 COPY --from=frontend-builder /build/frontend/out /app/frontend/out
 
 # Expose FastAPI port

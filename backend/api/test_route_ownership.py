@@ -61,6 +61,8 @@ class RouteOwnershipTests(unittest.TestCase):
             ("POST", "/api/jobs/scraper"),
             ("POST", "/api/jobs/llm"),
             ("POST", "/api/jobs/pipeline"),
+            ("POST", "/api/jobs/app-watch"),
+            ("GET", "/api/app-releases"),
             ("GET", "/api/jobs/{job_id}"),
             ("POST", "/api/jobs/{job_id}/cancel"),
             ("GET", "/api/jobs/{job_id}/events"),
@@ -217,6 +219,37 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(response.headers["content-type"].split(";", 1)[0], "text/event-stream")
         self.assertGreaterEqual(len(response.content), 2048)
         self.assertIn(b'"type": "done"', response.content)
+
+    def test_app_watch_routes_work_with_mocked_manager(self) -> None:
+        headers = self._admin_headers()
+
+        fake_job = SimpleNamespace(job_id="app-1", job_type="app-watch", status="running")
+        with patch.object(main.job_manager, "start_app_watch", return_value=fake_job):
+            response = self.client.post("/api/jobs/app-watch", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["job_type"], "app-watch")
+
+        missing_path = Path(_RUNTIME_DIR.name) / "missing-app-releases.csv"
+        with patch.object(main, "app_releases_csv_path", return_value=missing_path):
+            not_found = self.client.get("/api/app-releases", headers=headers)
+        self.assertEqual(not_found.status_code, 404)
+        self.assertNotIn(str(missing_path), not_found.text)
+
+        csv_path = Path(_RUNTIME_DIR.name) / "app-releases.csv"
+        with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(
+                handle, fieldnames=["broker_name", "app_name", "app_version"]
+            )
+            writer.writeheader()
+            writer.writerow(
+                {"broker_name": "国信证券", "app_name": "国信金太阳", "app_version": "6.0.0"}
+            )
+        with patch.object(main, "app_releases_csv_path", return_value=csv_path):
+            ok = self.client.get("/api/app-releases", headers=headers)
+        self.assertEqual(ok.status_code, 200)
+        payload = ok.json()
+        self.assertEqual(payload["meta"]["count"], 1)
+        self.assertEqual(payload["records"][0]["app_version"], "6.0.0")
 
     def test_announcement_headers_and_conditional_request(self) -> None:
         csv_path = Path(_RUNTIME_DIR.name) / "announcement.csv"

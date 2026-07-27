@@ -80,6 +80,10 @@ class JobManager:
         """Start the dual-notice pipeline and its conservative match stages."""
         return self._start_staged_job("pipeline")
 
+    def start_app_watch(self) -> Job:
+        """Crawl broker App pages and run the LLM structuring export."""
+        return self._start_job("app-watch", self._build_app_watch_command)
+
     def _start_staged_job(
         self,
         job_type: str,
@@ -629,6 +633,62 @@ class JobManager:
         env.setdefault("PYTHONIOENCODING", "utf-8")
         return command, working_dir, env
 
+    def _build_app_watch_command(self) -> tuple[list[str], Path, dict[str, str]]:
+        project_root = Path(__file__).resolve().parents[2]
+        default_working_dir = project_root / "broker-app-watch"
+        venv_python = (
+            default_working_dir
+            / ".venv"
+            / ("Scripts" if os.name == "nt" else "bin")
+            / ("python.exe" if os.name == "nt" else "python")
+        )
+        default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
+        default_export_path = default_working_dir / "data" / "exports" / "app_releases.csv"
+
+        configured_python = os.getenv("APP_WATCH_PYTHON_EXECUTABLE")
+        python_executable = (
+            self._resolve_path(configured_python, project_root, venv_python)
+            if configured_python
+            else venv_python
+        )
+        working_dir = self._resolve_path(
+            os.getenv("APP_WATCH_WORKING_DIR"), project_root, default_working_dir
+        )
+        config_path = self._resolve_path(
+            os.getenv("APP_WATCH_LLM_CONFIG_PATH") or os.getenv("LLM_CONFIG_PATH"),
+            project_root,
+            default_config_path,
+        )
+        export_path = self._resolve_path(
+            os.getenv("APP_RELEASES_CSV_PATH"), project_root, default_export_path
+        )
+
+        if not python_executable.exists():
+            raise JobStartError(f"App-watch python executable not found: {python_executable}")
+        if not working_dir.exists() or not working_dir.is_dir():
+            raise JobStartError(f"App-watch working directory not found: {working_dir}")
+        if not config_path.exists():
+            raise JobStartError(f"App-watch LLM config file not found: {config_path}")
+
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+
+        command = [
+            str(python_executable),
+            "-u",
+            "-m",
+            "broker_app_watch.cli",
+            "refresh",
+            "--all",
+            "--llm-config",
+            str(config_path),
+            "--export-path",
+            str(export_path),
+        ]
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        env.setdefault("PYTHONIOENCODING", "utf-8")
+        return command, working_dir, env
+
     def _build_llm_command(
         self,
         *,
@@ -909,6 +969,7 @@ class JobManager:
             "pipeline": "自动化 Pipeline",
             "publish": "推送",
             "ai_analysis": "AI 情报分析",
+            "app-watch": "券商App更新",
         }
         return labels.get(operation_type, operation_type)
 

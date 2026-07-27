@@ -88,13 +88,26 @@ http://<HOST_IP>:5000/docs
 
 禁止增加 Uvicorn worker 数量。Session Token、任务状态、任务互斥锁、SSE 和公告响应缓存均为进程内状态，多 worker 会造成状态不一致。
 
-## 3. macOS 开发
+## 3. macOS 本地测试（当前推荐人工验收方式）
+
+本节用于开发和人工验收，不使用生产静态托管方式。Next.js 开发服务器直接运行在 3000 端口，FastAPI 运行在 8000 端口。
+
+首次准备：
+
+```bash
+cd /Volumes/zhuzhuxia1T/broker-announcement-system-demo
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/api/requirements.txt
+cd broker-app-watch
+.venv/bin/python -m pip install -e ".[dev]"
+cd ../frontend
+pnpm install
+cd ..
+```
 
 后端：
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/api/requirements.txt
 .venv/bin/python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
@@ -102,11 +115,22 @@ python3 -m venv .venv
 
 ```bash
 cd frontend
-pnpm install
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
-开发页面通常为 `http://localhost:3000`。生产静态构建前必须将 `NEXT_PUBLIC_API_BASE_URL` 置空，使浏览器同源访问 `/api`。
+开发页面通常为 `http://localhost:3000`。也可以直接使用 `frontend/.env.local` 中的 `NEXT_PUBLIC_API_BASE_URL=http://localhost:8000`，无需在命令行重复设置。
+
+后端健康检查：
+
+```bash
+curl http://127.0.0.1:8000/api/health
+```
+
+人工验收时登录前端后，在管理员控制台运行“券商 App 更新”，再打开 `http://localhost:3000/app-updates` 验证数据和交互。该任务由主后端调用 `broker-app-watch/.venv` 中的 CLI，不需要单独启动 App Watch FastAPI 或独立 scheduler。
+
+App Watch 真实任务要求 `broker-app-watch/.venv` 和 `backend/config/llm_api_config.json` 可用，并会访问外部网站和 LLM 服务；只做界面验收时可先运行 `check-config` 与 `dry-run`。
+
+本地测试不需要先执行 `pnpm build`。只有验证静态导出或生产托管时，才执行下面的生产构建流程。
 
 ## 4. Docker 备用部署
 
@@ -133,5 +157,4 @@ pnpm build
 - 409：已有互斥任务或操作运行中。
 - 修改 `.env` 或重新构建前端后，必须重启对应服务。
 - 真实爬虫和真实 LLM 调用会访问外部服务，应在明确授权和有效配置下单独验收。
-
 

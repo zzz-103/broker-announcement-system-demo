@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Download, Settings, LogOut, Sparkles, ArrowLeft, HelpCircle, MessageSquarePlus } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate } from "@/lib/announcement-data";
+import { ModuleSwitcher, type ActiveModule } from "@/components/app-watch/module-switcher";
 
 interface DashboardHeaderProps {
   username: string;
@@ -13,6 +14,7 @@ interface DashboardHeaderProps {
   filteredData: ProcessedRecord[];
   isAdmin: boolean;
   showDashboard: boolean;
+  activeModule?: ActiveModule;
   onShowModal: () => void;
   onExport: () => void;
   onOpenFeedback: () => void;
@@ -27,6 +29,7 @@ export function DashboardHeader({
   filteredData,
   isAdmin,
   showDashboard,
+  activeModule,
   onShowModal,
   onExport,
   onOpenFeedback,
@@ -87,15 +90,22 @@ export function DashboardHeader({
       </div>
 
       {/* Grouped Right Area */}
-      <div className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-300 sm:mt-0 sm:gap-6 sm:text-[12px]">
+      <div className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-300 sm:mt-0 sm:gap-4 sm:text-[12px]">
+        {/* 0. Module Switcher (NEW) */}
+        {activeModule && (
+          <div className="flex shrink-0 items-center gap-1.5 border-r border-white/10 pr-1.5 sm:border-l sm:border-r-0 sm:pr-0 sm:pl-3.5">
+            <ModuleSwitcher activeModule={activeModule} />
+          </div>
+        )}
+
         {/* 1. Data Status Group */}
         <div className="flex items-center gap-3.5 border-r border-white/10 pr-3.5 hidden md:flex">
           <span className="whitespace-nowrap flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            最新数据: <span className="text-white font-medium">{formatDate(baseline)}</span>
+            最新数据：<span className="text-white font-medium">{formatDate(baseline)}</span>
           </span>
           <span className="whitespace-nowrap">
-            覆盖主体: <span className="text-white font-medium">{totalBrokers}</span>
+            覆盖主体：<span className="text-white font-medium">{totalBrokers}</span>
           </span>
         </div>
 

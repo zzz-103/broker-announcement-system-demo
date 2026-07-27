@@ -29,7 +29,7 @@ from .ai_analysis import (
 )
 from .announcement_cache import AnnouncementResponseCache, accepts_gzip, etag_matches
 from .audit_store import AuditStoreError, EVENT_TYPES as AUDIT_EVENT_TYPES, get_today_summary, list_events, record_event
-from .job_manager import JobConflictError, JobManager, JobNotFoundError, format_sse
+from .job_manager import JobConflictError, JobManager, JobNotFoundError, JobStartError, format_sse
 from .supplemental_seed import (
     CANONICAL_FIELDS,
     SupplementalDataError,
@@ -277,6 +277,14 @@ def announcement_csv_path() -> Path:
     return resolve_project_path(
         os.getenv("ANNOUNCEMENT_CSV_PATH"),
         project_root / "backend" / "data" / "announcement_table.csv",
+    )
+
+
+def app_releases_csv_path() -> Path:
+    project_root = Path(__file__).resolve().parents[2]
+    return resolve_project_path(
+        os.getenv("APP_RELEASES_CSV_PATH"),
+        project_root / "broker-app-watch" / "data" / "exports" / "app_releases.csv",
     )
 
 
@@ -693,6 +701,19 @@ def start_pipeline() -> dict[str, str]:
     return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
 
 
+@app.post("/api/jobs/app-watch", dependencies=[Depends(require_admin_token)])
+def start_app_watch() -> dict[str, str]:
+    try:
+        job = job_manager.start_app_watch()
+    except JobConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except JobStartError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+    return {"job_id": job.job_id, "job_type": job.job_type, "status": job.status}
+
+
 @app.post("/api/internal/scheduled-pipeline")
 def scheduled_pipeline(
     x_scheduler_token: Annotated[str | None, Header()] = None,
@@ -749,6 +770,27 @@ def get_announcements(request: Request) -> Response:
     else:
         body = cached.raw_body
     return Response(content=body, media_type="application/json", headers=response_headers)
+
+
+@app.get("/api/app-releases", dependencies=[Depends(require_token)])
+def get_app_releases() -> dict[str, object]:
+    csv_path = app_releases_csv_path()
+    if not csv_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="app release data has not been generated; run the app-watch job first",
+        )
+    _, records = read_announcement_csv(csv_path)
+    try:
+        updated_at: str | None = datetime.fromtimestamp(
+            csv_path.stat().st_mtime, tz=timezone.utc
+        ).isoformat()
+    except OSError:
+        updated_at = None
+    return {
+        "records": records,
+        "meta": {"count": len(records), "updated_at": updated_at},
+    }
 
 
 @app.post("/api/data/announcements/publish", dependencies=[Depends(require_admin_token)])
