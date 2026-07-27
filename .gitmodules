@@ -1,0 +1,3 @@
+[submodule "broker-app-watch"]
+	path = broker-app-watch
+	url = ./broker-app-watch
