@@ -19,6 +19,9 @@ os.environ["USER_DB_PATH"] = str(Path(_RUNTIME_DIR.name) / "users.db")
 os.environ["AUDIT_DB_PATH"] = str(Path(_RUNTIME_DIR.name) / "audit.db")
 
 from backend.api import main  # noqa: E402
+from backend.api.routes import accounts  # noqa: E402
+from backend.api.routes import ai  # noqa: E402
+from backend.api.routes import datasets  # noqa: E402
 
 
 class RouteOwnershipTests(unittest.TestCase):
@@ -27,7 +30,7 @@ class RouteOwnershipTests(unittest.TestCase):
         self.client = TestClient(main.app)
 
     def _admin_headers(self) -> dict[str, str]:
-        with patch.object(main, "write_audit_event_safely", return_value=False):
+        with patch.object(accounts, "write_audit_event_safely", return_value=False):
             response = self.client.post(
                 "/api/login",
                 json={"username": "route-audit-admin", "password": "route-audit-password"},
@@ -85,8 +88,8 @@ class RouteOwnershipTests(unittest.TestCase):
 
         fake_user = SimpleNamespace(id=7, username="approved.user", name="Approved User")
         with (
-            patch.object(main, "authenticate_user", return_value=fake_user),
-            patch.object(main, "write_audit_event_safely", return_value=False),
+            patch.object(accounts, "authenticate_user", return_value=fake_user),
+            patch.object(accounts, "write_audit_event_safely", return_value=False),
         ):
             response = self.client.post(
                 "/api/login",
@@ -99,7 +102,7 @@ class RouteOwnershipTests(unittest.TestCase):
         headers = self._admin_headers()
         marker = uuid.uuid4().hex
         for index in range(5):
-            main.create_user(
+            accounts.create_user(
                 f"Pagination User {index}",
                 f"pagination-{marker}-{index}@csco.com.cn",
                 "Pagination Department",
@@ -134,7 +137,7 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(len(users_after_delete.json()["users"]), 4)
 
         for index in range(21):
-            main.record_event(
+            accounts.record_event(
                 event_type="qualification_application",
                 metadata={"name": f"Audit Search {marker}", "department": "Pagination Department"},
             )
@@ -163,8 +166,8 @@ class RouteOwnershipTests(unittest.TestCase):
             to_dict=lambda: {"id": 9, "username": "applicant"},
         )
         with (
-            patch.object(main, "apply_for_user", return_value=(fake_user, "generated-password")),
-            patch.object(main, "write_audit_event_safely", return_value=False),
+            patch.object(accounts, "apply_for_user", return_value=(fake_user, "generated-password")),
+            patch.object(accounts, "write_audit_event_safely", return_value=False),
         ):
             response = self.client.post(
                 "/api/users/apply",
@@ -175,7 +178,7 @@ class RouteOwnershipTests(unittest.TestCase):
 
         headers = self._admin_headers()
         fake_feedback = SimpleNamespace(to_dict=lambda: {"id": 3, "status": "pending"})
-        with patch.object(main, "create_feedback", return_value=fake_feedback):
+        with patch.object(accounts, "create_feedback", return_value=fake_feedback):
             response = self.client.post(
                 "/api/feedback",
                 headers=headers,
@@ -189,7 +192,7 @@ class RouteOwnershipTests(unittest.TestCase):
             "analysis": {"content": "mock analysis"},
             "meta": {"generated_at": "2026-07-10T00:00:00+00:00", "source_count": 1, "window_days": 30, "cached": False},
         }
-        with patch.object(main, "load_cached_analysis", return_value=ai_payload):
+        with patch.object(ai, "load_cached_analysis", return_value=ai_payload):
             response = self.client.get("/api/ai-analysis", headers=headers)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["content"], "mock analysis")
@@ -197,7 +200,7 @@ class RouteOwnershipTests(unittest.TestCase):
         with (
             patch.object(main.job_manager, "acquire_operation"),
             patch.object(main.job_manager, "release_operation"),
-            patch.object(main, "generate_ai_analysis", return_value=ai_payload),
+            patch.object(ai, "generate_ai_analysis", return_value=ai_payload),
         ):
             response = self.client.post("/api/ai-analysis", headers=headers)
         self.assertEqual(response.status_code, 200)
@@ -230,7 +233,7 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(response.json()["job_type"], "app-watch")
 
         missing_path = Path(_RUNTIME_DIR.name) / "missing-app-releases.csv"
-        with patch.object(main, "app_releases_csv_path", return_value=missing_path):
+        with patch.object(datasets, "app_releases_csv_path", return_value=missing_path):
             not_found = self.client.get("/api/app-releases", headers=headers)
         self.assertEqual(not_found.status_code, 404)
         self.assertNotIn(str(missing_path), not_found.text)
@@ -244,7 +247,7 @@ class RouteOwnershipTests(unittest.TestCase):
             writer.writerow(
                 {"broker_name": "国信证券", "app_name": "国信金太阳", "app_version": "6.0.0"}
             )
-        with patch.object(main, "app_releases_csv_path", return_value=csv_path):
+        with patch.object(datasets, "app_releases_csv_path", return_value=csv_path):
             ok = self.client.get("/api/app-releases", headers=headers)
         self.assertEqual(ok.status_code, 200)
         payload = ok.json()
@@ -260,7 +263,7 @@ class RouteOwnershipTests(unittest.TestCase):
         main.announcement_response_cache.invalidate()
         headers = {**self._admin_headers(), "Accept-Encoding": "identity"}
 
-        with patch.object(main, "announcement_csv_path", return_value=csv_path):
+        with patch.object(datasets, "announcement_csv_path", return_value=csv_path):
             response = self.client.get("/api/data/announcements", headers=headers)
             conditional = self.client.get(
                 "/api/data/announcements",

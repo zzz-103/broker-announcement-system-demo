@@ -21,7 +21,6 @@ class AnnouncementResponseCacheTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.csv_path = Path(self.temp_dir.name) / "announcement_table.csv"
         self.cache = AnnouncementResponseCache()
-        self.load_count = 0
         self._write_rows([{"project_name": "项目A", "broker_name": "券商A"}])
 
     def tearDown(self) -> None:
@@ -35,37 +34,42 @@ class AnnouncementResponseCacheTests(unittest.TestCase):
             writer.writerows(rows)
         os.replace(temp_path, self.csv_path)
 
-    def _loader(self, path: Path) -> tuple[list[str], list[dict[str, str]]]:
-        self.load_count += 1
-        with path.open("r", encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            return list(reader.fieldnames or []), list(reader)
-
     def test_cached_body_is_json_equivalent_and_gzip_round_trips(self) -> None:
-        first = self.cache.get(self.csv_path, self._loader)
-        second = self.cache.get(self.csv_path, self._loader)
+        first = self.cache.get(self.csv_path)
+        second = self.cache.get(self.csv_path)
 
         self.assertIs(first, second)
-        self.assertEqual(self.load_count, 1)
+        self.assertEqual(self.cache.build_count, 1)
         self.assertEqual(gzip.decompress(first.gzip_body), first.raw_body)
         payload = json.loads(first.raw_body)
         self.assertEqual(payload["records"], [{"project_name": "项目A", "broker_name": "券商A"}])
         self.assertEqual(payload["meta"]["count"], 1)
 
     def test_atomic_replacement_rebuilds_cache(self) -> None:
-        first = self.cache.get(self.csv_path, self._loader)
+        first = self.cache.get(self.csv_path)
         self._write_rows([{"project_name": "项目B", "broker_name": "券商B"}])
-        second = self.cache.get(self.csv_path, self._loader)
+        second = self.cache.get(self.csv_path)
 
         self.assertNotEqual(first.etag, second.etag)
         self.assertEqual(json.loads(second.raw_body)["records"][0]["project_name"], "项目B")
-        self.assertEqual(self.load_count, 2)
+        self.assertEqual(self.cache.build_count, 2)
 
     def test_concurrent_reads_build_once(self) -> None:
         with ThreadPoolExecutor(max_workers=8) as executor:
-            entries = list(executor.map(lambda _: self.cache.get(self.csv_path, self._loader), range(16)))
-        self.assertEqual(self.load_count, 1)
+            entries = list(executor.map(lambda _: self.cache.get(self.csv_path), range(16)))
+        self.assertEqual(self.cache.build_count, 1)
         self.assertTrue(all(entry is entries[0] for entry in entries))
+
+    def test_projection_and_entry_bound(self) -> None:
+        projected = self.cache.get(self.csv_path, ("project_name",))
+        self.assertEqual(
+            json.loads(projected.raw_body)["records"],
+            [{"project_name": "项目A"}],
+        )
+        second_path = Path(self.temp_dir.name) / "second.csv"
+        second_path.write_text("value\n1\n", encoding="utf-8")
+        self.cache.get(second_path)
+        self.assertEqual(self.cache.entry_count, 2)
 
     def test_encoding_and_validator_helpers(self) -> None:
         self.assertTrue(accepts_gzip("br, gzip;q=0.8"))

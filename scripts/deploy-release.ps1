@@ -27,6 +27,7 @@ $RollbackAttempted = $false
 $RollbackSucceeded = $false
 $PreviousVersion = $null
 $GitSha = $null
+$PublicBaseUrl = 'http://localhost:8080'
 
 function Assert-LastExitCode {
     param([string]$Step)
@@ -92,8 +93,8 @@ function Wait-ForHttpSuccess {
 }
 
 function Test-DeploymentHealth {
-    return (Wait-ForHttpSuccess -Uri 'http://localhost:8080/api/health') -and
-        (Wait-ForHttpSuccess -Uri 'http://localhost:8080/')
+    return (Wait-ForHttpSuccess -Uri "$PublicBaseUrl/api/health") -and
+        (Wait-ForHttpSuccess -Uri "$PublicBaseUrl/")
 }
 
 function Write-ReleaseRecord {
@@ -126,13 +127,21 @@ try {
     }
     foreach ($path in @(
         $SourceDir, $DeployDir, $BackendDockerfile, $FrontendDockerfile, $PackageJson, $ComposeFile, $EnvFile,
-        (Join-Path $DeployDir 'runtime\data'),
-        (Join-Path $DeployDir 'runtime\scraper-output'),
         (Join-Path $DeployDir 'runtime\config\llm_api_config.json'),
         (Join-Path $DeployDir 'runtime\config\user_qualification.csv')
     )) {
         if (-not (Test-Path -LiteralPath $path)) { throw "Required path not found: $path" }
     }
+    foreach ($directory in @(
+        (Join-Path $DeployDir 'runtime\data'),
+        (Join-Path $DeployDir 'runtime\scraper-output'),
+        (Join-Path $DeployDir 'runtime\app-watch-data'),
+        $ReleaseDir
+    )) {
+        New-Item -ItemType Directory -Force -Path $directory | Out-Null
+    }
+    $configuredPublicUrl = Get-EnvValue -Path $EnvFile -Key 'BROKER_PUBLIC_URL'
+    if ($configuredPublicUrl) { $PublicBaseUrl = $configuredPublicUrl.TrimEnd('/') }
 
     $currentBranch = (git -C $SourceDir branch --show-current).Trim()
     Assert-LastExitCode 'Read current Git branch'
@@ -155,12 +164,29 @@ try {
     if ($PreviousVersion -eq $Version -and -not $Force) { throw "Version $Version is already deployed. Use -Force to recreate it intentionally." }
 
     Push-Location $DeployDir
-    try { docker compose config --quiet; Assert-LastExitCode 'Validate Docker Compose configuration' }
+    try {
+        docker compose config --quiet
+        Assert-LastExitCode 'Validate Docker Compose configuration'
+        $composeServices = @(docker compose config --services)
+        Assert-LastExitCode 'Read Docker Compose services'
+        foreach ($requiredService in @('backend-api', 'backend-scheduler', 'frontend', 'gateway')) {
+            if ($composeServices -notcontains $requiredService) {
+                throw "Required Compose service not found: $requiredService"
+            }
+        }
+        $composeConfig = docker compose config
+        Assert-LastExitCode 'Read Docker Compose mounts'
+        if ($composeConfig -notmatch 'app-watch-data') {
+            throw 'Production Compose must mount runtime/app-watch-data into backend-api.'
+        }
+    }
     finally { Pop-Location }
 
     Write-Host "Building $BackendImage from $GitSha"
     docker build --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
     Assert-LastExitCode 'Build backend image'
+    docker run --rm --entrypoint /app/broker-app-watch/.venv/bin/python $BackendImage -c "import broker_app_watch; print('broker-app-watch import ok')"
+    Assert-LastExitCode 'Validate broker-app-watch image import'
     Write-Host "Building $FrontendImage from $GitSha"
     docker build --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
     Assert-LastExitCode 'Build frontend image'
@@ -179,7 +205,7 @@ try {
     if (-not (Test-DeploymentHealth)) { throw 'New version failed gateway health validation.' }
 
     Write-ReleaseRecord -Result 'succeeded' -Message 'Gateway API and homepage health checks passed.'
-    Write-Host "Version $Version deployed successfully. Open: http://localhost:8080"
+    Write-Host "Version $Version deployed successfully. Open: $PublicBaseUrl"
 }
 catch {
     $failureMessage = $_.Exception.Message

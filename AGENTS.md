@@ -825,6 +825,14 @@ Codex 必须遵守：
 - 公告响应单进程缓存、gzip 压缩与 ETag/304 条件请求
 - 前端搜索延迟计算、搜索文本预计算与重复基准扫描消除
 - 爬虫公告元数据单次扫描、LLM 客户端延迟加载及正式 CSV 备份保留上限
+- 公告与 App Release CSV 流式 gzip 响应缓存、公告 `view=dashboard` 字段投影及最多两条缓存保留
+- Session 与已完成任务有界保留（默认 1000/100），任务事件单次入队
+- 主前端按 procurement、app-watch、admin 业务域组织，API 客户端按领域拆分并保留兼容入口
+- Windows 四服务发布增加 App Watch 数据目录、Compose 挂载和镜像内 CLI 导入预检
+- 数据、任务/SSE、AI 分析路由已从 `main.py` 拆入 `backend/api/routes/`
+- 公告与 App Watch 筛选统计由访问端单次扫描完成，重复数据请求使用浏览器 ETag/304 协商
+- 账号、审批、反馈和审计路由已迁入领域路由，`main.py` 仅保留应用装配
+- 管理员任务执行、SSE、轮询恢复、取消及资源清理统一由 `useJobRunner` 管理
 
 待完成或待最终验收：
 

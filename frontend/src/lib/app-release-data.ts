@@ -47,7 +47,6 @@ export interface AppReleaseRecord {
   updateSummary: string;
   featureTags: string[];
   highlights: string[];
-  searchText: string;
 }
 
 export interface LoadedAppReleaseData {
@@ -145,19 +144,6 @@ export function processAppReleases(rawRows: RawAppReleaseRow[]): AppReleaseRecor
       const updateSummary = row.update_summary?.trim() ?? "";
       const featureTags = parseJsonArray(row.feature_tags);
       const highlights = parseJsonArray(row.highlights);
-      const searchText = [
-        brokerName,
-        brokerCode,
-        appName,
-        appVersion,
-        updateSummary,
-        updateType,
-        featureTags.join(" "),
-        highlights.join(" "),
-      ]
-        .join("\n")
-        .toLowerCase();
-
       return {
         brokerCode,
         brokerName,
@@ -175,10 +161,29 @@ export function processAppReleases(rawRows: RawAppReleaseRow[]): AppReleaseRecor
         updateSummary,
         featureTags,
         highlights,
-        searchText,
       };
     })
     .filter((record) => record.brokerCode || record.appName || record.updateSummary);
+}
+
+const APP_RELEASE_SEARCH_CACHE = new WeakMap<AppReleaseRecord, string>();
+
+export function appReleaseMatchesSearch(record: AppReleaseRecord, keyword: string): boolean {
+  let searchText = APP_RELEASE_SEARCH_CACHE.get(record);
+  if (searchText === undefined) {
+    searchText = [
+      record.brokerName,
+      record.brokerCode,
+      record.appName,
+      record.appVersion,
+      record.updateSummary,
+      record.updateType,
+      record.featureTags.join(" "),
+      record.highlights.join(" "),
+    ].join("\n").toLowerCase();
+    APP_RELEASE_SEARCH_CACHE.set(record, searchText);
+  }
+  return searchText.includes(keyword);
 }
 
 export async function loadAppReleases(token: string): Promise<LoadedAppReleaseData> {

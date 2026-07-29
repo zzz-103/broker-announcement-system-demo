@@ -25,3 +25,8 @@ previous containers. Non-sensitive release records and local `.env` backups are 
 `D:\broker-system\deploy\releases`; keep that directory protected by host permissions.
 
 Use `-Force` only when deliberately rebuilding the currently deployed version.
+
+The deployment `.env` may set `BROKER_PUBLIC_URL` (default
+`http://localhost:8080`). The script creates the runtime data directories and
+requires the external Compose file to mount `runtime/app-watch-data` into the
+backend API container. App Watch itself remains an on-demand subprocess.

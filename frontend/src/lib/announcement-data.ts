@@ -43,16 +43,11 @@ export interface ProcessedRecord {
   document_sha1: string;
   processed_at: string;
   raw_json_path: string;
-  broker_name_raw: string;
   is_broker_project: boolean | null;
-  publish_date_raw: string;
   announcement_stage: string;
-  procurement_category: string;
-  project_subcategory: string;
   project_name_raw: string;
   procurement_method: string;
   budget_amount_yuan: number | null;
-  winning_supplier_raw: string;
   winning_amount_yuan: number | null;
   display_amount_yuan: number | null;
   display_amount_kind: "winning" | "budget" | null;
@@ -68,7 +63,6 @@ export interface ProcessedRecord {
   primaryDomain: string;
   topicTags: string[];
   isFinTech: boolean;
-  searchText: string;
 }
 
 export const SUPPORTED_SOURCES = ["金采网"] as const;
@@ -349,29 +343,17 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
     const topicTags = generateTags(projectNameRaw, subcategory);
     const sourceName = (row.source ?? row.data_source ?? "").trim();
     const procurementMethod = row.procurement_method?.trim() ?? "";
-    const searchText = [
-      projectNameRaw,
-      validBrokerName,
-      normalizedSupplier,
-      procurementMethod,
-    ].join("\n").toLowerCase();
-
     return {
       broker_folder: row.broker_folder?.trim() ?? "",
       markdown_file: row.markdown_file?.trim() ?? "",
       document_sha1: row.document_sha1?.trim() ?? "",
       processed_at: row.processed_at?.trim() ?? "",
       raw_json_path: row.raw_json_path?.trim() ?? "",
-      broker_name_raw: brokerNameRaw,
       is_broker_project: isBrokerProject,
-      publish_date_raw: publishDateRaw,
       announcement_stage: row.announcement_stage?.trim() ?? "",
-      procurement_category: category,
-      project_subcategory: subcategory,
       project_name_raw: projectNameRaw,
       procurement_method: procurementMethod,
       budget_amount_yuan: budgetAmount,
-      winning_supplier_raw: supplierRaw,
       winning_amount_yuan: winningAmount,
       display_amount_yuan: displayAmount,
       display_amount_kind: displayAmountKind,
@@ -385,9 +367,24 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       primaryDomain,
       topicTags,
       isFinTech,
-      searchText,
     };
   });
+}
+
+const SEARCH_TEXT_CACHE = new WeakMap<ProcessedRecord, string>();
+
+export function recordMatchesSearch(record: ProcessedRecord, keyword: string): boolean {
+  let searchText = SEARCH_TEXT_CACHE.get(record);
+  if (searchText === undefined) {
+    searchText = [
+      record.project_name_raw,
+      record.validBrokerName,
+      record.normalizedSupplier,
+      record.procurement_method,
+    ].join("\n").toLowerCase();
+    SEARCH_TEXT_CACHE.set(record, searchText);
+  }
+  return searchText.includes(keyword);
 }
 
 const INVALID_BROKER_NAMES = new Set([

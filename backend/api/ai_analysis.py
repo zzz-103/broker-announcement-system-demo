@@ -11,13 +11,12 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from .config import PROJECT_ROOT, resolve_project_path
 from backend.llm_table.llm_client import (
     LLMApiConfig,
     OpenAICompatibleClient,
 )
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CSV_PATH = PROJECT_ROOT / "backend" / "data" / "announcement_table.csv"
 DEFAULT_CACHE_PATH = PROJECT_ROOT / "backend" / "data" / "ai-analysis.json"
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "backend" / "config" / "llm_api_config.json"
@@ -31,13 +30,6 @@ class AiAnalysisError(Exception):
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
-
-
-def resolve_project_path(value: str | None, default: Path) -> Path:
-    path = Path(value) if value else default
-    if not path.is_absolute():
-        path = PROJECT_ROOT / path
-    return path.resolve()
 
 
 def cache_path() -> Path:

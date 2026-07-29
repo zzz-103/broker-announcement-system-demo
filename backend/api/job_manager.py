@@ -3,15 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import threading
 import uuid
 from collections import deque
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Deque
-from zoneinfo import ZoneInfo
+
+from .config import settings
+from .job_commands import JobCommandFactory, JobStartError
 
 
 MAX_LOG_LINES = 500
@@ -21,7 +22,7 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-@dataclass
+@dataclass(slots=True)
 class Job:
     job_id: str
     job_type: str
@@ -48,11 +49,7 @@ class JobConflictError(RuntimeError):
     pass
 
 
-class JobStartError(RuntimeError):
-    pass
-
-
-class JobManager:
+class JobManager(JobCommandFactory):
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._condition = threading.Condition(self._lock)
@@ -63,6 +60,7 @@ class JobManager:
         self._active_operation: str | None = None
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._cancel_requested: set[str] = set()
+        self._history_limit = settings.job_history_limit
 
     def start_scraper(self) -> Job:
         return self._start_staged_job("scraper")
@@ -94,6 +92,7 @@ class JobManager:
         with self._condition:
             if self._active_operation:
                 raise JobConflictError(self._conflict_message(self._active_operation))
+            self._prune_history_locked()
 
             job = Job(
                 job_id=str(uuid.uuid4()),
@@ -120,6 +119,7 @@ class JobManager:
         with self._condition:
             if self._active_operation:
                 raise JobConflictError(self._conflict_message(self._active_operation))
+            self._prune_history_locked()
             self._active_operation = operation_type
 
     def release_operation(self, operation_type: str) -> None:
@@ -132,6 +132,7 @@ class JobManager:
         with self._condition:
             if self._active_operation:
                 raise JobConflictError(self._conflict_message(self._active_operation))
+            self._prune_history_locked()
 
             job = Job(
                 job_id=str(uuid.uuid4()),
@@ -149,6 +150,25 @@ class JobManager:
         thread = threading.Thread(target=self._run_job, args=(job.job_id, command_builder), daemon=True)
         thread.start()
         return job
+
+    def _prune_history_locked(self) -> None:
+        while len(self._jobs) >= self._history_limit:
+            removable_id = next(
+                (
+                    job_id
+                    for job_id, job in self._jobs.items()
+                    if job.status in {"succeeded", "failed", "cancelled"}
+                    and job_id != self._running_job_id
+                ),
+                None,
+            )
+            if removable_id is None:
+                return
+            self._jobs.pop(removable_id, None)
+            self._events.pop(removable_id, None)
+            self._event_sequences.pop(removable_id, None)
+            self._processes.pop(removable_id, None)
+            self._cancel_requested.discard(removable_id)
 
     def get_job(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -571,286 +591,6 @@ class JobManager:
         except OSError:
             pass
 
-    def _get_scraper_lookback_info(self) -> tuple[int, str]:
-        import logging
-        raw_lookback = os.getenv("SCRAPER_LOOKBACK_DAYS", "20")
-        lookback_days = 20
-        try:
-            val = int(raw_lookback)
-            if 1 <= val <= 365:
-                lookback_days = val
-            else:
-                logging.warning(
-                    f"SCRAPER_LOOKBACK_DAYS value {raw_lookback} out of range [1, 365]. Falling back to default 20."
-                )
-        except ValueError:
-            logging.warning(
-                f"SCRAPER_LOOKBACK_DAYS value {raw_lookback} is not a valid integer. Falling back to default 20."
-            )
-
-        timezone_name = os.getenv("SCHEDULER_TIMEZONE", "Asia/Shanghai")
-        today = datetime.now(ZoneInfo(timezone_name)).date()
-        since_date = today - timedelta(days=lookback_days)
-        return lookback_days, since_date.isoformat()
-
-    def _build_scraper_command(self, notice_type: str = "procurement") -> tuple[list[str], Path, dict[str, str]]:
-        if notice_type not in {"procurement", "result"}:
-            raise JobStartError(f"Unsupported scraper notice type: {notice_type}")
-        project_root = Path(__file__).resolve().parents[2]
-        scraper_root = project_root / "backend" / "python-http-www-cfcpn-com-jcw"
-        default_script = scraper_root / "cfcpn_scraper.py"
-
-        configured_python = os.getenv("SCRAPER_PYTHON_EXECUTABLE")
-        python_executable = (
-            self._resolve_path(configured_python, project_root, Path(sys.executable))
-            if configured_python
-            else Path(sys.executable)
-        )
-        script_path = self._resolve_path(os.getenv("SCRAPER_SCRIPT_PATH"), project_root, default_script)
-        working_dir = self._resolve_path(os.getenv("SCRAPER_WORKING_DIR"), project_root, scraper_root)
-
-        self._validate_executable_job_paths("Scraper", python_executable, script_path, working_dir)
-
-        lookback_days, since_date = self._get_scraper_lookback_info()
-
-        command = [
-            str(python_executable),
-            "-u",
-            str(script_path),
-            "--keyword",
-            "\u8bc1\u5238",
-            "--notice-type",
-            notice_type,
-            "--update",
-            "--output-dir",
-            "output",
-            "--resume",
-            "--since-date",
-            since_date,
-        ]
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env.setdefault("PYTHONIOENCODING", "utf-8")
-        return command, working_dir, env
-
-    def _build_app_watch_command(self) -> tuple[list[str], Path, dict[str, str]]:
-        project_root = Path(__file__).resolve().parents[2]
-        default_working_dir = project_root / "broker-app-watch"
-        venv_python = (
-            default_working_dir
-            / ".venv"
-            / ("Scripts" if os.name == "nt" else "bin")
-            / ("python.exe" if os.name == "nt" else "python")
-        )
-        default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
-        default_export_path = default_working_dir / "data" / "exports" / "app_releases.csv"
-
-        configured_python = os.getenv("APP_WATCH_PYTHON_EXECUTABLE")
-        python_executable = (
-            self._resolve_path(configured_python, project_root, venv_python)
-            if configured_python
-            else venv_python
-        )
-        working_dir = self._resolve_path(
-            os.getenv("APP_WATCH_WORKING_DIR"), project_root, default_working_dir
-        )
-        config_path = self._resolve_path(
-            os.getenv("APP_WATCH_LLM_CONFIG_PATH") or os.getenv("LLM_CONFIG_PATH"),
-            project_root,
-            default_config_path,
-        )
-        export_path = self._resolve_path(
-            os.getenv("APP_RELEASES_CSV_PATH"), project_root, default_export_path
-        )
-
-        if not python_executable.exists():
-            raise JobStartError(f"App-watch python executable not found: {python_executable}")
-        if not working_dir.exists() or not working_dir.is_dir():
-            raise JobStartError(f"App-watch working directory not found: {working_dir}")
-        if not config_path.exists():
-            raise JobStartError(f"App-watch LLM config file not found: {config_path}")
-
-        export_path.parent.mkdir(parents=True, exist_ok=True)
-
-        command = [
-            str(python_executable),
-            "-u",
-            "-m",
-            "broker_app_watch.cli",
-            "refresh",
-            "--all",
-            "--llm-config",
-            str(config_path),
-            "--export-path",
-            str(export_path),
-        ]
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env.setdefault("PYTHONIOENCODING", "utf-8")
-        # Prefer the restored checkout when a developer's editable venv still
-        # points at the deleted pre-restore sibling repository.
-        source_dir = working_dir / "src"
-        repository_root = project_root
-        existing_python_path = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = os.pathsep.join(
-            part for part in (str(source_dir), str(repository_root), existing_python_path) if part
-        )
-        return command, working_dir, env
-
-    def _build_llm_command(
-        self,
-        *,
-        mode: str = "incremental",
-        overwrite: bool = False,
-        external: bool = False,
-        notice_type: str = "procurement",
-    ) -> tuple[list[str], Path, dict[str, str]]:
-        if notice_type not in {"procurement", "result"}:
-            raise JobStartError(f"Unsupported LLM notice type: {notice_type}")
-        if external and notice_type != "procurement":
-            raise JobStartError("External LLM imports only support procurement notices")
-        project_root = Path(__file__).resolve().parents[2]
-        default_script = project_root / "backend" / "llm_table" / "llm_markdown_table_builder.py"
-        default_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "notices"
-        default_result_input_dir = project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices"
-        default_external_input_dir = (
-            project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "external" / "notices"
-        )
-        default_external_state_path = (
-            project_root / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "checkpoints" / "external_llm.json"
-        )
-        default_output_dir = project_root / "backend" / "data" / "staging"
-        default_result_output_dir = default_output_dir / "result"
-        default_config_path = project_root / "backend" / "config" / "llm_api_config.json"
-        default_working_dir = project_root / "backend" / "llm_table"
-
-        configured_python = os.getenv("LLM_PYTHON_EXECUTABLE")
-        python_executable = (
-            self._resolve_path(configured_python, project_root, Path(sys.executable))
-            if configured_python
-            else Path(sys.executable)
-        )
-        script_path = self._resolve_path(os.getenv("LLM_SCRIPT_PATH"), project_root, default_script)
-        working_dir = self._resolve_path(os.getenv("LLM_WORKING_DIR"), project_root, default_working_dir)
-        input_env = (
-            os.getenv("LLM_EXTERNAL_INPUT_DIR")
-            if external
-            else os.getenv("LLM_RESULT_INPUT_DIR") if notice_type == "result" else os.getenv("LLM_INPUT_DIR")
-        )
-        input_dir = self._resolve_path(
-            input_env,
-            project_root,
-            default_external_input_dir if external else default_result_input_dir if notice_type == "result" else default_input_dir,
-        )
-        output_env = os.getenv("LLM_RESULT_OUTPUT_DIR") if notice_type == "result" else os.getenv("LLM_OUTPUT_DIR")
-        output_dir = self._resolve_path(output_env, project_root, default_result_output_dir if notice_type == "result" else default_output_dir)
-        config_path = self._resolve_path(os.getenv("LLM_CONFIG_PATH"), project_root, default_config_path)
-        workers = os.getenv("LLM_WORKERS", "4")
-
-        if not script_path.exists():
-            raise JobStartError(f"LLM script not found: {script_path}")
-        if not working_dir.exists():
-            raise JobStartError(f"LLM working directory not found: {working_dir}")
-        if external:
-            input_dir.mkdir(parents=True, exist_ok=True)
-        elif not input_dir.exists():
-            raise JobStartError(f"LLM input directory not found: {input_dir}")
-        if not config_path.exists():
-            raise JobStartError(f"LLM config file not found: {config_path}")
-        self._validate_executable_job_paths("LLM", python_executable, script_path, working_dir)
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        command = [
-            str(python_executable),
-            "-u",
-            str(script_path),
-            "--input-dir",
-            str(input_dir),
-            "--notice-type",
-            notice_type,
-            "--output-dir",
-            str(output_dir),
-            "--llm-config",
-            str(config_path),
-            "--workers",
-            workers,
-        ]
-        if mode == "full_refresh" and overwrite:
-            command.extend(["--full-refresh", "--overwrite"])
-        if external:
-            state_path = self._resolve_path(
-                os.getenv("LLM_EXTERNAL_STATE_PATH"),
-                project_root,
-                default_external_state_path,
-            )
-            state_path.parent.mkdir(parents=True, exist_ok=True)
-            command.extend(
-                [
-                    "--allow-empty",
-                    "--require-title-heading",
-                    "--processed-sha256-state",
-                    str(state_path),
-                ]
-            )
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env.setdefault("PYTHONIOENCODING", "utf-8")
-        return command, working_dir, env
-
-    def _build_rule_matching_command(self) -> tuple[list[str], Path, dict[str, str]]:
-        project_root = Path(__file__).resolve().parents[2]
-        procurement_csv = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging") / "announcement_table.csv"
-        result_csv = self._resolve_path(os.getenv("LLM_RESULT_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "result") / "result_table.csv"
-        output_dir = self._resolve_path(os.getenv("MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "matching")
-        max_candidates = os.getenv("MATCHING_MAX_CANDIDATES", "5")
-        return self._build_matching_module_command(
-            "backend.matching.project_matcher",
-            ["--procurement-csv", str(procurement_csv), "--result-csv", str(result_csv), "--output-dir", str(output_dir), "--max-candidates", max_candidates],
-        )
-
-    def _build_llm_matching_command(self) -> tuple[list[str], Path, dict[str, str]]:
-        project_root = Path(__file__).resolve().parents[2]
-        procurement_csv = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging") / "announcement_table.csv"
-        result_csv = self._resolve_path(os.getenv("LLM_RESULT_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "result") / "result_table.csv"
-        matching_dir = self._resolve_path(os.getenv("MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "matching")
-        output_dir = self._resolve_path(os.getenv("LLM_MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "llm_matching")
-        config_path = self._resolve_path(os.getenv("LLM_CONFIG_PATH"), project_root, project_root / "backend" / "config" / "llm_api_config.json")
-        workers = os.getenv("LLM_MATCHING_WORKERS", os.getenv("LLM_WORKERS", "4"))
-        max_candidates = os.getenv("MATCHING_MAX_CANDIDATES", "5")
-        return self._build_matching_module_command(
-            "backend.matching.llm_matcher",
-            ["--procurement-csv", str(procurement_csv), "--result-csv", str(result_csv), "--links-csv", str(matching_dir / "project_links.csv"), "--candidate-scores-csv", str(matching_dir / "candidate_scores.csv"), "--output-dir", str(output_dir), "--llm-config", str(config_path), "--workers", workers, "--max-candidates", max_candidates],
-        )
-
-    def _build_project_merger_command(self) -> tuple[list[str], Path, dict[str, str]]:
-        project_root = Path(__file__).resolve().parents[2]
-        procurement_csv = self._resolve_path(os.getenv("LLM_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging") / "announcement_table.csv"
-        result_csv = self._resolve_path(os.getenv("LLM_RESULT_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "result") / "result_table.csv"
-        matching_dir = self._resolve_path(os.getenv("LLM_MATCHING_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "llm_matching")
-        output_dir = self._resolve_path(os.getenv("MATCHING_MERGED_OUTPUT_DIR"), project_root, project_root / "backend" / "data" / "staging" / "final")
-        return self._build_matching_module_command(
-            "backend.matching.project_merger",
-            ["--procurement-csv", str(procurement_csv), "--result-csv", str(result_csv), "--verified-links-csv", str(matching_dir / "llm_verified_links.csv"), "--output-dir", str(output_dir)],
-        )
-
-    @staticmethod
-    def _build_matching_module_command(module: str, arguments: list[str]) -> tuple[list[str], Path, dict[str, str]]:
-        project_root = Path(__file__).resolve().parents[2]
-        python_executable = Path(sys.executable)
-        if not python_executable.exists():
-            raise JobStartError("Python executable not found for matching stage")
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env.setdefault("PYTHONIOENCODING", "utf-8")
-        return [str(python_executable), "-u", "-m", module, *arguments], project_root, env
-
-    @staticmethod
-    def _resolve_path(value: str | None, base_dir: Path, default: Path) -> Path:
-        path = Path(value) if value else default
-        if not path.is_absolute():
-            path = base_dir / path
-        return path.resolve()
-
     def _read_stream(self, job_id: str, stream_name: str, stream: Any) -> None:
         if stream is None:
             return
@@ -869,22 +609,6 @@ class JobManager:
                 },
             )
         stream.close()
-
-    @staticmethod
-    def _validate_executable_job_paths(
-        label: str,
-        python_executable: Path,
-        script_path: Path,
-        working_dir: Path,
-    ) -> None:
-        if not python_executable.exists():
-            raise JobStartError(f"{label} python executable not found")
-        if not script_path.exists():
-            raise JobStartError(f"{label} script not found")
-        if not working_dir.exists():
-            raise JobStartError(f"{label} working directory not found")
-        if not working_dir.is_dir():
-            raise JobStartError(f"{label} working directory is invalid")
 
     def _finish_job(
         self,

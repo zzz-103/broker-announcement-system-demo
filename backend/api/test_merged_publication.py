@@ -10,6 +10,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.api import main
+from backend.api.routes import accounts
 from backend.api.supplemental_seed import CANONICAL_FIELDS
 from backend.matching import project_merger
 
@@ -57,7 +58,7 @@ class MergedPublicationTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def admin_headers(self) -> dict[str, str]:
-        with patch.object(main, "write_audit_event_safely", return_value=False):
+        with patch.object(accounts, "write_audit_event_safely", return_value=False):
             response = self.client.post(
                 "/api/login",
                 json={"username": "merged-publication-admin", "password": "merged-publication-password"},

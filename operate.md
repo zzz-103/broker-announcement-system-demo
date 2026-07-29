@@ -1,6 +1,8 @@
 # 券商招采智能分析系统运行手册
 
-适用于 macOS 开发和 Windows 10/11 内网生产部署。生产架构只有两个常驻进程：单 worker FastAPI 与独立调度器；Next.js 仅在构建时使用。
+适用于 macOS 开发和 Windows 10/11 内网生产部署。Windows 正式发布由
+`deploy-release.ps1` 管理 API、调度器、静态前端和网关四个容器；Next.js
+只在镜像构建阶段运行。`broker-app-watch` 仅作为 API 触发的短生命周期子进程。
 
 快捷发布流程
 # 1. 进入源码目录，拉取最新代码
@@ -57,7 +59,7 @@ SCHEDULER_API_URL=http://127.0.0.1:5000
 
 管理员密码、调度器 Token 和 LLM API Key 必须使用真实私密值，不得提交到 Git。Python、脚本和数据路径可以使用相对项目根目录的路径，也可按实际 Windows 路径覆盖。
 
-## 2. Windows 生产启动
+## 2. Windows 原生调试启动（非正式发布入口）
 
 窗口一启动单 worker FastAPI：
 
@@ -132,15 +134,18 @@ App Watch 真实任务要求 `broker-app-watch/.venv` 和 `backend/config/llm_ap
 
 本地测试不需要先执行 `pnpm build`。只有验证静态导出或生产托管时，才执行下面的生产构建流程。
 
-## 4. Docker 备用部署
+## 4. Windows Docker 正式发布
+
+正式环境继续使用：
 
 ```powershell
-docker build -f backend.Dockerfile -t broker-backend:1.3.1 .
-$env:BROKER_IMAGE="broker-backend:1.3.1"
-docker compose up -d
+cd D:\broker-system
+.\deploy-release.ps1 -Version 1.4.1
 ```
 
-Compose 只启动 API 和调度器两个服务，对外端口为 5000。最终 Python 镜像包含已构建前端，不包含 Node.js 运行时。
+部署目录 `.env` 可设置 `BROKER_PUBLIC_URL=http://localhost:8080`。脚本会初始化
+公告、爬虫和 App Watch 运行目录，验证四个 Compose 服务、App Watch 数据挂载及
+镜像内 CLI 导入，然后执行原有健康检查和失败回滚。当前 macOS 验证不运行 Docker。
 
 ## 5. 验证与故障排查
 
@@ -157,4 +162,3 @@ pnpm build
 - 409：已有互斥任务或操作运行中。
 - 修改 `.env` 或重新构建前端后，必须重启对应服务。
 - 真实爬虫和真实 LLM 调用会访问外部服务，应在明确授权和有效配置下单独验收。
-

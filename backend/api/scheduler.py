@@ -20,21 +20,12 @@ SCHEDULER_TOKEN         Shared secret sent as X-Scheduler-Token
 from __future__ import annotations
 
 import logging
-import os
 import sys
 import time
 import urllib.error
 import urllib.request
 import json
-from pathlib import Path
-
-from dotenv import load_dotenv
-
-# ---------------------------------------------------------------------------
-# Bootstrap .env from project root (same pattern as main.py)
-# ---------------------------------------------------------------------------
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_ROOT / ".env")
+from .config import settings
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,11 +37,11 @@ logger = logging.getLogger("scheduler")
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "true").strip().lower()
-SCHEDULER_TIMEZONE = os.getenv("SCHEDULER_TIMEZONE", "Asia/Shanghai").strip()
-SCHEDULER_CRON = os.getenv("SCHEDULER_CRON", "0 12 * * sun").strip()
-SCHEDULER_API_URL = os.getenv("SCHEDULER_API_URL", "http://localhost:8000").rstrip("/")
-SCHEDULER_TOKEN = os.getenv("SCHEDULER_TOKEN", "")
+SCHEDULER_ENABLED = settings.scheduler_enabled
+SCHEDULER_TIMEZONE = settings.scheduler_timezone
+SCHEDULER_CRON = settings.scheduler_cron
+SCHEDULER_API_URL = settings.scheduler_api_url
+SCHEDULER_TOKEN = settings.scheduler_token
 
 _REQUEST_TIMEOUT = 10          # seconds per attempt
 _RETRY_MAX = 3
