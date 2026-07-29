@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,6 +36,17 @@ class JobCommandFactory:
         return path.resolve()
 
     @staticmethod
+    def _resolve_python_executable(value: str | None, default: Path) -> Path:
+        """Resolve a Python path without dereferencing a venv symlink."""
+
+        path = Path(value) if value else default
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        # Path.resolve() turns macOS/Linux venv/bin/python into the system
+        # interpreter and drops the venv site-packages from the child process.
+        return Path(os.path.abspath(path))
+
+    @staticmethod
     def _validate_executable_job_paths(
         label: str,
         python_executable: Path,
@@ -49,6 +61,51 @@ class JobCommandFactory:
             raise JobStartError(f"{label} working directory not found")
         if not working_dir.is_dir():
             raise JobStartError(f"{label} working directory is invalid")
+
+    @staticmethod
+    def _validate_app_watch_dependencies(python_executable: Path) -> None:
+        """Fail early when the App Watch venv was not installed from pyproject.toml."""
+
+        required_modules = {
+            "certifi": "certifi",
+            "fastapi": "fastapi",
+            "httpx": "httpx",
+            "openai": "openai",
+            "beautifulsoup4": "bs4",
+            "markdownify": "markdownify",
+            "pydantic": "pydantic",
+            "pydantic-settings": "pydantic_settings",
+            "PyYAML": "yaml",
+            "uvicorn": "uvicorn",
+        }
+        check_script = (
+            "import importlib.util; "
+            "required = %r; "
+            "missing = [name for name, module in required.items() "
+            "if importlib.util.find_spec(module) is None]; "
+            "print('\\n'.join(missing)); "
+            "raise SystemExit(1 if missing else 0)"
+        ) % required_modules
+        try:
+            result = subprocess.run(
+                [str(python_executable), "-c", check_script],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise JobStartError("App-watch Python environment cannot be checked") from exc
+        if result.returncode == 0:
+            return
+        missing = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        details = ", ".join(missing) if missing else "required packages"
+        raise JobStartError(
+            "App-watch Python environment is missing "
+            f"{details}; run `python -m pip install -e .` in broker-app-watch"
+        )
 
     @staticmethod
     def _get_scraper_lookback_info() -> tuple[int, str]:
@@ -114,7 +171,7 @@ class JobCommandFactory:
             / ("Scripts" if os.name == "nt" else "bin")
             / ("python.exe" if os.name == "nt" else "python")
         )
-        python_executable = resolve_project_path(
+        python_executable = self._resolve_python_executable(
             os.getenv("APP_WATCH_PYTHON_EXECUTABLE"),
             venv_python,
         )
@@ -134,6 +191,7 @@ class JobCommandFactory:
             raise JobStartError("App-watch python executable not found")
         if not working_dir.is_dir():
             raise JobStartError("App-watch working directory not found")
+        self._validate_app_watch_dependencies(python_executable)
         if not config_path.exists():
             raise JobStartError("App-watch LLM config file not found")
         export_path.parent.mkdir(parents=True, exist_ok=True)

@@ -34,6 +34,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { type JobStatus, type JobType } from "@/lib/api/backend-client";
+import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 import { type CardId } from "./job-runner-model";
@@ -221,6 +222,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             <div className="flex items-center gap-2">
               <Sparkles className="size-4 text-amber-400" />
               <span className="text-sm font-medium">管理控制台</span>
+              <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] text-blue-100">v{APP_VERSION}</span>
             </div>
           </div>
           <div className="flex items-center gap-3">

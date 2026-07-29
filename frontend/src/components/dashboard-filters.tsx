@@ -142,6 +142,7 @@ export function DashboardFilters({
             { value: "采购招标", label: "采购招标" },
             { value: "结果公示", label: "结果公示" },
             { value: "流标废标", label: "流标废标" },
+            { value: "其他", label: "其他" },
           ]}
           placeholder="全部阶段"
           className="w-full sm:w-auto"

@@ -379,6 +379,22 @@ def list_users(page: int, page_size: int, query: str | None = None) -> tuple[lis
     return [row_to_user(row) for row in rows], total, effective_page
 
 
+def get_user_names_by_ids(user_ids: set[int]) -> dict[int, str]:
+    if not user_ids:
+        return {}
+    placeholders = ",".join("?" for _ in user_ids)
+    try:
+        with _connect() as connection:
+            ensure_schema(connection)
+            rows = connection.execute(
+                f"SELECT id, name FROM approved_users WHERE id IN ({placeholders})",
+                sorted(user_ids),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to load user names") from exc
+    return {int(row["id"]): str(row["name"]).strip() for row in rows if str(row["name"]).strip()}
+
+
 def create_user(name: str, email: str, department: str) -> tuple[ApprovedUser, str]:
     normalized_email = normalize_email(email)
     username = username_from_email(normalized_email)

@@ -76,7 +76,11 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
           </thead>
           <tbody>
             {displayedReleases.map((record, idx) => (
-              <ReleaseRow key={record.contentSha256 || idx} record={record} onClick={() => onSelect(record)} />
+              <ReleaseRow
+                key={`${record.contentSha256 || "release"}-${record.brokerCode}-${record.appName}-${idx}`}
+                record={record}
+                onClick={() => onSelect(record)}
+              />
             ))}
           </tbody>
         </table>

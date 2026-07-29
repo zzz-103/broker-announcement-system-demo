@@ -30,12 +30,13 @@ export const useAuthStore = create<AuthState>((set) => {
       try {
         const data = await loginAdmin(username, password, getAuditContext());
         window.sessionStorage.setItem(TOKEN_KEY, data.token);
-        window.sessionStorage.setItem(USERNAME_KEY, data.username || username);
+        const displayName = data.name || data.username || username;
+        window.sessionStorage.setItem(USERNAME_KEY, displayName);
         window.sessionStorage.setItem(ROLE_KEY, data.role);
         set({
           isLoggedIn: true,
           isAdmin: data.is_admin,
-          username: data.username || username,
+          username: displayName,
           token: data.token,
           error: "",
         });

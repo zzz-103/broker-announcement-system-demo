@@ -34,6 +34,8 @@ function eventIdentity(event: AuditEventRecord): string {
     const email = typeof event.metadata.email === "string" ? event.metadata.email : "";
     return [name, email].filter(Boolean).join(" / ") || "未识别申请人";
   }
+  const displayName = typeof event.metadata.display_name === "string" ? event.metadata.display_name : "";
+  if (displayName) return displayName;
   return event.username || "匿名访问";
 }
 

@@ -107,6 +107,7 @@ export default function Dashboard() {
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
   const [activeModule, setActiveModule] = useState<ActiveModule>("procurement");
+  const [landingResolved, setLandingResolved] = useState(false);
 
   // Detect path changes and update activeModule accordingly
   useEffect(() => {
@@ -142,13 +143,22 @@ export default function Dashboard() {
   }, [restoreSession]);
 
   useEffect(() => {
-    if (!isLoggedIn || !token || showDashboard) return;
+    if (!isLoggedIn) {
+      setLandingResolved(false);
+      return;
+    }
+    setShowDashboard(isAdmin);
+    setLandingResolved(true);
+  }, [isAdmin, isLoggedIn]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !token || showDashboard || !landingResolved) return;
     void recordDashboardView(token, getAuditContext()).catch((error: unknown) => {
       if (error instanceof BackendApiError && error.status === 401) {
         clearAuth("登录已失效，请重新登录");
       }
     });
-  }, [clearAuth, isLoggedIn, showDashboard, token]);
+  }, [clearAuth, isLoggedIn, landingResolved, showDashboard, token]);
 
   // Header height measurement for sticky tab bar positioning
   const headerRef = useRef<HTMLElement>(null);

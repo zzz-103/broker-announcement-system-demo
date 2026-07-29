@@ -69,7 +69,7 @@ export function ProjectDetailDrawer({
               </div>
               <Field
                 label="公告阶段"
-                value={record.announcement_stage || "待确认"}
+                value={record.announcement_stage || "其他"}
               />
               <Field
                 label="采购方式"

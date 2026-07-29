@@ -33,7 +33,7 @@ const STAGE_STYLES: Record<string, string> = {
   采购招标: "bg-blue-50 border-blue-100 text-blue-700",
   结果公示: "bg-emerald-50 border-emerald-100 text-emerald-700",
   流标废标: "bg-orange-50 border-orange-100 text-orange-700",
-  待确认: "bg-slate-50 border-slate-100 text-slate-600",
+  其他: "bg-slate-50 border-slate-100 text-slate-600",
 };
 
 const getTagStyle = (tag: string) => {
@@ -47,7 +47,7 @@ const getTagStyle = (tag: string) => {
 export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pageSize, setPageSize] = useState(20);
-  const [sortMode, setSortMode] = useState<"date" | "amount">("date");
+  const [sortMode, setSortMode] = useState<"date" | "amount">("amount");
 
   // Apply sort mode
   const sortedData = useMemo(() => {
@@ -133,7 +133,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         header: "公告阶段",
         size: 90,
         cell: ({ getValue, row }) => {
-          const stage = getValue<string>() || "待确认";
+          const stage = getValue<string>() || "其他";
           const style = STAGE_STYLES[stage] || "bg-slate-50 border-slate-100 text-slate-600";
           return (
             <span
@@ -292,12 +292,12 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           <p className="py-10 text-center text-[13px] font-medium text-[#98A2B3]">暂无数据</p>
         ) : table.getRowModel().rows.map((row) => {
           const record = row.original;
-          const stage = record.announcement_stage || "待确认";
+          const stage = record.announcement_stage || "其他";
           return (
             <article key={row.id} className="rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <h4 className="min-w-0 text-sm font-bold leading-relaxed text-[#172033]">{record.normalizedProjectName}</h4>
-                <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-bold ${STAGE_STYLES[stage] || STAGE_STYLES["待确认"]}`}>{stage}</span>
+                <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-bold ${STAGE_STYLES[stage] || STAGE_STYLES["其他"]}`}>{stage}</span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[#667085]">
                 <p><span className="text-[#98A2B3]">券商：</span>{record.validBrokerName}</p>

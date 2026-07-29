@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { LogOut, RefreshCw, Search, TrendingUp, List, AlertCircle, ArrowLeft } from "lucide-react";
+import { LogOut, RefreshCw, TrendingUp, List, ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
@@ -10,17 +10,14 @@ import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import {
   AppReleaseNotGeneratedError,
   getAppReleaseStatistics,
-  groupByBrokerApp,
   loadAppReleases,
-  sortByPublishDateDesc,
   formatReleaseDate,
   appReleaseMatchesSearch,
   getUpdateTypeDistribution,
   getFeatureTagDistribution,
-  getBrokerReleaseCounts,
-  getReleaseTrend,
   type AppReleaseRecord,
 } from "@/lib/app-release-data";
+import { APP_VERSION } from "@/lib/app-version";
 import { KpiCard } from "@/components/app-watch/kpi-card";
 import { FilterBar } from "@/components/app-watch/filter-bar";
 import { OverviewCharts } from "@/components/app-watch/overview-charts";
@@ -159,8 +156,6 @@ export default function AppUpdatesPage() {
 
   // Statistics and groups
   const statistics = useMemo(() => getAppReleaseStatistics(filteredRecords), [filteredRecords]);
-  const groups = useMemo(() => groupByBrokerApp(filteredRecords), [filteredRecords]);
-  
   // Options for filters
   const brokerOptions = useMemo(() => {
     const set = new Set<string>();
@@ -207,6 +202,7 @@ export default function AppUpdatesPage() {
             </button>
             <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg sm:size-9" priority />
             <span className="text-lg font-bold">券商 App 更新看板</span>
+            <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] text-blue-100">v{APP_VERSION}</span>
           </div>
         </div>
 
@@ -323,17 +319,7 @@ export default function AppUpdatesPage() {
             <>
               {/* Charts */}
               <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-6 lg:grid-cols-12">
-                <OverviewCharts data={filteredRecords} />
-              </div>
-              
-              {/* Update summary placeholder */}
-              <div className="rounded-xl border border-[#E4E9F0] bg-white p-6">
-                <h3 className="text-base font-bold text-[#172033]">本期更新摘要</h3>
-                <p className="mt-2 text-sm text-[#667085]">
-                  {filteredRecords.length === 0
-                    ? "暂无更新数据，请先在管理控制台运行券商 App 更新任务。"
-                    : `当前筛选条件下共有${filteredRecords.length}条更新记录，覆盖${statistics.brokerCount}家券商和${statistics.appCount}个 App。`}
-                </p>
+                <OverviewCharts data={filteredRecords} onSelect={handleRecordClick} />
               </div>
             </>
           ) : (

@@ -11,7 +11,7 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ProcessedRecord } from "@/lib/announcement-data";
-import { uniqueCount } from "@/lib/announcement-data";
+import { ANNOUNCEMENT_STAGES, uniqueCount } from "@/lib/announcement-data";
 import { useFilterStore } from "@/store/filter-store";
 
 // Register only the components we use (tree-shaking)
@@ -283,18 +283,18 @@ export function StageDistributionChart({ data }: ChartsProps) {
   const chartData = useMemo(() => {
     const stageCounts: Record<string, number> = {};
     for (const r of data) {
-      const stage = r.announcement_stage || "待确认";
+      const stage = r.announcement_stage || "其他";
       stageCounts[stage] = (stageCounts[stage] || 0) + 1;
     }
     const colorMap: Record<string, string> = {
       采购招标: "#2563EB",
       结果公示: "#0F9F8F",
       流标废标: "#D64545",
-      待确认: "#98A2B3",
+      其他: "#98A2B3",
     };
-    return Object.entries(stageCounts).map(([name, value]) => ({
+    return ANNOUNCEMENT_STAGES.map((name) => ({
       name,
-      value,
+      value: stageCounts[name] || 0,
       itemStyle: { color: colorMap[name] || "#98A2B3" },
     }));
   }, [data]);

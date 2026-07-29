@@ -39,6 +39,7 @@ from ..user_store import (
     create_feedback,
     create_user,
     delete_user,
+    get_user_names_by_ids,
     list_feedback,
     list_users,
     normalize_email,
@@ -155,9 +156,11 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
         raise HTTPException(status_code=500, detail="failed to authenticate user") from exc
 
     token = secrets.token_urlsafe(32)
+    user_email = str(getattr(user, "email", "") or "")
     session_tokens[token] = {
         "username": user.username,
         "name": user.name,
+        "email": user_email,
         "role": "user",
         "is_admin": False,
         "user_id": user.id,
@@ -168,11 +171,12 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
         event_type="login_success",
         visitor_id=visitor_id,
         user_id=user.id,
-        username=user.username,
+        username=user.name or user_email or user.username,
         role="user",
         source=source,
         ip_masked=masked_request_ip(request),
         user_agent=request_user_agent(request),
+        metadata={"account_username": user.username, "email": user_email},
     )
     return LoginResponse(
         token=token,
@@ -263,7 +267,12 @@ def post_dashboard_view(
             event_type="dashboard_view",
             visitor_id=visitor_id,
             user_id=int(session["user_id"]) if isinstance(session.get("user_id"), int) else None,
-            username=str(session.get("username") or "") or None,
+            username=str(
+                session.get("name")
+                or session.get("email")
+                or session.get("username")
+                or ""
+            ) or None,
             role=str(session.get("role") or "") or None,
             source=source,
             ip_masked=masked_request_ip(request),
@@ -348,8 +357,20 @@ def get_admin_audit_events(
         events, total, effective_page = list_events(normalized_type, page, page_size, query)
     except AuditStoreError as exc:
         raise HTTPException(status_code=500, detail="failed to load audit events") from exc
+    try:
+        user_names = get_user_names_by_ids(
+            {event.user_id for event in events if event.user_id is not None}
+        )
+    except UserStoreError:
+        user_names = {}
+    event_payloads = []
+    for event in events:
+        payload = event.to_dict()
+        if event.user_id is not None and user_names.get(event.user_id):
+            payload["username"] = user_names[event.user_id]
+        event_payloads.append(payload)
     return {
-        "events": [event.to_dict() for event in events],
+        "events": event_payloads,
         "meta": {
             "type": normalized_type,
             "page": effective_page,

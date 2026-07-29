@@ -48,7 +48,8 @@ COPY backend /app/backend
 COPY broker-app-watch /app/broker-app-watch
 RUN python -m venv /app/broker-app-watch/.venv \
     && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir -e /app/broker-app-watch
+    && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir -e /app/broker-app-watch \
+    && /app/broker-app-watch/.venv/bin/python -c "import yaml, openai; print('broker-app-watch dependencies ok')"
 
 # broker-app-watch subprocess configuration (consumed by backend JobManager)
 ENV APP_WATCH_PYTHON_EXECUTABLE=/app/broker-app-watch/.venv/bin/python

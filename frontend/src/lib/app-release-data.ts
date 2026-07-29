@@ -2,6 +2,7 @@ import {
   BackendApiError,
   fetchAppReleases,
 } from "@/lib/api/backend-client";
+import { normalizeBrokerName } from "@/lib/broker-names";
 
 // ─── Raw CSV row (mirrors broker-app-watch exporter CSV_COLUMNS) ───
 interface RawAppReleaseRow {
@@ -33,6 +34,7 @@ export class AppReleaseNotGeneratedError extends Error {
 export interface AppReleaseRecord {
   brokerCode: string;
   brokerName: string;
+  rawBrokerName: string;
   appName: string;
   sourceUrl: string;
   contentSha256: string;
@@ -135,7 +137,8 @@ export function processAppReleases(rawRows: RawAppReleaseRow[]): AppReleaseRecor
   return rawRows
     .map((row) => {
       const brokerCode = row.broker_code?.trim() ?? "";
-      const brokerName = row.broker_name?.trim() ?? "";
+      const rawBrokerName = row.broker_name?.trim() ?? "";
+      const brokerName = normalizeBrokerName(rawBrokerName);
       const appName = row.app_name?.trim() ?? "";
       const appVersion = row.app_version?.trim() ?? "";
       const platform = row.platform?.trim() || "未知";
@@ -147,6 +150,7 @@ export function processAppReleases(rawRows: RawAppReleaseRow[]): AppReleaseRecor
       return {
         brokerCode,
         brokerName,
+        rawBrokerName,
         appName,
         sourceUrl: row.source_url?.trim() ?? "",
         contentSha256: row.content_sha256?.trim() ?? "",
@@ -173,6 +177,7 @@ export function appReleaseMatchesSearch(record: AppReleaseRecord, keyword: strin
   if (searchText === undefined) {
     searchText = [
       record.brokerName,
+      record.rawBrokerName,
       record.brokerCode,
       record.appName,
       record.appVersion,
@@ -222,7 +227,7 @@ function displayBrokerName(record: AppReleaseRecord): string {
 export function groupByBrokerApp(records: AppReleaseRecord[]): BrokerAppGroup[] {
   const groups = new Map<string, AppReleaseRecord[]>();
   for (const record of records) {
-    const key = `${record.brokerCode}||${record.appName}`;
+    const key = `${record.brokerCode || record.brokerName}||${record.appName}`;
     const list = groups.get(key);
     if (list) list.push(record);
     else groups.set(key, [record]);
@@ -332,8 +337,9 @@ export function getAppReleaseStatistics(records: AppReleaseRecord[]): AppRelease
   const apps = new Set<string>();
   let latest: Date | null = null;
   for (const record of records) {
-    if (record.brokerCode) brokers.add(record.brokerCode);
-    if (record.appName) apps.add(`${record.brokerCode}||${record.appName}`);
+    const brokerIdentity = record.brokerName || record.brokerCode;
+    if (brokerIdentity) brokers.add(brokerIdentity);
+    if (record.appName) apps.add(`${brokerIdentity}||${record.appName}`);
     if (record.publishDate && (!latest || record.publishDate > latest)) {
       latest = record.publishDate;
     }

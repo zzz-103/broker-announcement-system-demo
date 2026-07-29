@@ -2,6 +2,7 @@ import {
   BackendApiError,
   fetchAnnouncements,
 } from "@/lib/api/backend-client";
+import { normalizeBrokerName } from "@/lib/broker-names";
 
 // ─── Raw CSV row ───
 interface RawCsvRow {
@@ -52,6 +53,7 @@ export interface ProcessedRecord {
   display_amount_yuan: number | null;
   display_amount_kind: "winning" | "budget" | null;
   sourceName: string;
+  rawBrokerName: string;
 
   // derived fields
   validBrokerName: string;
@@ -299,6 +301,23 @@ function parseDate(raw: string): Date | null {
   return d;
 }
 
+export const ANNOUNCEMENT_STAGES = [
+  "采购招标",
+  "结果公示",
+  "流标废标",
+  "其他",
+] as const;
+
+export function normalizeAnnouncementStage(rawStage: string): string {
+  const stage = rawStage.trim();
+  if (/流标|废标/.test(stage)) return "流标废标";
+  if (/结果|中标|成交|候选人公示/.test(stage)) return "结果公示";
+  if (/采购|招标|询价|供应商招募|单一来源|竞争性谈判/.test(stage)) {
+    return "采购招标";
+  }
+  return "其他";
+}
+
 // ─── Main processing ───
 export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
   return rawRows.map((row) => {
@@ -306,7 +325,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
     const brokerProjectRaw = row.is_broker_project?.trim().toLowerCase() ?? "";
     const isBrokerProject =
       brokerProjectRaw === "true" ? true : brokerProjectRaw === "false" ? false : null;
-    const validBrokerName = brokerNameRaw || "主体待识别";
+    const validBrokerName = normalizeBrokerName(brokerNameRaw) || "主体待识别";
     const publishDateRaw = row.publish_date?.trim() ?? "";
     const validPublishDate = parseDate(publishDateRaw);
     const projectNameRaw = row.project_name?.trim() ?? "";
@@ -350,7 +369,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       processed_at: row.processed_at?.trim() ?? "",
       raw_json_path: row.raw_json_path?.trim() ?? "",
       is_broker_project: isBrokerProject,
-      announcement_stage: row.announcement_stage?.trim() ?? "",
+      announcement_stage: normalizeAnnouncementStage(row.announcement_stage ?? ""),
       project_name_raw: projectNameRaw,
       procurement_method: procurementMethod,
       budget_amount_yuan: budgetAmount,
@@ -358,6 +377,7 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
       display_amount_yuan: displayAmount,
       display_amount_kind: displayAmountKind,
       sourceName,
+      rawBrokerName: brokerNameRaw,
       validBrokerName,
       validPublishDate,
       normalizedProjectName,
@@ -379,6 +399,7 @@ export function recordMatchesSearch(record: ProcessedRecord, keyword: string): b
     searchText = [
       record.project_name_raw,
       record.validBrokerName,
+      record.rawBrokerName,
       record.normalizedSupplier,
       record.procurement_method,
     ].join("\n").toLowerCase();
@@ -512,7 +533,7 @@ export function exportCsv(records: ProcessedRecord[]): void {
     r.normalizedProjectName,
     r.primaryDomain,
     r.topicTags.join("/"),
-    r.announcement_stage || "待确认",
+    r.announcement_stage || "其他",
     r.procurement_method || "方式未识别",
     r.normalizedSupplier || "未披露",
     r.display_amount_yuan !== null ? displayAmountLabel(r) : "未披露",

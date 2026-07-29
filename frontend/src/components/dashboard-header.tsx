@@ -6,6 +6,7 @@ import { Download, Settings, LogOut, Sparkles, ArrowLeft, HelpCircle, MessageSqu
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate } from "@/lib/announcement-data";
 import { ModuleSwitcher, type ActiveModule } from "@/components/app-watch/module-switcher";
+import { APP_VERSION } from "@/lib/app-version";
 
 interface DashboardHeaderProps {
   username: string;
@@ -83,6 +84,9 @@ export function DashboardHeader({
           <h1 className="min-w-0 text-[15px] font-bold leading-tight tracking-wide text-white sm:text-[18px]">
             <span className="sm:hidden">世纪证券招采平台</span><span className="hidden sm:inline">世纪证券招采情报平台</span>
           </h1>
+          <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] font-medium text-blue-100">
+            v{APP_VERSION}
+          </span>
         </div>
         <p className="mt-0.5 hidden truncate text-[11px] font-normal text-[#B7C6D9] sm:block sm:text-[12px]">
           洞察招采趋势 · 追踪供应商动态 · 辅助科技采购决策
