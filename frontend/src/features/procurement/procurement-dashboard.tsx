@@ -108,6 +108,16 @@ export default function Dashboard() {
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
   const [activeModule, setActiveModule] = useState<ActiveModule>("procurement");
   const [landingResolved, setLandingResolved] = useState(false);
+  const [requestedProcurementView, setRequestedProcurementView] = useState(false);
+
+  // App Watch returns here with an explicit view marker. Admin users normally
+  // land in the admin console at "/", but this navigation must show the
+  // procurement dashboard instead.
+  useEffect(() => {
+    setRequestedProcurementView(
+      new URLSearchParams(window.location.search).get("view") === "procurement",
+    );
+  }, []);
 
   // Detect path changes and update activeModule accordingly
   useEffect(() => {
@@ -147,9 +157,9 @@ export default function Dashboard() {
       setLandingResolved(false);
       return;
     }
-    setShowDashboard(isAdmin);
+    setShowDashboard(isAdmin && !requestedProcurementView);
     setLandingResolved(true);
-  }, [isAdmin, isLoggedIn]);
+  }, [isAdmin, isLoggedIn, requestedProcurementView]);
 
   useEffect(() => {
     if (!isLoggedIn || !token || showDashboard || !landingResolved) return;

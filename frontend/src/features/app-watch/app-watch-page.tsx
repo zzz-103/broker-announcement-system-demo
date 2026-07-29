@@ -51,7 +51,6 @@ export default function AppUpdatesPage() {
   // UI state
   const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [selectedRecord, setSelectedRecord] = useState<AppReleaseRecord | null>(null);
-  const [showDrawer, setShowDrawer] = useState(false);
   
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -175,7 +174,6 @@ export default function AppUpdatesPage() {
   // Handle record click
   const handleRecordClick = (record: AppReleaseRecord) => {
     setSelectedRecord(record);
-    setShowDrawer(true);
   };
 
   const isBusy = dataStatus === "loading";
@@ -194,7 +192,7 @@ export default function AppUpdatesPage() {
         <div className="relative z-10 flex flex-1 items-center gap-2 min-w-0">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push("/")}
+              onClick={() => router.push("/?view=procurement")}
               className="mr-2 flex items-center gap-1 text-xs text-slate-300 hover:text-white transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
@@ -343,7 +341,7 @@ export default function AppUpdatesPage() {
       {/* Detail drawer */}
       <ReleaseDetailDrawer
         record={selectedRecord}
-        onClose={() => setShowDrawer(false)}
+        onClose={() => setSelectedRecord(null)}
       />
     </div>
   );

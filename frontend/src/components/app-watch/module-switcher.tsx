@@ -27,7 +27,7 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
             key={key}
             onClick={() => {
               if (key === "procurement") {
-                router.push("/");
+                router.push("/?view=procurement");
               } else {
                 router.push("/app-updates");
               }
