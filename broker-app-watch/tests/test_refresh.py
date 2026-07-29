@@ -8,7 +8,7 @@ from broker_app_watch.core.config import BrokerCatalog, load_broker_catalog
 from broker_app_watch.llm.client import parse_app_release_response
 from broker_app_watch.pipeline.crawl import CrawlSummary
 from broker_app_watch.pipeline.refresh import RefreshError, refresh_all
-from broker_app_watch.storage.models import AppReleaseAnalysis
+from broker_app_watch.storage.models import APP_RELEASE_CSV_COLUMNS, AppReleaseAnalysis
 
 
 class FakeClient:
@@ -157,3 +157,139 @@ def test_refresh_does_not_replace_when_all_sources_fail(tmp_path: Path) -> None:
             crawl_runner=failed_crawl,
         )
     assert export_path.read_text(encoding="utf-8") == "old export\n"
+
+
+def test_refresh_keeps_history_and_only_removes_same_body_hash(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw" / "markdown"
+    first = raw_dir / "gxzq" / "20260701_release.md"
+    duplicate = raw_dir / "gxzq" / "20260702_duplicate.md"
+    different = raw_dir / "gxzq" / "20260703_release.md"
+    _markdown(first, "gxzq")
+    duplicate.parent.mkdir(parents=True, exist_ok=True)
+    duplicate.write_text(first.read_text(encoding="utf-8").replace("10:00:00", "11:00:00"), encoding="utf-8")
+    different.parent.mkdir(parents=True, exist_ok=True)
+    different.write_text(first.read_text(encoding="utf-8") + "\n## 另一版\n\n修复问题\n", encoding="utf-8")
+    export_path = tmp_path / "exports" / "app_releases.csv"
+
+    def fake_crawl(catalog: BrokerCatalog) -> CrawlSummary:
+        return CrawlSummary(success={"gxzq": first}, failures={})
+
+    result = refresh_all(
+        _catalog(),
+        client=FakeClient(),
+        export_path=export_path,
+        raw_dir=raw_dir,
+        crawl_runner=fake_crawl,
+    )
+    assert result.blocked is False
+    with export_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 2
+    assert len({row["content_sha256"] for row in rows}) == 2
+    representative = next(row for row in rows if row["content_sha256"] == rows[0]["content_sha256"])
+    assert representative["crawl_time"].endswith("11:00:00+08:00")
+
+
+def test_refresh_keeps_distinct_updates_from_one_body(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw" / "markdown"
+    path = raw_dir / "gxzq" / "release.md"
+    _markdown(path, "gxzq")
+    export_path = tmp_path / "exports" / "app_releases.csv"
+
+    class MultiUpdateClient:
+        def extract(self, *, metadata: dict[str, str], content: str) -> list[AppReleaseAnalysis]:
+            return [
+                AppReleaseAnalysis(app_version="1.0.0", publish_date="2026-07-29", update_summary="行情升级"),
+                AppReleaseAnalysis(app_version="1.0.0", publish_date="2026-07-29", update_summary="交易流程优化"),
+            ]
+
+    def fake_crawl(catalog: BrokerCatalog) -> CrawlSummary:
+        return CrawlSummary(success={"gxzq": path}, failures={})
+
+    refresh_all(
+        _catalog(),
+        client=MultiUpdateClient(),
+        export_path=export_path,
+        raw_dir=raw_dir,
+        crawl_runner=fake_crawl,
+    )
+    with export_path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert {row["update_summary"] for row in rows} == {"行情升级", "交易流程优化"}
+
+
+def test_refresh_failure_gate_keeps_previous_csv(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw" / "markdown"
+    path = raw_dir / "gxzq" / "release.md"
+    _markdown(path, "gxzq")
+    export_path = tmp_path / "exports" / "app_releases.csv"
+    export_path.parent.mkdir(parents=True)
+    with export_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(APP_RELEASE_CSV_COLUMNS))
+        writer.writeheader()
+        writer.writerow(
+            {
+                "broker_code": "gxzq",
+                "broker_name": "国信证券",
+                "app_name": "国信金太阳",
+                "source_url": "https://example.com/app",
+                "content_sha256": "old",
+                "crawl_time": "2026-06-01T10:00:00+08:00",
+                "markdown_file": "old.md",
+                "processed_at": "2026-06-01T10:00:00+08:00",
+                "app_version": "1.0.0",
+                "platform": "Android",
+                "publish_date": "2026-06-01",
+                "update_type": "其他",
+                "update_summary": "旧记录",
+                "feature_tags": "[]",
+                "highlights": "[]",
+            }
+        )
+    before = export_path.read_bytes()
+
+    class FailingClient:
+        def extract(self, *, metadata: dict[str, str], content: str) -> list[AppReleaseAnalysis]:
+            raise RuntimeError("simulated failure")
+
+    def fake_crawl(catalog: BrokerCatalog) -> CrawlSummary:
+        return CrawlSummary(success={"gxzq": path}, failures={})
+
+    result = refresh_all(
+        _catalog(),
+        client=FailingClient(),
+        export_path=export_path,
+        raw_dir=raw_dir,
+        crawl_runner=fake_crawl,
+    )
+    assert result.blocked is True
+    assert export_path.read_bytes() == before
+
+
+def test_refresh_blocks_at_exactly_fifty_percent_failure_rate(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw" / "markdown"
+    path = raw_dir / "gxzq" / "release.md"
+    _markdown(path, "gxzq")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("source_url: https://example.com/app", "parser: essence_softwares_api\nsource_url: https://example.com/app")
+        + "\n## 另一 App\n\n新增功能\n",
+        encoding="utf-8",
+    )
+
+    class HalfFailClient:
+        def extract(self, *, metadata: dict[str, str], content: str) -> list[AppReleaseAnalysis]:
+            if "另一 App" in content:
+                raise RuntimeError("simulated failure")
+            return [AppReleaseAnalysis(app_version="1.0.0", update_summary="ok")]
+
+    def fake_crawl(catalog: BrokerCatalog) -> CrawlSummary:
+        return CrawlSummary(success={"gxzq": path}, failures={})
+
+    with pytest.raises(RefreshError):
+        refresh_all(
+            _catalog(),
+            client=HalfFailClient(),
+            export_path=tmp_path / "exports" / "app_releases.csv",
+            raw_dir=raw_dir,
+            crawl_runner=fake_crawl,
+        )

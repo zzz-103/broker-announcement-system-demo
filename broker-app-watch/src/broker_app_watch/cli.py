@@ -5,10 +5,10 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from broker_app_watch.core.config import load_broker_catalog, load_settings
-from broker_app_watch.core.paths import EXPORTS_DATA_DIR, PROJECT_ROOT
+from broker_app_watch.core.paths import EXPORTS_DATA_DIR, PROJECT_ROOT, RAW_DATA_DIR
 from broker_app_watch.llm.client import OpenAICompatibleAppReleaseClient
 from broker_app_watch.pipeline.crawl import build_crawl_plan, crawl_all, crawl_broker
-from broker_app_watch.pipeline.refresh import RefreshError, refresh_all
+from broker_app_watch.pipeline.refresh import RefreshError, process_existing, refresh_all
 
 
 def _check_config() -> int:
@@ -82,6 +82,12 @@ def _refresh(args: argparse.Namespace) -> int:
         print(f"App 更新刷新失败：{type(exc).__name__}")
         return 1
 
+    if result.blocked:
+        print(
+            f"App 更新刷新已阻止发布：保留旧 CSV（{result.exported_rows} 条），"
+            f"失败率 {result.failure_rate:.1%}。"
+        )
+        return 1
     print(f"App 更新刷新完成：导出 {result.exported_rows} 条记录。")
     if result.updated_brokers:
         print(f"已更新券商：{', '.join(result.updated_brokers)}")
@@ -89,6 +95,30 @@ def _refresh(args: argparse.Namespace) -> int:
         print(f"沿用旧数据券商：{', '.join(result.preserved_brokers)}")
     for broker_code, message in sorted(result.failures.items()):
         print(f"警告：{broker_code} -> {message}")
+    return 0
+
+
+def _process(args: argparse.Namespace) -> int:
+    try:
+        client = OpenAICompatibleAppReleaseClient.from_config(_resolve_path(args.llm_config))
+        result = process_existing(
+            load_broker_catalog(),
+            client=client,
+            export_path=_resolve_path(args.export_path),
+            raw_dir=_resolve_path(args.input_dir),
+        )
+    except (OSError, ValueError, RefreshError) as exc:
+        print(f"App 更新处理失败：{type(exc).__name__}")
+        return 1
+    if result.blocked:
+        print(
+            f"App 更新处理已阻止发布：保留旧 CSV（{result.exported_rows} 条），"
+            f"失败率 {result.failure_rate:.1%}。"
+        )
+        return 1
+    print(f"App 更新处理完成：导出 {result.exported_rows} 条记录。")
+    for path, message in sorted(result.failures.items()):
+        print(f"警告：{path} -> {message}")
     return 0
 
 
@@ -109,6 +139,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=(EXPORTS_DATA_DIR / "app_releases.csv").as_posix(),
         help="CSV 导出路径",
     )
+    process_parser = subparsers.add_parser("process", help="处理已有 Markdown 并生成 CSV")
+    process_parser.add_argument("--input-dir", default=(RAW_DATA_DIR / "markdown").as_posix())
+    process_parser.add_argument("--llm-config", required=True, help="LLM JSON 配置路径")
+    process_parser.add_argument(
+        "--export-path",
+        default=(EXPORTS_DATA_DIR / "app_releases.csv").as_posix(),
+        help="CSV 导出路径",
+    )
     return parser
 
 
@@ -121,7 +159,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "crawl": _crawl,
         "refresh": _refresh,
     }
-    return commands[args.command](args) if args.command in {"crawl", "refresh"} else commands[args.command]()
+    if args.command in {"crawl", "refresh", "process"}:
+        if args.command == "process":
+            return _process(args)
+        return commands[args.command](args)
+    return commands[args.command]()
 
 
 if __name__ == "__main__":

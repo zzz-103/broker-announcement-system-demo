@@ -46,6 +46,20 @@ export function FilterBar({
     setFilters({ ...filters, appNames: next });
   };
 
+  const toggleUpdateType = (updateType: string) => {
+    const next = filters.updateTypes.includes(updateType)
+      ? filters.updateTypes.filter((item) => item !== updateType)
+      : [...filters.updateTypes, updateType];
+    setFilters({ ...filters, updateTypes: next });
+  };
+
+  const toggleFeatureTag = (tag: string) => {
+    const next = filters.featureTags.includes(tag)
+      ? filters.featureTags.filter((item) => item !== tag)
+      : [...filters.featureTags, tag];
+    setFilters({ ...filters, featureTags: next });
+  };
+
   const resetFilters = () => {
     setFilters({
       search: "",
@@ -135,8 +149,50 @@ export function FilterBar({
           </div>
         )}
 
+        {updateTypeOptions.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-[#667085]">类型:</span>
+            <div className="flex flex-wrap gap-1">
+              {updateTypeOptions.map((updateType) => (
+                <button
+                  key={updateType}
+                  onClick={() => toggleUpdateType(updateType)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
+                    filters.updateTypes.includes(updateType)
+                      ? "bg-blue-100 text-blue-700 border border-blue-200"
+                      : "bg-slate-50 text-[#667085] border border-[#E4E9F0] hover:bg-slate-100"
+                  }`}
+                >
+                  {updateType}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tagOptions.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-[#667085]">标签:</span>
+            <div className="flex flex-wrap gap-1">
+              {tagOptions.slice(0, 8).map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleFeatureTag(tag)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-medium transition-all ${
+                    filters.featureTags.includes(tag)
+                      ? "bg-blue-100 text-blue-700 border border-blue-200"
+                      : "bg-slate-50 text-[#667085] border border-[#E4E9F0] hover:bg-slate-100"
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Reset button */}
-        {(filters.search || filters.brokerNames.length > 0 || filters.appNames.length > 0 || filters.timeRange !== "90d") && (
+        {(filters.search || filters.brokerNames.length > 0 || filters.appNames.length > 0 || filters.updateTypes.length > 0 || filters.featureTags.length > 0 || filters.timeRange !== "90d") && (
           <button
             onClick={resetFilters}
             className="ml-auto text-xs text-[#2563EB] hover:text-blue-700 underline"

@@ -122,7 +122,18 @@ python -m broker_app_watch.cli refresh \
   --export-path data/exports/app_releases.csv
 ```
 
-刷新会先抓取全部已启用来源，再使用 OpenAI-compatible Chat Completions 接口生成结构化记录。成功券商会替换其历史记录；失败券商在已有导出数据时沿用旧记录并输出告警。CSV 使用同目录临时文件原子替换，刷新失败不会破坏上一版文件。
+刷新会先抓取全部已启用来源，再使用 OpenAI-compatible Chat Completions 接口生成结构化记录。成功结果会与已有历史记录增量合并；失败来源沿用旧记录并输出告警。CSV 使用同目录临时文件原子替换，刷新失败不会破坏上一版文件。
+
+处理规则：规范化正文后，仅删除同一来源下正文哈希完全相同的重复抓取；不同版本、发布日期或更新内容始终作为历史记录保留。券商、App、平台和来源优先使用 Markdown 元数据、`brokers.yaml` 及确定性字段识别，LLM 只补充缺失字段和摘要分类。每批发布前会校验 CSV 契约；候选为空、字段不合法或 LLM 失败率达到 50% 时保留旧 CSV，并将候选数据和失败报告写入 `data/processed/llm/`。
+
+如果已经存在 Markdown 原始数据而不需要重新抓取，可使用：
+
+```bash
+python -m broker_app_watch.cli process \
+  --input-dir data/raw/markdown \
+  --llm-config ../backend/config/llm_api_config.json \
+  --export-path data/exports/app_releases.csv
+```
 
 ## FastAPI
 

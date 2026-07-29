@@ -690,9 +690,10 @@ class JobManager:
         # Prefer the restored checkout when a developer's editable venv still
         # points at the deleted pre-restore sibling repository.
         source_dir = working_dir / "src"
+        repository_root = project_root
         existing_python_path = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = os.pathsep.join(
-            part for part in (str(source_dir), existing_python_path) if part
+            part for part in (str(source_dir), str(repository_root), existing_python_path) if part
         )
         return command, working_dir, env
 

@@ -121,6 +121,21 @@ export default function AppUpdatesPage() {
         result = result.filter(r => r.publishDate && r.publishDate >= cutoff);
       }
     }
+
+    if (filters.brokerNames.length > 0) {
+      result = result.filter((record) => filters.brokerNames.includes(record.brokerName));
+    }
+    if (filters.appNames.length > 0) {
+      result = result.filter((record) => filters.appNames.includes(record.appName));
+    }
+    if (filters.updateTypes.length > 0) {
+      result = result.filter((record) => filters.updateTypes.includes(record.updateType));
+    }
+    if (filters.featureTags.length > 0) {
+      result = result.filter((record) =>
+        record.featureTags.some((tag) => filters.featureTags.includes(tag)),
+      );
+    }
     
     return result;
   }, [records, filters]);
@@ -142,8 +157,8 @@ export default function AppUpdatesPage() {
     return Array.from(set).sort();
   }, [records]);
   
-  const updateTypeOptions = useMemo(() => getUpdateTypeDistribution(filteredRecords).map(i => i.name), [filteredRecords]);
-  const tagOptions = useMemo(() => getFeatureTagDistribution(filteredRecords).map(i => i.name), [filteredRecords]);
+  const updateTypeOptions = useMemo(() => getUpdateTypeDistribution(records).map(i => i.name), [records]);
+  const tagOptions = useMemo(() => getFeatureTagDistribution(records).map(i => i.name), [records]);
 
   // Handle record click
   const handleRecordClick = (record: AppReleaseRecord) => {
@@ -182,10 +197,13 @@ export default function AppUpdatesPage() {
 
           {/* Data Status Group */}
           <div className="flex items-center gap-3.5 border-r border-white/10 pr-3.5 hidden md:flex">
-            <span className="whitespace-nowrap flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              最新数据：<span className="text-white font-medium">数据未生成</span>
-            </span>
+              <span className="whitespace-nowrap flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                最新数据：
+                <span className="text-white font-medium">
+                  {updatedAt ? updatedAt.slice(0, 10) : "数据未生成"}
+                </span>
+              </span>
           </div>
 
           {/* Main Actions Group */}
