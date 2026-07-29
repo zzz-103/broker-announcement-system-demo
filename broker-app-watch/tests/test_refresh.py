@@ -8,6 +8,9 @@ from broker_app_watch.core.config import BrokerCatalog, load_broker_catalog
 from broker_app_watch.llm.client import parse_app_release_response
 from broker_app_watch.pipeline.crawl import CrawlSummary
 from broker_app_watch.pipeline.refresh import RefreshError, refresh_all
+from broker_app_watch.storage.markdown_writer import MarkdownWriter
+from broker_app_watch.collectors.base import CollectedContent
+from broker_app_watch.parsers.base import ParsedDocument, ParsedSection
 from broker_app_watch.storage.models import APP_RELEASE_CSV_COLUMNS, AppReleaseAnalysis
 
 
@@ -293,3 +296,64 @@ def test_refresh_blocks_at_exactly_fifty_percent_failure_rate(tmp_path: Path) ->
             raw_dir=raw_dir,
             crawl_runner=fake_crawl,
         )
+
+
+def test_refresh_skips_llm_for_a_body_already_structured(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw" / "markdown"
+    path = raw_dir / "gxzq" / "release.md"
+    _markdown(path, "gxzq")
+    export_path = tmp_path / "exports" / "app_releases.csv"
+    calls = 0
+
+    class CountingClient:
+        def extract(self, *, metadata: dict[str, str], content: str) -> list[AppReleaseAnalysis]:
+            nonlocal calls
+            calls += 1
+            return [AppReleaseAnalysis(app_version="1.0.0", update_summary="ok")]
+
+    def fake_crawl(catalog: BrokerCatalog) -> CrawlSummary:
+        return CrawlSummary(success={"gxzq": path}, failures={})
+
+    refresh_all(
+        _catalog(),
+        client=CountingClient(),
+        export_path=export_path,
+        raw_dir=raw_dir,
+        crawl_runner=fake_crawl,
+    )
+    second = refresh_all(
+        _catalog(),
+        client=CountingClient(),
+        export_path=export_path,
+        raw_dir=raw_dir,
+        crawl_runner=fake_crawl,
+    )
+
+    assert calls == 1
+    assert second.blocked is False
+    assert second.failure_rate == 0
+
+
+def test_markdown_writer_reuses_unchanged_source_document(tmp_path: Path) -> None:
+    source = _catalog().brokers[0]
+    writer = MarkdownWriter(tmp_path / "markdown")
+    document = ParsedDocument(
+        title="App 更新",
+        sections=[ParsedSection(heading="版本", content="1.0.0")],
+        source_metadata={},
+    )
+    first_response = CollectedContent(
+        source=source,
+        body="ignored",
+        crawl_time="2026-07-29T10:00:00+08:00",
+    )
+    second_response = CollectedContent(
+        source=source,
+        body="ignored",
+        crawl_time="2026-07-30T10:00:00+08:00",
+    )
+
+    writer.write(source, document, first_response)
+    writer.write(source, document, second_response)
+
+    assert len(list((tmp_path / "markdown" / source.broker_code).glob("*.md"))) == 1

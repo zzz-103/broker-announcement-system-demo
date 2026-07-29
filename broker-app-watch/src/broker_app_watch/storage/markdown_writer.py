@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -17,11 +18,45 @@ def _safe_filename_part(value: str) -> str:
     return value or "unnamed"
 
 
+@dataclass(frozen=True, slots=True)
+class CachedMarkdown:
+    path: Path
+    metadata: dict[str, str]
+
+
 class MarkdownWriter:
     """Persist one document below data/raw/markdown."""
 
     def __init__(self, output_dir: Path | None = None) -> None:
         self.output_dir = output_dir or RAW_DATA_DIR / "markdown"
+
+    def find_cached(self, source: BrokerSource) -> CachedMarkdown | None:
+        """Return the newest saved document for a source, if one exists."""
+
+        candidates: list[CachedMarkdown] = []
+        source_dir = self.output_dir / _safe_filename_part(source.broker_code)
+        for path in source_dir.glob("*.md"):
+            try:
+                raw = path.read_text(encoding="utf-8-sig")
+                if not raw.startswith("---"):
+                    continue
+                parts = raw.split("---", 2)
+                if len(parts) != 3:
+                    continue
+                values = yaml.safe_load(parts[1]) or {}
+                if not isinstance(values, dict):
+                    continue
+                metadata = {str(key): str(value or "") for key, value in values.items()}
+                if metadata.get("broker_code") != source.broker_code:
+                    continue
+                if metadata.get("source_url") != str(source.source_url):
+                    continue
+                candidates.append(CachedMarkdown(path=path, metadata=metadata))
+            except (OSError, UnicodeError, yaml.YAMLError):
+                continue
+        if not candidates:
+            return None
+        return max(candidates, key=lambda item: item.path.stat().st_mtime)
 
     def write(
         self, source: BrokerSource, document: ParsedDocument, response: CollectedContent
@@ -30,6 +65,13 @@ class MarkdownWriter:
         if not body.strip():
             raise ValueError(f"{source.broker_code} 解析结果为空，拒绝写入 Markdown")
         content_sha256 = hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+        cached = self.find_cached(source)
+        if cached and cached.metadata.get("content_sha256") == content_sha256:
+            # The remote page was fetched, but its parsed content is unchanged.
+            # Reuse the existing file so repeated refreshes do not create a new
+            # Markdown download for a low-frequency App source.
+            return cached.path
 
         metadata: dict[str, object] = {
             "crawl_time": response.crawl_time or "",
@@ -45,6 +87,7 @@ class MarkdownWriter:
             "http_status": response.status_code,
             "content_sha256": content_sha256,
         }
+        metadata.update(response.metadata)
         metadata.update(document.source_metadata)
         front_matter = yaml.safe_dump(
             metadata,

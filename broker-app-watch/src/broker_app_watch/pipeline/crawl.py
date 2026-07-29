@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
 
 from broker_app_watch.collectors.http_collector import HttpCollector
@@ -75,10 +76,17 @@ def crawl_source(
     if parser_type is None:
         raise ValueError(f"不支持的解析器：{source.parser}")
     settings = load_settings()
-    collector = HttpCollector(timeout_seconds or settings.request_timeout_seconds)
+    output_writer = writer or MarkdownWriter()
+    cached = output_writer.find_cached(source)
+    collector = HttpCollector(
+        timeout_seconds or settings.request_timeout_seconds,
+        cached=cached,
+    )
     response = collector.collect(source)
+    if response.metadata.get("not_modified") == "true" and cached is not None:
+        return cached.path
     document: ParsedDocument = parser_type().parse(response.body, source, response)
-    return (writer or MarkdownWriter()).write(source, document, response)
+    return output_writer.write(source, document, response)
 
 
 def crawl_broker(catalog: BrokerCatalog, broker_code: str) -> Path:
@@ -95,15 +103,34 @@ def crawl_broker(catalog: BrokerCatalog, broker_code: str) -> Path:
     return crawl_source(source)
 
 
-def crawl_all(catalog: BrokerCatalog) -> CrawlSummary:
+def crawl_all(
+    catalog: BrokerCatalog,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> CrawlSummary:
     """Crawl all enabled sources and continue after an individual failure."""
 
     success: dict[str, Path] = {}
     failures: dict[str, str] = {}
-    for source in catalog.enabled_sources:
+    sources = catalog.enabled_sources
+    total = len(sources)
+    for index, source in enumerate(sources, start=1):
+        if progress:
+            progress(
+                f"[App Watch] 采集进度 {index}/{total}：{source.broker_code} 开始"
+            )
         try:
             success[source.broker_code] = crawl_source(source)
+            if progress:
+                progress(
+                    f"[App Watch] 采集进度 {index}/{total}：{source.broker_code} 完成"
+                )
         except Exception as exc:  # noqa: BLE001 - one source must not stop --all
             failures[source.broker_code] = str(exc)
             LOGGER.error("处理 %s 失败：%s", source.broker_code, type(exc).__name__)
+            if progress:
+                progress(
+                    f"[App Watch] 采集进度 {index}/{total}：{source.broker_code} 失败："
+                    f"{type(exc).__name__}"
+                )
     return CrawlSummary(success=success, failures=failures)

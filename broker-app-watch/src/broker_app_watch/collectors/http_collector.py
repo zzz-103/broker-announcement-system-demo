@@ -11,6 +11,7 @@ import httpx
 
 from broker_app_watch.collectors.base import CollectedContent, Collector
 from broker_app_watch.core.config import BrokerSource
+from broker_app_watch.storage.markdown_writer import CachedMarkdown
 
 
 LOGGER = logging.getLogger(__name__)
@@ -51,12 +52,28 @@ def fetch_binary(url: str, *, timeout_seconds: float = 20.0) -> bytes:
 class HttpCollector(Collector):
     """Fetch a static page with conservative defaults."""
 
-    def __init__(self, timeout_seconds: float = 20.0) -> None:
+    def __init__(
+        self,
+        timeout_seconds: float = 20.0,
+        *,
+        cached: CachedMarkdown | None = None,
+    ) -> None:
         self.timeout_seconds = timeout_seconds
+        self.cached = cached
 
     def collect(self, source: BrokerSource) -> CollectedContent:
         request_url = str(source.fetch_url or source.source_url)
         last_error: httpx.HTTPError | None = None
+        # Validators are persisted in the Markdown front matter by the writer.
+        # They let cooperative low-frequency sources answer with 304 without
+        # transferring the same page again.
+        cached = self.cached
+        request_headers = dict(_DEFAULT_HEADERS)
+        if source.request_method == "GET" and cached is not None:
+            if cached.metadata.get("etag"):
+                request_headers["If-None-Match"] = cached.metadata["etag"]
+            if cached.metadata.get("last_modified"):
+                request_headers["If-Modified-Since"] = cached.metadata["last_modified"]
         for attempt in range(2):
             try:
                 if source.request_method == "POST":
@@ -66,7 +83,7 @@ class HttpCollector(Collector):
                         timeout=self.timeout_seconds,
                         follow_redirects=True,
                         verify=_ssl_context(),
-                        headers=_DEFAULT_HEADERS,
+                        headers=request_headers,
                     )
                 else:
                     response = httpx.get(
@@ -74,7 +91,15 @@ class HttpCollector(Collector):
                         timeout=self.timeout_seconds,
                         follow_redirects=True,
                         verify=_ssl_context(),
-                        headers=_DEFAULT_HEADERS,
+                        headers=request_headers,
+                    )
+                if response.status_code == 304:
+                    return CollectedContent(
+                        source=source,
+                        body="",
+                        status_code=response.status_code,
+                        final_url=str(response.url),
+                        metadata={"not_modified": "true"},
                     )
                 response.raise_for_status()
                 crawl_time = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(
@@ -87,6 +112,14 @@ class HttpCollector(Collector):
                     status_code=response.status_code,
                     final_url=str(response.url),
                     crawl_time=crawl_time,
+                    metadata={
+                        key: value
+                        for key, value in {
+                            "etag": response.headers.get("etag", ""),
+                            "last_modified": response.headers.get("last-modified", ""),
+                        }.items()
+                        if value
+                    },
                 )
             except httpx.HTTPError as exc:
                 last_error = exc

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -120,6 +121,7 @@ function GlowButton({
 }
 
 export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
+  const router = useRouter();
   const { username, token, logout, clearAuth } = useAuthStore();
   const [logDialogCard, setLogDialogCard] = useState<CardId | null>(null);
   const [crawlerModeDialogOpen, setCrawlerModeDialogOpen] = useState(false);
@@ -379,7 +381,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           ) : "运行更新采集"}
                         </GlowButton>
                         <Button
-                          onClick={() => window.open('/app-updates', '_blank')}
+                          onClick={() => router.push("/app-updates")}
                           disabled={isBusy}
                           variant="outline"
                           className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex items-center justify-center gap-1 transition-all"

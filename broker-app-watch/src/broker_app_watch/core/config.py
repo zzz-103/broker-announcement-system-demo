@@ -1,5 +1,6 @@
 """Load application settings and broker source definitions."""
 
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -35,7 +36,16 @@ class BrokerCatalog(BaseModel):
 
     @property
     def enabled_sources(self) -> list[BrokerSource]:
-        return [source for source in self.brokers if source.enabled]
+        disabled = {
+            item.strip()
+            for item in os.getenv("BAW_DISABLED_BROKERS", "").split(",")
+            if item.strip()
+        }
+        return [
+            source
+            for source in self.brokers
+            if source.enabled and source.broker_code not in disabled
+        ]
 
 
 class AppSettings(BaseSettings):

@@ -4,11 +4,25 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
-from broker_app_watch.core.config import load_broker_catalog, load_settings
+from broker_app_watch.core.config import BrokerCatalog, load_broker_catalog, load_settings
 from broker_app_watch.core.paths import EXPORTS_DATA_DIR, PROJECT_ROOT, RAW_DATA_DIR
 from broker_app_watch.llm.client import OpenAICompatibleAppReleaseClient
 from broker_app_watch.pipeline.crawl import build_crawl_plan, crawl_all, crawl_broker
 from broker_app_watch.pipeline.refresh import RefreshError, process_existing, refresh_all
+
+
+def _progress(message: str) -> None:
+    """Write unbuffered progress messages for the parent FastAPI job runner."""
+
+    print(message, flush=True)
+
+
+def _report_disabled_sources(catalog: BrokerCatalog) -> None:
+    all_codes = {source.broker_code for source in catalog.brokers}
+    enabled_codes = {source.broker_code for source in catalog.enabled_sources}
+    disabled_codes = sorted(all_codes - enabled_codes)
+    if disabled_codes:
+        _progress(f"[App Watch] 已跳过配置禁用来源：{', '.join(disabled_codes)}")
 
 
 def _check_config() -> int:
@@ -32,7 +46,9 @@ def _list_sources() -> int:
 
 
 def _dry_run() -> int:
-    plan = build_crawl_plan(load_broker_catalog())
+    catalog = load_broker_catalog()
+    _report_disabled_sources(catalog)
+    plan = build_crawl_plan(catalog)
     print(f"Dry-run：计划处理 {len(plan)} 个已启用来源，不发起网络请求。")
     for item in plan:
         print(
@@ -44,6 +60,7 @@ def _dry_run() -> int:
 
 def _crawl(args: argparse.Namespace) -> int:
     catalog = load_broker_catalog()
+    _report_disabled_sources(catalog)
     if args.broker:
         try:
             output = crawl_broker(catalog, args.broker)
@@ -53,7 +70,7 @@ def _crawl(args: argparse.Namespace) -> int:
         print(f"成功：1\n失败：0\n\n{args.broker} -> {output.as_posix()}")
         return 0
 
-    summary = crawl_all(catalog)
+    summary = crawl_all(catalog, progress=_progress)
     print(f"成功：{len(summary.success)}\n失败：{len(summary.failures)}")
     for broker_code, output in summary.success.items():
         print(f"\n{broker_code} -> {output.as_posix()}")
@@ -73,10 +90,14 @@ def _refresh(args: argparse.Namespace) -> int:
         return 2
     try:
         client = OpenAICompatibleAppReleaseClient.from_config(_resolve_path(args.llm_config))
+        catalog = load_broker_catalog()
+        _report_disabled_sources(catalog)
+        _progress("[App Watch] 开始刷新：采集来源与 LLM 结构化")
         result = refresh_all(
-            load_broker_catalog(),
+            catalog,
             client=client,
             export_path=_resolve_path(args.export_path),
+            progress=_progress,
         )
     except (OSError, ValueError, RefreshError) as exc:
         print(f"App 更新刷新失败：{type(exc).__name__}")
@@ -101,11 +122,14 @@ def _refresh(args: argparse.Namespace) -> int:
 def _process(args: argparse.Namespace) -> int:
     try:
         client = OpenAICompatibleAppReleaseClient.from_config(_resolve_path(args.llm_config))
+        catalog = load_broker_catalog()
+        _report_disabled_sources(catalog)
         result = process_existing(
-            load_broker_catalog(),
+            catalog,
             client=client,
             export_path=_resolve_path(args.export_path),
             raw_dir=_resolve_path(args.input_dir),
+            progress=_progress,
         )
     except (OSError, ValueError, RefreshError) as exc:
         print(f"App 更新处理失败：{type(exc).__name__}")

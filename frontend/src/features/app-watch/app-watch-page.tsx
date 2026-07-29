@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { BackendApiError } from "@/lib/api/backend-client";
+import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import {
   AppReleaseNotGeneratedError,
   getAppReleaseStatistics,
@@ -40,7 +41,8 @@ interface FilterState {
 
 export default function AppUpdatesPage() {
   const router = useRouter();
-  const { token, clearAuth, username, isAdmin, logout } = useAuthStore();
+  const { token, clearAuth, username, isAdmin, logout, isLoggedIn } = useAuthStore();
+  const restoreSession = useAuthStore((state) => state.restoreSession);
   
   // Data state
   const [records, setRecords] = useState<AppReleaseRecord[]>([]);
@@ -65,6 +67,13 @@ export default function AppUpdatesPage() {
   });
   
   const refreshData = useCallback(() => setDataVersion((v) => v + 1), []);
+
+  // This page can be opened directly in a new tab from the admin console.
+  // Zustand starts with an empty in-memory store in that tab, so restore the
+  // session before attempting the authenticated data request.
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
 
   // Load data
   useEffect(() => {
@@ -175,6 +184,10 @@ export default function AppUpdatesPage() {
   };
 
   const isBusy = dataStatus === "loading";
+
+  if (!isLoggedIn) {
+    return <LoginPageWithApply />;
+  }
 
   return (
     <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">

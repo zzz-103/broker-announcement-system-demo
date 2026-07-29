@@ -449,6 +449,7 @@ def process_existing(
     export_path: Path | None = None,
     raw_dir: Path | None = None,
     broker_codes: set[str] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> RefreshResult:
     """Process existing Markdown without invoking the crawler."""
 
@@ -488,7 +489,47 @@ def process_existing(
             except Exception as exc:  # noqa: BLE001 - isolate one Markdown document
                 failures.append(ProcessingFailure(_relative_path(path), f"处理失败：{type(exc).__name__}"))
 
-    for source, path in documents.values():
+    documents_to_process = list(documents.values())
+    processed_identities = {
+        (row.broker_code, row.source_url, row.content_sha256)
+        for row in previous
+        if row.broker_code and row.source_url and row.content_sha256
+    }
+    skipped_documents = 0
+    skipped_sources: list[str] = []
+    pending_documents: list[tuple[BrokerSource, Path]] = []
+    for source, path in documents_to_process:
+        metadata, raw_content = _parse_front_matter(path)
+        identity = (
+            metadata.get("broker_code") or source.broker_code,
+            metadata.get("source_url") or str(source.source_url),
+            _content_hash(_clean_body(raw_content)),
+        )
+        if identity in processed_identities:
+            skipped_documents += 1
+            skipped_sources.append(source.broker_code)
+            continue
+        pending_documents.append((source, path))
+
+    documents_to_process = pending_documents
+    total_documents = len(documents_to_process)
+    if progress:
+        progress(
+            f"[App Watch] LLM 结构化准备完成：待处理 {total_documents} 个来源文档，"
+            f"跳过 {skipped_documents} 个已结构化来源文档"
+        )
+        if skipped_sources:
+            progress(
+                "[App Watch] LLM 结构化已跳过："
+                + ", ".join(sorted(set(skipped_sources)))
+            )
+
+    for index, (source, path) in enumerate(documents_to_process, start=1):
+        if progress:
+            progress(
+                f"[App Watch] LLM 结构化进度 {index}/{total_documents}："
+                f"{source.broker_code} 开始"
+            )
         try:
             metadata, raw_content = _parse_front_matter(path)
             content = _clean_body(raw_content)
@@ -506,13 +547,23 @@ def process_existing(
                 ]
                 all_rows.extend(rows)
                 updated_brokers.add(source.broker_code)
+            if progress:
+                progress(
+                    f"[App Watch] LLM 结构化进度 {index}/{total_documents}："
+                    f"{source.broker_code} 完成，生成 {len(rows)} 条"
+                )
         except Exception as exc:  # noqa: BLE001 - isolate one Markdown document
             failures.append(ProcessingFailure(_relative_path(path), f"处理失败：{type(exc).__name__}"))
             attempted += 1
             failed_units += 1
+            if progress:
+                progress(
+                    f"[App Watch] LLM 结构化进度 {index}/{total_documents}："
+                    f"{source.broker_code} 失败：{type(exc).__name__}"
+                )
 
     all_rows = _deduplicate_exact(all_rows)
-    failure_rate = failed_units / attempted if attempted else 1.0
+    failure_rate = failed_units / attempted if attempted else 0.0
     blocked = not all_rows or (attempted > 0 and failure_rate >= FAILURE_RATE_LIMIT)
     summary: dict[str, Any] = {
         "status": "publish_blocked" if blocked else "ready",
@@ -574,17 +625,23 @@ def refresh_all(
     client: AppReleaseLlmClient,
     export_path: Path | None = None,
     raw_dir: Path | None = None,
-    crawl_runner: Callable[[BrokerCatalog], CrawlSummary] = crawl_all,
+    crawl_runner: Callable[[BrokerCatalog], CrawlSummary] | None = None,
+    progress: Callable[[str], None] | None = None,
 ) -> RefreshResult:
     """Crawl all enabled sources, then process and safely publish history."""
 
-    crawl_summary = crawl_runner(catalog)
+    crawl_summary = (
+        crawl_all(catalog, progress=progress)
+        if crawl_runner is None
+        else crawl_runner(catalog)
+    )
     result = process_existing(
         catalog,
         client=client,
         export_path=export_path,
         raw_dir=raw_dir,
         broker_codes=set(crawl_summary.success),
+        progress=progress,
     )
     crawl_failures = dict(crawl_summary.failures)
     crawl_failures.update(result.failures)
