@@ -174,7 +174,10 @@ try {
                 throw "Required Compose service not found: $requiredService"
             }
         }
-        $composeConfig = docker compose config
+        # PowerShell treats -match/-notmatch on an array as a filtering
+        # operation. Capture the rendered Compose config as one string so a
+        # non-matching line cannot make this validation fail.
+        $composeConfig = docker compose config | Out-String
         Assert-LastExitCode 'Read Docker Compose mounts'
         if ($composeConfig -notmatch 'app-watch-data') {
             throw 'Production Compose must mount runtime/app-watch-data into backend-api.'
