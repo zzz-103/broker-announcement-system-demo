@@ -1,0 +1,5 @@
+environment: development
+log_level: INFO
+database_url: null
+browser_enabled: false
+request_timeout_seconds: 20.0

@@ -1,0 +1,38 @@
+{
+  "status": 0,
+  "data": [
+    {
+      "categoryName": "手机端",
+      "appList": [
+        {
+          "chName": "中金财富",
+          "versionName": "12.7.0",
+          "type": 0,
+          "createTime": "2026-06-20 09:00:00",
+          "showPublish": "2026-06-26 18:23:23",
+          "description": "<p>中金财富APP提供开户、行情、资讯、交易、理财一站式服务。</p>",
+          "downInfo": [
+            {"type": "安卓下载", "url": "https://procos.ciccwm.com/app.apk"},
+            {"type": "IOS下载", "url": "https://a.app.qq.com/o/simple.jsp?pkgname=cn.cisc"}
+          ]
+        }
+      ]
+    },
+    {
+      "categoryName": "电脑端",
+      "appList": [
+        {
+          "chName": "中金财富PC版",
+          "versionName": "8.0.0",
+          "type": 5,
+          "createTime": "2026-05-01 09:00:00",
+          "showPublish": "2026-05-10 09:00:00",
+          "description": "<p>电脑版交易软件</p>",
+          "downInfo": [
+            {"type": "Windows下载", "url": "https://procos.ciccwm.com/pc.exe"}
+          ]
+        }
+      ]
+    }
+  ]
+}

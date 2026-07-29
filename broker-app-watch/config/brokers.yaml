@@ -1,0 +1,124 @@
+brokers:
+  - broker_code: gxzq
+    broker_name: 国信证券
+    app_name: 国信金太阳
+    source_url: https://www.guosen.com.cn/gs/software/detail.html?id=13
+    fetch_url: https://www.guosen.com.cn/gswz-web/software/list/1.0
+    source_type: api
+    parser: guosen_software_api
+    enabled: true
+    parser_options:
+      item_id: "13"
+
+  - broker_code: gfzq
+    broker_name: 广发证券
+    app_name: 广发易淘金
+    source_url: https://sj.qq.com/appdetail/com.gf.client?android_schema=gfzqapp%3A%2F%2Fgfclient&from_wxz=1
+    source_type: http
+    parser: generic_html
+    enabled: true
+    parser_options:
+      section_headings:
+        - 简介
+        - 详细信息
+
+  - broker_code: zszq
+    broker_name: 招商证券
+    app_name: 招商证券 APP
+    source_url: https://wap.newone.com.cn/#/
+    fetch_url: https://wap.newone.com.cn/static/config.json
+    source_type: api
+    parser: cmschina_config_json
+    enabled: true
+    parser_options:
+      platforms:
+        - iOS
+        - Android
+        - HarmonyOS
+
+  - broker_code: pazq
+    broker_name: 平安证券
+    app_name: 平安证券
+    source_url: https://m.stock.pingan.com/huodong/AnEXZ/index.html?aid=135&sid=987&ouid=STOCKGW009
+    fetch_url: https://m.stock.pingan.com/restapi/rest-config/configurationInfo/getConfig
+    source_type: api
+    parser: pingan_image_ocr
+    enabled: true
+    request_method: POST
+    request_json:
+      confName: AnEXZConfig
+      confVersion: "1.000"
+    parser_options:
+      list_path:
+        - results
+        - list
+      min_score: 0.0
+
+  - broker_code: gtzq
+    broker_name: 国投证券
+    app_name: 国投证券
+    source_url: https://www.essence.com.cn/download?type=2
+    fetch_url: https://www.essence.com.cn/api/softwares
+    source_type: api
+    parser: essence_softwares_api
+    enabled: true
+    parser_options:
+      platform_groups:
+        安卓: "2"
+        苹果: "4"
+
+  - broker_code: cgws
+    broker_name: 长城证券
+    app_name: 长城证券手机App
+    source_url: https://www.cgws.com/cczq/rjxz/index.html?login=2
+    source_type: http
+    parser: cgws_download_html
+    enabled: true
+    parser_options:
+      app_names:
+        - 长城炼金术
+        - 长城易
+
+  - broker_code: firstcapital
+    broker_name: 第一创业
+    app_name: 一创智富通
+    source_url: https://www.firstcapital.com.cn/main/khzj/rjxz/index.html
+    source_type: http
+    parser: generic_html
+    enabled: true
+    parser_options:
+      section_headings:
+        - 一创智富通android版
+
+  - broker_code: ciccwm
+    broker_name: 中金财富
+    app_name: 中金财富
+    source_url: https://www.ciccwm.com/ciccwmweb/download.html
+    fetch_url: https://www.ciccwm.com/api2/cicc/webAppDown/getMenuList?position=1
+    source_type: api
+    parser: ciccwm_appdown_api
+    enabled: true
+
+  - broker_code: dgzq
+    broker_name: 东莞证券
+    app_name: 东莞证券手机App
+    source_url: https://www.dgzq.com.cn/dz-ow/pcfront/
+    fetch_url: https://www.dgzq.com.cn/dz-ow/system/soft/querySoftDownload
+    source_type: api
+    parser: dgzq_soft_api
+    enabled: true
+    request_method: POST
+    request_json: {}
+    parser_options:
+      mobile_clients:
+        - "2"
+        - "3"
+
+  - broker_code: ykzq
+    broker_name: 粤开证券
+    app_name: 粤开证券手机App
+    source_url: https://www.ykzq.com/download.html
+    fetch_url: https://www.ykzq.com/api/cms-article/list?channelId=858
+    source_type: api
+    parser: ykzq_cms_article
+    enabled: true

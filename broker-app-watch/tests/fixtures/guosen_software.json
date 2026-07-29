@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "id": 13,
+      "swName": "国信金太阳",
+      "swSummary": "国信金太阳\n提供证券交易服务。\n\n\n支持多种业务。",
+      "newFeatureFull": "1. 新增行情功能\n2. 优化交易流程",
+      "newFeature": "修复已知问题\n提升运行稳定性",
+      "softUpdateDate": "2026-07-20",
+      "swLable": "证券交易,行情"
+    }
+  ]
+}

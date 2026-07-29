@@ -1,0 +1,15 @@
+{
+  "code": 2000,
+  "message": "成功",
+  "data": {
+    "records": [
+      {
+        "id": 57734,
+        "channelId": 858,
+        "clazz": "Html",
+        "updatedTime": "2026-07-09 09:18:08",
+        "content": "<div class=\"cont-credit\"><h3>股票交易软件</h3><div class=\"so-download-cont\"><h2>粤管家APP</h2><dl><dt><img src=\"logo.png\"/></dt><dd>粤管家App是粤开证券的投顾理财工具。<br/>MD5:9BA062661D310582C52FA865F890D985<br/>版本信息：8.04.01<br/>软件大小：125 MB<br/>更新日期：20260709<br/>版本新特性：<br/>1、适配沪深京交易规则改造<br/>2、修复已知问题<br/><a class=\"so-down-button\" href=\"https://download.ykzq.com/software/hs/ygj.apk\">点击立即下载</a></dd></dl></div><div class=\"so-download-cont\"><h2>粤开同花顺PC（统一版）</h2><dl><dd>综合交易平台。<br/>版本信息：7.3.4<br/><a class=\"so-down-button\" href=\"https://download.ykzq.com/software/hs/new_ykzq_v6.exe\">点击立即下载</a></dd></dl></div><div class=\"so-download-cont\"><h2>粤开期权宝 (模拟交易)</h2><dl><dd>期权宝模拟交易PC端。<br/>版本信息：2.13.4.135<br/><a class=\"so-down-button\" href=\"https://download.ykzq.com/software/wsjy/ykqqbtest.apk\">点击立即下载</a></dd></dl></div><div class=\"so-download-cont\"><h2>粤开手机销户APP(安卓)</h2><dl><dd>包含粤开证券销户软件的安卓安装包。<br/>MD5: b91821d7199d3640284e9b50bdc95691<br/>版本信息：4.1.9<br/>软件大小：60.3MB<br/>发布日期：2024-10-25<br/><a class=\"so-down-button\" href=\"https://download.ykzq.com/software/hs/ykxh.apk\">点击立即下载</a></dd></dl></div></div>"
+      }
+    ]
+  }
+}

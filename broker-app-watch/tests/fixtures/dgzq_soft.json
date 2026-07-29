@@ -1,0 +1,45 @@
+{
+  "code": 200,
+  "data": [
+    {
+      "downloadId": "1",
+      "downloadName": "东莞证券财富通PC版",
+      "title": "PC 客户端",
+      "brief": "电脑版行情交易软件",
+      "adaptClient": "1",
+      "softUpdateTime": "2026-05-01 10:00:00",
+      "updateExplain": "PC 版更新",
+      "md5Code": "PCMD5",
+      "verionList": [
+        {"versionType": "windows", "softDownUrl": "https://media.dgzq.cn/pc.exe"}
+      ]
+    },
+    {
+      "downloadId": "2",
+      "downloadName": "掌证宝6.4.8",
+      "title": "一站式智能投资炒股APP",
+      "brief": "掌证宝提供行情交易等一站式服务",
+      "adaptClient": "2",
+      "softUpdateTime": "2026-07-04 20:59:25",
+      "updateExplain": "支持沪深交易新规",
+      "md5Code": "ZZBMD5",
+      "verionList": [
+        {"versionType": "android", "softDownUrl": "https://media.dgzq.cn/zzb.apk"}
+      ]
+    },
+    {
+      "downloadId": "3",
+      "downloadName": "微官网软件下载",
+      "title": "微官网软件下载",
+      "brief": "微官网软件下载",
+      "adaptClient": "3",
+      "softUpdateTime": "",
+      "updateExplain": "微官网软件下载",
+      "md5Code": "",
+      "verionList": [
+        {"versionType": "ios", "softDownUrl": "https://media.dgzq.cn/ios.apk"},
+        {"versionType": "android", "softDownUrl": "https://media.dgzq.cn/wgw.apk"}
+      ]
+    }
+  ]
+}

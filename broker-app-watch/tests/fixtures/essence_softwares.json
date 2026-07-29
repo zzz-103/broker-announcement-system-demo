@@ -1,0 +1,49 @@
+{
+  "rtnCode": 1,
+  "msg": "success",
+  "data": {
+    "1": [
+      {"name": "通达信版", "ver": "V7.49", "env": "Windows", "dlLinkMain": "https://example.com/pc.exe"}
+    ],
+    "2": [
+      {
+        "name": "国投证券",
+        "ver": "V9.6.3",
+        "env": "需要安卓6.0及以上版本",
+        "lang": "简体中文",
+        "time": "2026-07-01",
+        "fitCust": "国投证券安卓手机客户",
+        "remark": "<p>国投证券APP是手机版智能炒股软件。</p>",
+        "dlLinkMain": "https://mobile-app.example.com/android/EssenceMobileApp_V9.6.3.apk",
+        "dlLinkMainFilesize": 173843955,
+        "dlLinkMainMd5": "d0469b5215fa19b6da1748284247a33d"
+      },
+      {
+        "name": "国投证券同花顺",
+        "ver": "V10.5.3",
+        "env": "需要安卓4.0及以上版本",
+        "lang": "简体中文",
+        "time": "2026-06-08",
+        "fitCust": "国投证券所有客户",
+        "remark": "<p>国投证券同花顺提供交易、行情、资讯服务。</p>",
+        "dlLinkMain": "https://static.example.com/GuoTouSecurity_V10.5.3.apk",
+        "dlLinkMainFilesize": 51491373,
+        "dlLinkMainMd5": "197d29c3ff212178238deed8fb95a77c"
+      }
+    ],
+    "4": [
+      {
+        "name": "国投证券",
+        "ver": "V9.6.3",
+        "env": "需要iOS 12.0或更高版本",
+        "lang": "简体中文",
+        "time": "2026-07-03",
+        "fitCust": "国投证券苹果手机客户",
+        "remark": "<p>国投证券APP是手机版智能炒股软件。</p>",
+        "dlLinkMain": "https://apps.apple.com/cn/app/id919008771",
+        "dlLinkMainFilesize": 68100393,
+        "dlLinkMainMd5": "7bbf62f0613b7e0c6f90dea0e4852351"
+      }
+    ]
+  }
+}
