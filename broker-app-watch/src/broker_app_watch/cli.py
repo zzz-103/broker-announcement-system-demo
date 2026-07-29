@@ -2,9 +2,13 @@
 
 import argparse
 from collections.abc import Sequence
+from pathlib import Path
 
 from broker_app_watch.core.config import load_broker_catalog, load_settings
+from broker_app_watch.core.paths import EXPORTS_DATA_DIR, PROJECT_ROOT
+from broker_app_watch.llm.client import OpenAICompatibleAppReleaseClient
 from broker_app_watch.pipeline.crawl import build_crawl_plan, crawl_all, crawl_broker
+from broker_app_watch.pipeline.refresh import RefreshError, refresh_all
 
 
 def _check_config() -> int:
@@ -58,6 +62,36 @@ def _crawl(args: argparse.Namespace) -> int:
     return 1 if summary.failures else 0
 
 
+def _resolve_path(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _refresh(args: argparse.Namespace) -> int:
+    if not args.all:
+        print("refresh 目前只支持 --all。")
+        return 2
+    try:
+        client = OpenAICompatibleAppReleaseClient.from_config(_resolve_path(args.llm_config))
+        result = refresh_all(
+            load_broker_catalog(),
+            client=client,
+            export_path=_resolve_path(args.export_path),
+        )
+    except (OSError, ValueError, RefreshError) as exc:
+        print(f"App 更新刷新失败：{type(exc).__name__}")
+        return 1
+
+    print(f"App 更新刷新完成：导出 {result.exported_rows} 条记录。")
+    if result.updated_brokers:
+        print(f"已更新券商：{', '.join(result.updated_brokers)}")
+    if result.preserved_brokers:
+        print(f"沿用旧数据券商：{', '.join(result.preserved_brokers)}")
+    for broker_code, message in sorted(result.failures.items()):
+        print(f"警告：{broker_code} -> {message}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="券商 App 更新记录采集与分析工具")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -67,6 +101,14 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_group = crawl_parser.add_mutually_exclusive_group(required=True)
     crawl_group.add_argument("--broker", help="单个券商代码")
     crawl_group.add_argument("--all", action="store_true", help="全部已启用来源")
+    refresh_parser = subparsers.add_parser("refresh", help="抓取并生成结构化 App 更新 CSV")
+    refresh_parser.add_argument("--all", action="store_true", help="刷新全部已启用来源")
+    refresh_parser.add_argument("--llm-config", required=True, help="LLM JSON 配置路径")
+    refresh_parser.add_argument(
+        "--export-path",
+        default=(EXPORTS_DATA_DIR / "app_releases.csv").as_posix(),
+        help="CSV 导出路径",
+    )
     return parser
 
 
@@ -77,8 +119,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "list-sources": _list_sources,
         "dry-run": _dry_run,
         "crawl": _crawl,
+        "refresh": _refresh,
     }
-    return commands[args.command](args) if args.command == "crawl" else commands[args.command]()
+    return commands[args.command](args) if args.command in {"crawl", "refresh"} else commands[args.command]()
 
 
 if __name__ == "__main__":

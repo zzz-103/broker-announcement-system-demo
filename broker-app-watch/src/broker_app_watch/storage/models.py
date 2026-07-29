@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReleaseRecord(BaseModel):
@@ -18,3 +18,71 @@ class ReleaseRecord(BaseModel):
     published_at: str | None = None
     collected_at: datetime | None = None
     source_url: str | None = None
+
+
+APP_RELEASE_CSV_COLUMNS = (
+    "broker_code",
+    "broker_name",
+    "app_name",
+    "source_url",
+    "content_sha256",
+    "crawl_time",
+    "markdown_file",
+    "processed_at",
+    "app_version",
+    "platform",
+    "publish_date",
+    "update_type",
+    "update_summary",
+    "feature_tags",
+    "highlights",
+)
+
+
+class AppReleaseAnalysis(BaseModel):
+    """One LLM-produced App update item.
+
+    The fields intentionally mirror the frontend's CSV contract. Source and
+    processing metadata are added by the refresh pipeline, not guessed by the
+    model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    app_version: str = ""
+    platform: str = "未知"
+    publish_date: str = ""
+    update_type: str = "其他"
+    update_summary: str = ""
+    feature_tags: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)
+
+
+class AppReleaseAnalysisResponse(BaseModel):
+    """Accepted JSON envelope returned by the App Watch LLM."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    releases: list[AppReleaseAnalysis]
+
+
+class AppReleaseRow(BaseModel):
+    """A complete row exported for ``GET /api/app-releases``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    broker_code: str = ""
+    broker_name: str = ""
+    app_name: str = ""
+    source_url: str = ""
+    content_sha256: str = ""
+    crawl_time: str = ""
+    markdown_file: str = ""
+    processed_at: str = ""
+    app_version: str = ""
+    platform: str = "未知"
+    publish_date: str = ""
+    update_type: str = "其他"
+    update_summary: str = ""
+    feature_tags: list[str] = Field(default_factory=list)
+    highlights: list[str] = Field(default_factory=list)

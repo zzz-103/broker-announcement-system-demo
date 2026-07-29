@@ -687,6 +687,13 @@ class JobManager:
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env.setdefault("PYTHONIOENCODING", "utf-8")
+        # Prefer the restored checkout when a developer's editable venv still
+        # points at the deleted pre-restore sibling repository.
+        source_dir = working_dir / "src"
+        existing_python_path = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (str(source_dir), existing_python_path) if part
+        )
         return command, working_dir, env
 
     def _build_llm_command(

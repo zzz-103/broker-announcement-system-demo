@@ -1,6 +1,6 @@
 # Broker App Watch
 
-用于采集和分析中国券商官网手机端 App 更新记录的 Python 项目。当前已支持 10 家券商来源，爬虫层只保存页面原文，不做摘要、分类或改写。归一化、去重、存储与 LLM 分析层目前仅提供接口与占位实现，供后续扩展。
+用于采集和分析中国券商官网手机端 App 更新记录的 Python 项目。当前支持 10 家券商来源，采集层保存页面原文，刷新命令将其结构化为主看板使用的 CSV。
 
 ## 已支持来源
 
@@ -113,6 +113,17 @@ gxzq -> data/raw/markdown/gxzq/20260723_103000_gxzq_国信金太阳.md
 
 爬虫仅保留目标页面的完整文字、段落和列表，不做摘要、分类或改写。
 
+生成主看板数据（由主 FastAPI 通过子进程调用）：
+
+```bash
+python -m broker_app_watch.cli refresh \
+  --all \
+  --llm-config ../backend/config/llm_api_config.json \
+  --export-path data/exports/app_releases.csv
+```
+
+刷新会先抓取全部已启用来源，再使用 OpenAI-compatible Chat Completions 接口生成结构化记录。成功券商会替换其历史记录；失败券商在已有导出数据时沿用旧记录并输出告警。CSV 使用同目录临时文件原子替换，刷新失败不会破坏上一版文件。
+
 ## FastAPI
 
 ```bash
@@ -122,14 +133,14 @@ python -m uvicorn broker_app_watch.api.main:app --reload
 启动后可访问：
 
 - `GET /health`：健康检查。
-- `GET /api/releases`：预留的版本记录接口，当前返回空列表。
+- `GET /api/releases`：独立服务的开发占位接口；生产看板使用主仓库 FastAPI 的 `GET /api/app-releases`。
 
 ## 数据目录
 
 - `data/raw/`：原始 HTML、JSON 或页面快照。
 - `data/processed/releases/`：标准化版本记录。
 - `data/processed/llm/`：符合固定 Pydantic Schema 的 LLM 输出。
-- `data/exports/`：CSV、JSON、Markdown 等导出文件。
+- `data/exports/`：CSV、JSON、Markdown 等导出文件，其中 `app_releases.csv` 是主看板读取的数据文件。
 
 这些目录中的运行产物、`logs/` 中的日志和本地数据库均被 Git 忽略，只提交目录占位文件。
 
@@ -139,7 +150,7 @@ python -m uvicorn broker_app_watch.api.main:app --reload
 
 正文以图片呈现（如平安证券 `pazq`）的来源，可将 `parser` 设为 `pingan_image_ocr`：采集器按 `request_method: POST` 与 `request_json` 拉取图片列表，解析器下载各图片并用 RapidOCR（离线）识别中文原文，仅提取文字不做改写；`parser_options.min_score` 可按置信度过滤噪声（默认 `0.0` 保留全部）。
 
-存储层目前只定义 Repository 协议，后续可接入 PostgreSQL；LLM 层只定义客户端协议和 JSON 可序列化输出，不绑定任何模型 SDK。
+存储层保留轻量 Repository 协议；当前生产导出使用 CSV，不引入数据库。LLM 层使用本地 OpenAI-compatible HTTP 客户端和固定结构化 Schema，不绑定模型 SDK。
 
 ## 测试
 

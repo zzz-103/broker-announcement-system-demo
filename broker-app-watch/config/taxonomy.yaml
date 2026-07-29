@@ -1,7 +1,16 @@
-theme_tags:
-  - trading
-  - market_data
-  - account_service
-  - user_experience
-  - security
-  - other
+update_types:
+  - 新功能
+  - 体验优化
+  - 问题修复
+  - 合规安全
+  - 其他
+
+feature_tags:
+  - 行情
+  - 交易
+  - 开户
+  - 理财
+  - 资讯
+  - AI智能
+  - 安全
+  - 其他
