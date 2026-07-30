@@ -1,0 +1,38 @@
+{
+  "brokers": [
+    {
+      "key": "citic_securities",
+      "broker_name": "中信证券",
+      "collector": "citic",
+      "enabled": true,
+      "pages": 2,
+      "page_size": 10,
+      "min_content_chars": 80,
+      "min_detail_success_ratio": 0.8,
+      "aliases": ["中信证券股份有限公司", "中信证券"],
+      "settings": {
+        "base_url": "https://www.cs.ecitic.com",
+        "list_url": "https://www.cs.ecitic.com/newsite/xxgs/cgxmjg/index.html"
+      }
+    },
+    {
+      "key": "huaxi_securities",
+      "broker_name": "华西证券",
+      "collector": "huaxi",
+      "enabled": true,
+      "pages": 2,
+      "page_size": 10,
+      "min_content_chars": 80,
+      "min_detail_success_ratio": 0.8,
+      "aliases": ["华西证券股份有限公司", "华西证券"],
+      "settings": {
+        "base_url": "https://www.hx168.com.cn",
+        "list_page_url": "https://www.hx168.com.cn/main/zxfw/cggg/index.shtml",
+        "api_url": "https://www.hx168.com.cn/servlet/json",
+        "api_method": "POST",
+        "func_no": "741000",
+        "catalog_id": "15"
+      }
+    }
+  ]
+}

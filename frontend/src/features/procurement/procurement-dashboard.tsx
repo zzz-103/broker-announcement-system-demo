@@ -359,17 +359,58 @@ export default function Dashboard() {
     if (!container || sortedBrokers.length === 0) return;
 
     const measure = () => {
-      const containerWidth = container.offsetWidth;
-      // Estimate tag width: ~12px per char + 20px padding + 6px gap
-      const avgTagWidth = 110; // average tag width in px
+      if (showAllBrokers) {
+        setVisibleBrokerCount(sortedBrokers.length);
+        return;
+      }
+
+      const containerWidth = container.clientWidth;
+      const tagWidths = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-broker-tag-measure]")
+      ).map((tag) => tag.offsetWidth);
+      const moreButton = container.querySelector<HTMLElement>("[data-broker-more-measure]");
+      if (containerWidth <= 0 || tagWidths.length === 0 || !moreButton) return;
+
       const gap = 6;
-      const tagsPerRow = Math.max(1, Math.floor((containerWidth + gap) / (avgTagWidth + gap)));
-      setVisibleBrokerCount(showAllBrokers ? sortedBrokers.length : tagsPerRow * 2);
+      let row = 1;
+      let rowWidth = 0;
+      let secondRowStart = -1;
+      let visibleCount = 0;
+
+      for (const tagWidth of tagWidths) {
+        const nextWidth = rowWidth === 0 ? tagWidth : rowWidth + gap + tagWidth;
+        if (nextWidth <= containerWidth) {
+          rowWidth = nextWidth;
+          visibleCount += 1;
+          continue;
+        }
+        if (row === 2) break;
+        row = 2;
+        secondRowStart = visibleCount;
+        rowWidth = tagWidth;
+        visibleCount += 1;
+      }
+
+      if (visibleCount < tagWidths.length) {
+        const moreButtonWidth = moreButton.offsetWidth;
+        while (
+          visibleCount > Math.max(0, secondRowStart) &&
+          rowWidth + gap + moreButtonWidth > containerWidth
+        ) {
+          visibleCount -= 1;
+          rowWidth -= tagWidths[visibleCount] + (visibleCount > secondRowStart ? gap : 0);
+        }
+      }
+
+      setVisibleBrokerCount(visibleCount);
     };
 
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(container);
+    container
+      .querySelectorAll<HTMLElement>("[data-broker-tag-measure], [data-broker-more-measure]")
+      .forEach((element) => observer.observe(element));
     return () => observer.disconnect();
   }, [sortedBrokers, showAllBrokers]);
 

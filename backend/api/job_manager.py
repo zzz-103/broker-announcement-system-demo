@@ -388,7 +388,12 @@ class JobManager(JobCommandFactory):
                 stages.extend([
                     ("procurement-scraper", "采购公告爬虫", lambda: self._build_scraper_command("procurement")),
                     ("result-scraper", "结果公告爬虫", lambda: self._build_scraper_command("result")),
+                    ("official-source", "券商官网直连采集", self._build_official_source_command),
                 ])
+            if job_type in {"scraper", "pipeline"}:
+                stages.append(
+                    ("source-prepare", "公告来源选择与去重", self._build_source_prepare_command)
+                )
             if job_type in {"llm", "pipeline"}:
                 stages.extend([
                     ("procurement-llm", "采购公告 LLM 结构化", lambda: self._build_llm_command(mode=llm_mode, overwrite=llm_overwrite, notice_type="procurement")),

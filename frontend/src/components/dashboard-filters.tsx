@@ -196,45 +196,64 @@ export function DashboardFilters({
               清除已选
             </button>
           )}
-          <div
-            ref={brokerTagsRef}
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-hidden sm:pb-0"
-            style={{ maxHeight: showAllBrokers ? "none" : "76px" }}
-          >
-            {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {
-              const isSelected = brokerNames.includes(broker);
-              return (
-                <button
+          <div className="relative min-w-0 flex-1">
+            <div
+              ref={brokerTagsRef}
+              aria-hidden="true"
+              className="invisible absolute inset-x-0 top-0 flex flex-wrap items-center gap-1.5 pointer-events-none"
+            >
+              {sortedBrokers.map((broker) => (
+                <span
                   key={broker}
-                  onClick={() => toggleBrokerName(broker)}
-                  className={`
-                    px-2.5 py-1 text-[12px] font-medium rounded-lg transition-all duration-150 whitespace-nowrap border
-                    ${isSelected
-                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
-                      : "bg-[#F8FAFC] border-[#E4EAF2] text-[#475467] hover:border-blue-500/30 hover:bg-blue-50/20 hover:text-[#172033]"
-                    }
-                  `}
+                  data-broker-tag-measure
+                  className="whitespace-nowrap rounded-lg border border-[#E4EAF2] px-2.5 py-1 text-[12px] font-medium"
                 >
                   {broker}
+                </span>
+              ))}
+              <span
+                data-broker-more-measure
+                className="whitespace-nowrap rounded-lg px-2.5 py-1 text-[12px] font-semibold"
+              >
+                +{sortedBrokers.length} 更多
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-hidden sm:pb-0">
+              {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {
+                const isSelected = brokerNames.includes(broker);
+                return (
+                  <button
+                    key={broker}
+                    onClick={() => toggleBrokerName(broker)}
+                    className={`
+                      px-2.5 py-1 text-[12px] font-medium rounded-lg transition-all duration-150 whitespace-nowrap border
+                      ${isSelected
+                        ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                        : "bg-[#F8FAFC] border-[#E4EAF2] text-[#475467] hover:border-blue-500/30 hover:bg-blue-50/20 hover:text-[#172033]"
+                      }
+                    `}
+                  >
+                    {broker}
+                  </button>
+                );
+              })}
+              {visibleBrokerCount < sortedBrokers.length && (
+                <button
+                  onClick={() => setShowAllBrokers(true)}
+                  className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-blue-600 hover:bg-blue-100/50 hover:text-blue-700 transition-colors whitespace-nowrap"
+                >
+                  +{sortedBrokers.length - visibleBrokerCount} 更多
                 </button>
-              );
-            })}
-            {visibleBrokerCount < sortedBrokers.length && (
-              <button
-                onClick={() => setShowAllBrokers(true)}
-                className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-blue-600 hover:bg-blue-100/50 hover:text-blue-700 transition-colors whitespace-nowrap"
-              >
-                +{sortedBrokers.length - visibleBrokerCount} 更多
-              </button>
-            )}
-            {showAllBrokers && visibleBrokerCount >= sortedBrokers.length && (
-              <button
-                onClick={() => setShowAllBrokers(false)}
-                className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-[#667085] hover:bg-gray-200 transition-colors whitespace-nowrap"
-              >
-                收起
-              </button>
-            )}
+              )}
+              {showAllBrokers && visibleBrokerCount >= sortedBrokers.length && (
+                <button
+                  onClick={() => setShowAllBrokers(false)}
+                  className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-[#667085] hover:bg-gray-200 transition-colors whitespace-nowrap"
+                >
+                  收起
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

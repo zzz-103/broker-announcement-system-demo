@@ -163,6 +163,18 @@ class JobCommandFactory:
         ]
         return command, working_dir, self._job_env()
 
+    def _build_official_source_command(self) -> CommandSpec:
+        return self._build_matching_module_command(
+            "backend.broker_sources.cli",
+            ["collect"],
+        )
+
+    def _build_source_prepare_command(self) -> CommandSpec:
+        return self._build_matching_module_command(
+            "backend.broker_sources.cli",
+            ["prepare"],
+        )
+
     def _build_app_watch_command(self) -> CommandSpec:
         working_default = PROJECT_ROOT / "broker-app-watch"
         venv_python = (
@@ -257,9 +269,9 @@ class JobCommandFactory:
         input_default = (
             scraper_output / "external" / "notices"
             if external
-            else scraper_output / "result" / "notices"
+            else scraper_output / "selected" / "result" / "notices"
             if notice_type == "result"
-            else scraper_output / "notices"
+            else scraper_output / "selected" / "procurement" / "notices"
         )
         input_dir = resolve_project_path(input_env, input_default)
         output_dir = resolve_project_path(
@@ -299,6 +311,8 @@ class JobCommandFactory:
         ]
         if mode == "full_refresh" and overwrite:
             command.extend(["--full-refresh", "--overwrite"])
+        if not external:
+            command.append("--prune-missing-files")
         if external:
             state_path = resolve_project_path(
                 os.getenv("LLM_EXTERNAL_STATE_PATH"),

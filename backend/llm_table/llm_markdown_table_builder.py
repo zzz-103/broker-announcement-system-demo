@@ -1603,6 +1603,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=None,
         help="记录外来 Markdown 正文 SHA256 的状态文件，用于跳过重复正文",
     )
+    parser.add_argument(
+        "--prune-missing-files",
+        action="store_true",
+        help="删除已不在当前 input-dir 中的旧结构化记录；用于来源选择后的受控输入目录",
+    )
     parser.set_defaults(incremental=True)
     return parser
 
@@ -1687,6 +1692,14 @@ def main() -> int:
     llm_config.validate()
 
     existing_rows = load_existing_output_rows(output_dir, runtime.table_fields, runtime.output_stem)
+    pruned_missing_rows = 0
+    if args.prune_missing_files:
+        current_file_keys = {path_file_key(path) for path in discovered_files}
+        retained_existing_rows = [
+            row for row in existing_rows if row_file_key(row) in current_file_keys
+        ]
+        pruned_missing_rows = len(existing_rows) - len(retained_existing_rows)
+        existing_rows = retained_existing_rows
     selection = select_files_for_processing(
         discovered_files,
         output_dir=output_dir,
@@ -1729,9 +1742,19 @@ def main() -> int:
             "success_files": 0,
             "failed_files": 0,
             "output_rows": len(existing_rows),
+            "pruned_missing_rows": pruned_missing_rows,
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "message": "未发现新增或变更的 Markdown，沿用现有结构化结果。",
         }
+        if pruned_missing_rows:
+            write_output_bundle(
+                existing_rows,
+                output_dir,
+                output_dir / "run_summary.json",
+                summary,
+                runtime.table_fields,
+                runtime.output_stem,
+            )
         print("未发现新增或变更的 Markdown，跳过 LLM 调用。")
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return 0
@@ -1908,6 +1931,7 @@ def main() -> int:
         "success_files": len(plans) - len(failures),
         "failed_files": len(failures),
         "output_rows": len(output_rows),
+        "pruned_missing_rows": pruned_missing_rows,
         "failed_files_path": portable_path(failure_path),
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "broker_summaries": broker_summaries,

@@ -9,14 +9,14 @@ from backend.api.job_manager import JobManager
 
 
 class DualScraperJobTests(unittest.TestCase):
-    def test_scraper_runs_procurement_then_result_without_llm_stages(self) -> None:
+    def test_scraper_runs_both_public_sources_then_prepares_selected_input(self) -> None:
         manager = JobManager()
         stages: list[str] = []
         finished = threading.Event()
 
         def run_stage(job_id: str, _builder: object, stage_label: str) -> int:
             stages.append(stage_label)
-            if stage_label == "result-scraper":
+            if stage_label == "source-prepare":
                 finished.set()
             return 0
 
@@ -31,7 +31,15 @@ class DualScraperJobTests(unittest.TestCase):
                 snapshot = manager.get_job(job.job_id)
 
         self.assertEqual(snapshot["status"], "succeeded")
-        self.assertEqual(stages, ["procurement-scraper", "result-scraper"])
+        self.assertEqual(
+            stages,
+            [
+                "procurement-scraper",
+                "result-scraper",
+                "official-source",
+                "source-prepare",
+            ],
+        )
 
     def test_normal_llm_runs_matching_and_merger_after_both_notice_types(self) -> None:
         manager = JobManager()
