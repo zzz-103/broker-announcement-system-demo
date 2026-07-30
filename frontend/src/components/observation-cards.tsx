@@ -14,6 +14,10 @@ interface ObservationProps {
   data: ProcessedRecord[];
 }
 
+interface PriceSamplesProps extends ObservationProps {
+  onSelectProject: (record: ProcessedRecord) => void;
+}
+
 interface BrokerActivityProps extends ObservationProps {
   baseline: Date | null;
 }
@@ -214,7 +218,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
   );
 }
 
-export function PriceSamplesCard({ data }: ObservationProps) {
+export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
   const samples = useMemo(() => {
     const amountRecords = data.filter((r) => r.amountSampleKey);
     // Deduplicate by amount sample key.
@@ -240,17 +244,19 @@ export function PriceSamplesCard({ data }: ObservationProps) {
         <h3 className="text-[14px] font-bold text-[#172033] mb-3.5">
           公开金额案例
         </h3>
-        <div className="space-y-3">
-          {samples.map((s, i) => (
-            <div
-              key={i}
-              className="border-b border-[#F0F2F5] last:border-0 pb-2 last:pb-0"
+        <div className="space-y-1.5">
+          {samples.map((s) => (
+            <button
+              key={s.amountSampleKey}
+              type="button"
+              onClick={() => onSelectProject(s)}
+              className="group w-full rounded-xl border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-blue-100 hover:bg-white hover:shadow-[0_6px_16px_rgba(16,40,71,0.10)] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transform-none"
             >
-              <div className="text-[12px] text-[#172033] font-semibold line-clamp-2 leading-relaxed" title={s.normalizedProjectName}>
+              <div className="line-clamp-2 text-[12px] font-semibold leading-relaxed text-[#172033] transition-colors group-hover:text-[#2563EB]" title={s.normalizedProjectName}>
                 {s.normalizedProjectName}
               </div>
               <div className="flex items-center justify-between gap-2 mt-1.5">
-                <span className="text-[11px] text-[#667085] truncate max-w-[120px]" title={s.validBrokerName}>
+                <span className="max-w-[120px] truncate text-[11px] text-[#667085] transition-colors group-hover:text-[#475467]" title={s.validBrokerName}>
                   {s.validBrokerName}
                 </span>
                 <span className={`text-[11px] font-bold tabular-nums ${s.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}`}>
@@ -259,7 +265,7 @@ export function PriceSamplesCard({ data }: ObservationProps) {
                     : ""}
                 </span>
               </div>
-            </div>
+            </button>
           ))}
           {samples.length === 0 && (
             <p className="text-[12px] text-[#98A2B3] py-4 text-center">

@@ -17,7 +17,7 @@ interface OverviewChartsProps {
 }
 
 const CARD_CLASS =
-  "min-w-0 rounded-2xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]";
+  "min-w-0 rounded-2xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]";
 
 export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
   const trendData = getReleaseTrend(data).slice(-12);
@@ -44,7 +44,8 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
               {tagData.map((item, index) => (
                 <span
                   key={item.name}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium ${
+                  title={`${item.name}：${item.count} 次`}
+                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_4px_10px_rgba(37,99,235,0.10)] ${
                     index < 3
                       ? "border-blue-100 bg-blue-50 text-blue-700"
                       : "border-[#E4EAF2] bg-[#F8FAFC] text-[#667085]"
@@ -68,7 +69,7 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
         {recentUpdates.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="divide-y divide-[#F0F2F5]">
+          <div className="space-y-1">
             {recentUpdates.map((record, index) => (
               <button
                 // A source hash is not guaranteed to be unique in imported data;
@@ -76,22 +77,22 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
                 key={`${record.contentSha256 || "release"}-${record.brokerCode}-${record.appName}-${index}`}
                 type="button"
                 onClick={() => onSelect(record)}
-                className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 py-3 text-left first:pt-0 last:pb-0 hover:text-[#2563EB]"
+                className="group grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-blue-100 hover:bg-white hover:shadow-[0_6px_16px_rgba(16,40,71,0.10)] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transform-none"
               >
                 <span className="min-w-0">
                   <span className="flex min-w-0 items-center gap-2">
-                    <strong className="truncate text-[13px] text-[#172033]">
+                    <strong className="truncate text-[13px] text-[#172033] transition-colors group-hover:text-[#2563EB]">
                       {record.brokerName || "未知券商"} · {record.appName || "未知 App"}
                     </strong>
                     <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600">
                       {record.appVersion || "版本未识别"}
                     </span>
                   </span>
-                  <span className="mt-1 block truncate text-xs text-[#667085]">
+                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]">
                     {record.highlights[0] || record.updateSummary || "暂无更新摘要"}
                   </span>
                 </span>
-                <span className="whitespace-nowrap text-[11px] tabular-nums text-[#98A2B3]">
+                <span className="whitespace-nowrap text-[11px] tabular-nums text-[#98A2B3] transition-colors group-hover:text-[#667085]">
                   {formatReleaseDate(record.publishDate)}
                 </span>
               </button>
@@ -141,8 +142,27 @@ function TrendLine({ data }: { data: { name: string; count: number }[] }) {
         />
         <polyline points={polyline} fill="none" stroke="#2563EB" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
         {points.map((point) => (
-          <g key={point.name}>
-            <circle cx={point.x} cy={point.y} r="4" fill="#fff" stroke="#2563EB" strokeWidth="2.5" />
+          <g key={point.name} className="group cursor-default">
+            <title>{`${point.name}：${point.count} 次更新`}</title>
+            <rect x={point.x - 20} y="0" width="40" height={height} fill="transparent" />
+            <line
+              x1={point.x}
+              x2={point.x}
+              y1={padding}
+              y2={height - padding}
+              stroke="#93C5FD"
+              strokeDasharray="3 3"
+              className="opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+            />
+            <circle
+              cx={point.x}
+              cy={point.y}
+              r="4"
+              fill="#fff"
+              stroke="#2563EB"
+              strokeWidth="2.5"
+              className="transition-[fill,stroke-width,filter] duration-150 group-hover:fill-blue-50 group-hover:stroke-[4px] group-hover:[filter:drop-shadow(0_2px_3px_rgba(37,99,235,0.35))]"
+            />
             <text x={point.x} y={Math.max(12, point.y - 10)} textAnchor="middle" fontSize="10" fill="#475467">{point.count}</text>
           </g>
         ))}
@@ -166,10 +186,12 @@ function DistributionBar({ data }: { data: { name: string; count: number }[] }) 
   const total = data.reduce((sum, item) => sum + item.count, 0);
   return (
     <div>
-      <div className="flex h-3 overflow-hidden rounded-full bg-[#F0F2F5]">
+      <div className="flex h-3 overflow-visible rounded-full bg-[#F0F2F5]">
         {data.map((item) => (
           <span
             key={item.name}
+            title={`${item.name}：${item.count} 次`}
+            className="first:rounded-l-full last:rounded-r-full cursor-default transition-[transform,filter,box-shadow] duration-150 hover:z-10 hover:scale-y-150 hover:brightness-110 hover:shadow-[0_2px_6px_rgba(16,40,71,0.20)]"
             style={{
               width: `${(item.count / total) * 100}%`,
               backgroundColor: UPDATE_TYPE_COLORS[item.name] || "#98A2B3",
@@ -179,12 +201,16 @@ function DistributionBar({ data }: { data: { name: string; count: number }[] }) 
       </div>
       <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
         {data.map((item) => (
-          <div key={item.name} className="flex items-center justify-between gap-2 text-xs">
+          <div
+            key={item.name}
+            title={`${item.name}：${item.count} 次`}
+            className="group flex cursor-default items-center justify-between gap-2 rounded-md px-1.5 py-1 text-xs transition-colors hover:bg-blue-50/70"
+          >
             <span className="flex min-w-0 items-center gap-1.5 truncate text-[#667085]">
-              <i className="size-2 shrink-0 rounded-full" style={{ backgroundColor: UPDATE_TYPE_COLORS[item.name] || "#98A2B3" }} />
+              <i className="size-2 shrink-0 rounded-full transition-transform group-hover:scale-125" style={{ backgroundColor: UPDATE_TYPE_COLORS[item.name] || "#98A2B3" }} />
               {item.name}
             </span>
-            <strong className="tabular-nums text-[#172033]">{item.count}</strong>
+            <strong className="tabular-nums text-[#172033] transition-colors group-hover:text-[#2563EB]">{item.count}</strong>
           </div>
         ))}
       </div>
@@ -197,13 +223,17 @@ function RankingList({ data }: { data: { name: string; count: number }[] }) {
   return (
     <div className="space-y-3">
       {data.map((item, index) => (
-        <div key={item.name} className="grid grid-cols-[20px_92px_minmax(0,1fr)_28px] items-center gap-2 text-xs">
+        <div
+          key={item.name}
+          title={`${item.name}：${item.count} 次更新`}
+          className="group grid cursor-default grid-cols-[20px_92px_minmax(0,1fr)_28px] items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-[background-color,box-shadow] duration-150 hover:bg-blue-50/70 hover:shadow-[0_3px_10px_rgba(37,99,235,0.08)]"
+        >
           <span className={`font-bold ${index < 3 ? "text-[#2563EB]" : "text-[#98A2B3]"}`}>{index + 1}</span>
-          <span className="truncate font-medium text-[#475467]" title={item.name}>{item.name}</span>
+          <span className="truncate font-medium text-[#475467] transition-colors group-hover:text-[#172033]" title={item.name}>{item.name}</span>
           <span className="h-2 overflow-hidden rounded-full bg-[#F0F2F5]">
-            <i className="block h-full rounded-full bg-gradient-to-r from-[#2563EB] to-[#60A5FA]" style={{ width: `${(item.count / max) * 100}%` }} />
+            <i className="block h-full rounded-full bg-gradient-to-r from-[#2563EB] to-[#60A5FA] transition-[filter,box-shadow] duration-150 group-hover:brightness-110 group-hover:shadow-[0_0_7px_rgba(37,99,235,0.45)]" style={{ width: `${(item.count / max) * 100}%` }} />
           </span>
-          <strong className="text-right tabular-nums text-[#172033]">{item.count}</strong>
+          <strong className="text-right tabular-nums text-[#172033] transition-colors group-hover:text-[#2563EB]">{item.count}</strong>
         </div>
       ))}
     </div>

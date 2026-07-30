@@ -119,6 +119,14 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           type: "bar",
           data: chartData.projects,
           itemStyle: { color: "#2563EB", borderRadius: [3, 3, 0, 0] },
+          emphasis: {
+            focus: "series",
+            itemStyle: {
+              color: "#3B82F6",
+              shadowBlur: 10,
+              shadowColor: "rgba(37, 99, 235, 0.35)",
+            },
+          },
           barMaxWidth: 24,
         },
         {
@@ -129,6 +137,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           itemStyle: { color: "#0F9F8F" },
           symbol: "circle",
           symbolSize: 6,
+          emphasis: { focus: "series", scale: 1.7 },
         },
         {
           name: "公开金额样本",
@@ -138,6 +147,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           itemStyle: { color: "#F59E0B" },
           symbol: "circle",
           symbolSize: 6,
+          emphasis: { focus: "series", scale: 1.7 },
         },
       ],
     });
@@ -151,7 +161,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[14px] font-bold text-[#172033]">
           公开招采趋势
@@ -240,6 +250,13 @@ export function DomainDistributionChart({ data }: ChartsProps) {
             },
             borderRadius: [0, 4, 4, 0],
           },
+          emphasis: {
+            focus: "self",
+            itemStyle: {
+              shadowBlur: 10,
+              shadowColor: "rgba(37, 99, 235, 0.30)",
+            },
+          },
           barMaxWidth: 16,
           label: {
             show: true,
@@ -264,7 +281,7 @@ export function DomainDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         金融科技方向
       </h3>
@@ -346,6 +363,15 @@ export function StageDistributionChart({ data }: ChartsProps) {
           center: ["29%", "50%"],
           avoidLabelOverlap: false,
           label: { show: false },
+          emphasis: {
+            focus: "self",
+            scale: true,
+            scaleSize: 7,
+            itemStyle: {
+              shadowBlur: 12,
+              shadowColor: "rgba(16, 40, 71, 0.24)",
+            },
+          },
           data: chartData,
         },
       ],
@@ -359,7 +385,7 @@ export function StageDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         公告阶段
       </h3>

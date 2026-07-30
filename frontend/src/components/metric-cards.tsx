@@ -103,7 +103,7 @@ export function MetricCards({ data, baseline, statistics, updatedAt }: MetricCar
 
   return (
     <div className={`grid grid-cols-1 min-[420px]:grid-cols-2 md:grid-cols-4 ${statistics.sourceCount > 1 ? "xl:grid-cols-8" : "xl:grid-cols-7"} gap-3.5 sm:gap-4`}>
-      <div className="relative flex min-h-[116px] flex-col justify-between rounded-xl border border-[#B8CCF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F9FF_100%)] p-4 shadow-[0_4px_14px_rgba(37,99,235,0.08)] md:h-[108px] md:min-h-0">
+      <div className="relative flex min-h-[116px] flex-col justify-between rounded-xl border border-[#B8CCF8] bg-[linear-gradient(180deg,#FFFFFF_0%,#F6F9FF_100%)] p-4 shadow-[0_4px_14px_rgba(37,99,235,0.08)] transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(37,99,235,0.13)] motion-reduce:transform-none md:h-[108px] md:min-h-0">
         <div className="absolute top-0 left-0 right-0 h-1 bg-[#2563EB] rounded-t-xl" />
         <div className="text-[12px] font-medium leading-none text-[#2563EB] whitespace-nowrap">活跃券商覆盖</div>
         <div className="text-[29px] sm:text-[31px] font-bold text-[#172033] tabular-nums leading-none mt-1 py-1 flex-grow flex items-center">
@@ -143,7 +143,7 @@ export function MetricCards({ data, baseline, statistics, updatedAt }: MetricCar
             <div className="text-[11px] leading-relaxed text-[#98A2B3] md:truncate" title={metric.hint}>{metric.hint}</div>
           </>
         );
-        const className = "relative flex min-h-[116px] flex-col justify-between overflow-hidden rounded-xl border border-[#E4EAF2] bg-white p-4 text-left shadow-[0_1px_3px_rgba(0,0,0,0.02)] md:h-[108px] md:min-h-0";
+        const className = "relative flex min-h-[116px] flex-col justify-between overflow-hidden rounded-xl border border-[#E4EAF2] bg-white p-4 text-left shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-blue-200/80 hover:shadow-[0_8px_20px_rgba(16,40,71,0.08)] motion-reduce:transform-none md:h-[108px] md:min-h-0";
         return metric.onClick ? (
           <button key={metric.label} onClick={metric.onClick} className={`${className} cursor-pointer transition-all duration-200 hover:border-blue-500/35 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(37,99,235,0.05)]`}>
             {content}

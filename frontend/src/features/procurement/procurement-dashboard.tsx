@@ -540,7 +540,10 @@ export default function Dashboard() {
             <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4">
               <BrokerActivityCard data={filteredData} baseline={baseline} />
               <SupplierObservationCard data={filteredData} />
-              <PriceSamplesCard data={filteredData} />
+              <PriceSamplesCard
+                data={filteredData}
+                onSelectProject={setSelectedProject}
+              />
             </div>
 
             {/* Key Project Radar */}
