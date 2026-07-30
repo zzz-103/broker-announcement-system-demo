@@ -1,6 +1,6 @@
 # Broker App Watch
 
-用于采集和分析中国券商官网手机端 App 更新记录的 Python 项目。当前支持 10 家券商来源，采集层保存页面原文，刷新命令将其结构化为主看板使用的 CSV。
+用于采集和分析中国券商官网手机端 App 更新记录的 Python 项目。当前支持 16 家券商来源，采集层保存页面原文，刷新命令将其结构化为主看板使用的 CSV。
 
 ## 已支持来源
 
@@ -16,6 +16,12 @@
 | `ciccwm` | 中金财富 | 中金财富 | api | `ciccwm_appdown_api` |
 | `dgzq` | 东莞证券 | 东莞证券手机 App | api | `dgzq_soft_api` |
 | `ykzq` | 粤开证券 | 粤开证券手机 App | api | `ykzq_cms_article` |
+| `easec` | 东亚前海证券 | 东亚前海悦涨 APP | api | `easec_software_api` |
+| `zhongshan` | 中山证券 | 中山证券同花顺版 APP、中山证券 APP | http | `selected_apps_html` |
+| `ydzq` | 英大证券 | 英大金点 APP、金点同花顺 | http | `selected_apps_html` |
+| `ytzq` | 银泰证券 | 银泰掌易宝、掌如 e、银泰汇点期权 | api | `ytzq_software_api` |
+| `htzq` | 华泰证券 | 涨乐财富通 | http + OCR | `qq_app_detail_ocr` |
+| `citics` | 中信证券 | 中信证券 | http + OCR | `qq_app_detail_ocr` |
 
 完整来源定义见 `config/brokers.yaml`。
 
@@ -160,6 +166,8 @@ python -m uvicorn broker_app_watch.api.main:app --reload
 新增券商通常只需在 `config/brokers.yaml` 增加来源。页面结构可被通用解析器覆盖时复用 `generic_html`；确需特殊逻辑时，在 `parsers/broker_specific/` 新增专用解析器并注册名称。静态页面优先使用 HTTP Collector，动态页面才启用备用 Browser Collector。
 
 正文以图片呈现（如平安证券 `pazq`）的来源，可将 `parser` 设为 `pingan_image_ocr`：采集器按 `request_method: POST` 与 `request_json` 拉取图片列表，解析器下载各图片并用 RapidOCR（离线）识别中文原文，仅提取文字不做改写；`parser_options.min_score` 可按置信度过滤噪声（默认 `0.0` 保留全部）。
+
+同一 App 同时提供 Android、iPhone 或 HarmonyOS 客户端时，配置只选择一个客户端记录，避免同一 App 重复采集。应用宝详情页使用 `qq_app_detail_ocr` 保留“简介”“详细信息”，并对配置指定的首张功能/更新截图执行离线 OCR。
 
 存储层保留轻量 Repository 协议；当前生产导出使用 CSV，不引入数据库。LLM 层使用本地 OpenAI-compatible HTTP 客户端和固定结构化 Schema，不绑定模型 SDK。
 

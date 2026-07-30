@@ -17,8 +17,18 @@ from broker_app_watch.parsers.broker_specific.dgzq_soft_api import DgzqSoftApiPa
 from broker_app_watch.parsers.broker_specific.essence_softwares_api import (
     EssenceSoftwaresApiParser,
 )
+from broker_app_watch.parsers.broker_specific.easec_software_api import (
+    EasecSoftwareApiParser,
+)
 from broker_app_watch.parsers.broker_specific.guosen_software_api import GuosenSoftwareApiParser
 from broker_app_watch.parsers.broker_specific.pingan_image_ocr import PinganImageOcrParser
+from broker_app_watch.parsers.broker_specific.qq_app_detail_ocr import QqAppDetailOcrParser
+from broker_app_watch.parsers.broker_specific.selected_apps_html import (
+    SelectedAppsHtmlParser,
+)
+from broker_app_watch.parsers.broker_specific.ytzq_software_api import (
+    YtzqSoftwareApiParser,
+)
 from broker_app_watch.parsers.broker_specific.ykzq_cms_article import YkzqCmsArticleParser
 from broker_app_watch.parsers.generic_html import GenericHtmlParser
 from broker_app_watch.storage.markdown_writer import MarkdownWriter
@@ -35,6 +45,10 @@ PARSERS: dict[str, type[Parser]] = {
     "ciccwm_appdown_api": CiccwmAppDownApiParser,
     "cgws_download_html": CgwsDownloadHtmlParser,
     "ykzq_cms_article": YkzqCmsArticleParser,
+    "selected_apps_html": SelectedAppsHtmlParser,
+    "ytzq_software_api": YtzqSoftwareApiParser,
+    "qq_app_detail_ocr": QqAppDetailOcrParser,
+    "easec_software_api": EasecSoftwareApiParser,
 }
 
 

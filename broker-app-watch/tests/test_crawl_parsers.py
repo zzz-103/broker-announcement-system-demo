@@ -12,6 +12,9 @@ from broker_app_watch.parsers.base import ParsedDocument, ParsedSection
 from broker_app_watch.parsers.broker_specific.cgws_download_html import CgwsDownloadHtmlParser
 from broker_app_watch.parsers.broker_specific.ciccwm_appdown_api import CiccwmAppDownApiParser
 from broker_app_watch.parsers.broker_specific.dgzq_soft_api import DgzqSoftApiParser
+from broker_app_watch.parsers.broker_specific.easec_software_api import (
+    EasecSoftwareApiParser,
+)
 from broker_app_watch.parsers.broker_specific.essence_softwares_api import (
     EssenceSoftwaresApiParser,
 )
@@ -19,6 +22,13 @@ from broker_app_watch.parsers.broker_specific.guosen_software_api import (
     GuosenSoftwareApiParser,
 )
 from broker_app_watch.parsers.broker_specific.pingan_image_ocr import PinganImageOcrParser
+from broker_app_watch.parsers.broker_specific.qq_app_detail_ocr import QqAppDetailOcrParser
+from broker_app_watch.parsers.broker_specific.selected_apps_html import (
+    SelectedAppsHtmlParser,
+)
+from broker_app_watch.parsers.broker_specific.ytzq_software_api import (
+    YtzqSoftwareApiParser,
+)
 from broker_app_watch.parsers.broker_specific.ykzq_cms_article import YkzqCmsArticleParser
 from broker_app_watch.parsers.generic_html import GenericHtmlParser
 from broker_app_watch.storage.markdown_writer import MarkdownWriter
@@ -205,6 +215,156 @@ def test_pingan_parser_requires_image_list() -> None:
 
     with pytest.raises(ValueError, match="未返回图片列表"):
         parser.parse('{"results": {"list": []}}', source, _response(source, ""))
+
+
+def test_selected_apps_html_keeps_one_card_per_app_and_preferred_platform() -> None:
+    body = """
+    <div class="mobile-list">
+      <div class="card">
+        <h3>中山证券同花顺版APP</h3>
+        <div class="content">
+          <p>更新时间：2026-07-04</p>
+          <p>全景行情、极速交易。</p>
+          <p>iOS版：版本号V4.7.2</p>
+          <p>安卓版：版本号V9.21.49</p>
+        </div>
+      </div>
+      <div class="card"><h3>电脑软件</h3><div class="content">不要采集</div></div>
+    </div>
+    """
+    source = _source(
+        broker_code="zhongshan",
+        broker_name="中山证券",
+        app_name="中山证券手机APP",
+        parser="selected_apps_html",
+        parser_options={
+            "app_names": ["中山证券同花顺版APP"],
+            "card_selector": ".card",
+            "name_selector": "h3",
+            "content_selector": ".content",
+            "excluded_line_prefixes": ["iOS版："],
+        },
+    )
+
+    document = SelectedAppsHtmlParser().parse(body, source, _response(source, body))
+
+    assert [section.heading for section in document.sections] == ["中山证券同花顺版APP"]
+    assert "安卓版：版本号V9.21.49" in document.sections[0].content
+    assert "iOS版" not in document.sections[0].content
+    assert "不要采集" not in document.sections[0].content
+
+
+def test_easec_parser_repairs_api_encoding_and_selects_mobile_app() -> None:
+    body = json.dumps(
+        {
+            "results": [
+                {
+                    "id": "28",
+                    "file_name": "东亚前海悦涨APP（推荐）".encode()
+                    .decode("latin-1"),
+                    "android_version": "v5.6.0",
+                    "software_time": "2026-07-10 18:00:00",
+                    "file_size": "170",
+                    "developer": "东亚前海证券有限责任公司".encode()
+                    .decode("latin-1"),
+                    "description": "全行情覆盖，满足客户多层次需求".encode()
+                    .decode("latin-1"),
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    source = _source(
+        broker_code="easec",
+        broker_name="东亚前海证券",
+        app_name="东亚前海悦涨APP",
+        source_type="api",
+        parser="easec_software_api",
+        parser_options={"item_id": "28"},
+    )
+
+    document = EasecSoftwareApiParser().parse(body, source, _response(source, body))
+
+    assert "东亚前海悦涨APP（推荐）" in document.sections[0].content
+    assert "v5.6.0" in document.sections[0].content
+    assert "全行情覆盖，满足客户多层次需求" in document.sections[0].content
+
+
+def test_ytzq_parser_selects_one_configured_client_per_app() -> None:
+    body = json.dumps(
+        {
+            "results": [
+                {
+                    "softid": "26",
+                    "title": "银泰掌易宝android版",
+                    "version": "5.11.1",
+                    "modify_date": "2026-07-04 18:54:34",
+                    "content": "集证券开户、股票交易、股票行情于一体。",
+                },
+                {
+                    "softid": "27",
+                    "title": "银泰掌易宝iphone版",
+                    "version": "5.11.1",
+                    "modify_date": "2026-07-07 16:50:22",
+                    "content": "iPhone 客户端。",
+                },
+            ]
+        },
+        ensure_ascii=False,
+    )
+    source = _source(
+        broker_code="ytzq",
+        broker_name="银泰证券",
+        app_name="银泰证券手机APP",
+        source_type="api",
+        parser="ytzq_software_api",
+        parser_options={"app_ids": {"银泰掌易宝": "26"}},
+    )
+
+    document = YtzqSoftwareApiParser().parse(body, source, _response(source, body))
+
+    assert [section.heading for section in document.sections] == ["银泰掌易宝"]
+    assert "银泰掌易宝android版" in document.sections[0].content
+    assert "2026-07-04" in document.sections[0].content
+    assert "iphone" not in document.sections[0].content
+
+
+def test_qq_app_detail_parser_keeps_sections_and_ocrs_first_screenshot() -> None:
+    body = """
+    <h2>简介</h2><p>官方财富管理 App。</p>
+    <h2>详细信息</h2><p>版本号：8.8.68</p>
+    <h2>用户评论</h2><p>不要采集</p>
+    <img alt="精彩截图-测试2026官方新版" src="https://img.example/shot-1.png">
+    <img alt="精彩截图-测试2026官方新版" src="https://img.example/shot-2.png">
+    """
+    source = _source(
+        broker_code="htzq",
+        broker_name="华泰证券",
+        app_name="涨乐财富通",
+        parser="qq_app_detail_ocr",
+        parser_options={
+            "section_headings": ["简介", "详细信息"],
+            "screenshot_alt": "精彩截图-测试2026官方新版",
+            "screenshot_limit": 1,
+            "min_score": 0.6,
+        },
+    )
+    fetched: list[str] = []
+    parser = QqAppDetailOcrParser(
+        image_fetcher=lambda url: fetched.append(url) or b"image",
+        ocr_reader=lambda data: [("更新说明", 0.99), ("噪点", 0.2)],
+    )
+
+    document = parser.parse(body, source, _response(source, body))
+
+    assert fetched == ["https://img.example/shot-1.png"]
+    assert [section.heading for section in document.sections] == [
+        "简介",
+        "详细信息",
+        "截图文字 1",
+    ]
+    assert document.sections[2].content == "更新说明"
+    assert document.source_metadata["screenshot_count"] == "1"
 
 
 def test_dgzq_parser_keeps_only_configured_mobile_clients() -> None:

@@ -80,6 +80,7 @@ class HttpCollector(Collector):
                     response = httpx.post(
                         request_url,
                         json=source.request_json,
+                        data=source.request_data,
                         timeout=self.timeout_seconds,
                         follow_redirects=True,
                         verify=_ssl_context(),

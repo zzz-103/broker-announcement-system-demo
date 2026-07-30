@@ -122,3 +122,99 @@ brokers:
     source_type: api
     parser: ykzq_cms_article
     enabled: true
+
+  - broker_code: easec
+    broker_name: 东亚前海证券
+    app_name: 东亚前海悦涨APP
+    source_url: https://www.easec.com.cn/osoa/views/download/index.html
+    fetch_url: https://www.easec.com.cn/servlet/json
+    source_type: api
+    parser: easec_software_api
+    enabled: true
+    request_method: POST
+    request_data:
+      funcNo: "905034"
+      file_type: "0"
+    parser_options:
+      item_id: "28"
+
+  - broker_code: zhongshan
+    broker_name: 中山证券
+    app_name: 中山证券手机APP
+    source_url: https://www.zszq.com/download
+    source_type: http
+    parser: selected_apps_html
+    enabled: true
+    parser_options:
+      app_names:
+        - 中山证券同花顺版APP
+        - 中山证券APP
+      card_selector: .lis_one .items
+      name_selector: .name
+      content_selector: ":self"
+      excluded_line_prefixes:
+        - iOS版：
+
+  - broker_code: ydzq
+    broker_name: 英大证券
+    app_name: 英大证券手机APP
+    source_url: http://www.ydzq.sgcc.com.cn/html/ydzq/gb/rjxz/sjrj/index.shtml
+    source_type: http
+    parser: selected_apps_html
+    enabled: true
+    parser_options:
+      app_names:
+        - 英大金点APP
+        - 金点同花顺
+      card_selector: .list-main .item
+      name_selector: .item-left .text-body p
+      content_selector: .item-box
+
+  - broker_code: ytzq
+    broker_name: 银泰证券
+    app_name: 银泰证券手机APP
+    source_url: https://www.ytzq.com/web/html/business/download.html
+    fetch_url: https://www.ytzq.com/web/bus/json
+    source_type: api
+    parser: ytzq_software_api
+    enabled: true
+    request_method: POST
+    request_data:
+      funcNo: "100401"
+      is_new: "5"
+      sessionId: ""
+    parser_options:
+      app_ids:
+        银泰掌易宝: "26"
+        银泰证券“掌如e”: "17"
+        银泰汇点期权: "101"
+
+  - broker_code: htzq
+    broker_name: 华泰证券
+    app_name: 涨乐财富通
+    source_url: https://sj.qq.com/appdetail/com.lphtsccft
+    source_type: http
+    parser: qq_app_detail_ocr
+    enabled: true
+    parser_options:
+      section_headings:
+        - 简介
+        - 详细信息
+      screenshot_alt: 精彩截图-涨乐财富通2026官方新版
+      screenshot_limit: 1
+      min_score: 0.5
+
+  - broker_code: citics
+    broker_name: 中信证券
+    app_name: 中信证券
+    source_url: https://sj.qq.com/appdetail/com.zxscnew
+    source_type: http
+    parser: qq_app_detail_ocr
+    enabled: true
+    parser_options:
+      section_headings:
+        - 简介
+        - 详细信息
+      screenshot_alt: 精彩截图-中信证券2026官方新版
+      screenshot_limit: 1
+      min_score: 0.5

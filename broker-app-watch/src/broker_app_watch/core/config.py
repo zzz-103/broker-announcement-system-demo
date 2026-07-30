@@ -26,6 +26,7 @@ class BrokerSource(BaseModel):
     fetch_url: HttpUrl | None = None
     request_method: Literal["GET", "POST"] = "GET"
     request_json: dict[str, Any] | None = None
+    request_data: dict[str, str] | None = None
     parser_options: dict[str, Any] = Field(default_factory=dict)
 
 
