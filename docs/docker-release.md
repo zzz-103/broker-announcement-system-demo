@@ -44,11 +44,16 @@ The production gateway must send `Cache-Control: no-store` for HTML and
 `version.json`. Only content-hashed `/_next/static/` assets should use the
 long-lived `immutable` cache policy.
 
+Starting with v1.4.5, the frontend checks `version.json` on startup, window
+focus, visibility restore, page-cache restore, and every 60 seconds. If an open
+tab is older than the deployed version, it navigates once with a versioned
+cache-busting query so users do not remain on an already-loaded old dashboard.
+
 If Docker build cache grows excessively, keep the most useful recent cache and
 remove only unused build records:
 
 ```powershell
-docker builder prune --force --reserved-space 5GB
+docker buildx prune --force --max-used-space 5GB
 ```
 
 This does not remove running containers, tagged release images, or volumes. Do

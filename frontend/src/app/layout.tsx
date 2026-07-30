@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { DeploymentVersionGuard } from '@/components/deployment-version-guard';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -22,6 +23,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" translate="no" className="notranslate">
       <body className={`antialiased`}>
+        <DeploymentVersionGuard />
         {children}
       </body>
     </html>
