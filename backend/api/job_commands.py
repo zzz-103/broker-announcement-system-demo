@@ -350,6 +350,9 @@ class JobCommandFactory:
 
     def _build_llm_matching_command(self) -> CommandSpec:
         staging = PROJECT_ROOT / "backend" / "data" / "staging"
+        scraper_output = (
+            PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output"
+        )
         matching = resolve_project_path(os.getenv("MATCHING_OUTPUT_DIR"), staging / "matching")
         output = resolve_project_path(
             os.getenv("LLM_MATCHING_OUTPUT_DIR"), staging / "llm_matching"
@@ -369,6 +372,20 @@ class JobCommandFactory:
                 str(output),
                 "--llm-config",
                 str(resolve_project_path(os.getenv("LLM_CONFIG_PATH"), PROJECT_ROOT / "backend" / "config" / "llm_api_config.json")),
+                "--procurement-markdown-dir",
+                str(
+                    resolve_project_path(
+                        os.getenv("LLM_INPUT_DIR"),
+                        scraper_output / "selected" / "procurement" / "notices",
+                    )
+                ),
+                "--result-markdown-dir",
+                str(
+                    resolve_project_path(
+                        os.getenv("LLM_RESULT_INPUT_DIR"),
+                        scraper_output / "selected" / "result" / "notices",
+                    )
+                ),
                 "--workers",
                 os.getenv("LLM_MATCHING_WORKERS", os.getenv("LLM_WORKERS", "4")),
                 "--max-candidates",

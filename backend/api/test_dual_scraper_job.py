@@ -9,6 +9,23 @@ from backend.api.job_manager import JobManager
 
 
 class DualScraperJobTests(unittest.TestCase):
+    def test_llm_matcher_receives_selected_markdown_directories(self) -> None:
+        manager = JobManager()
+        command, _working_dir, _env = manager._build_llm_matching_command()
+
+        procurement_index = command.index("--procurement-markdown-dir") + 1
+        result_index = command.index("--result-markdown-dir") + 1
+        self.assertTrue(
+            command[procurement_index]
+            .replace("\\", "/")
+            .endswith("output/selected/procurement/notices")
+        )
+        self.assertTrue(
+            command[result_index]
+            .replace("\\", "/")
+            .endswith("output/selected/result/notices")
+        )
+
     def test_scraper_runs_both_public_sources_then_prepares_selected_input(self) -> None:
         manager = JobManager()
         stages: list[str] = []

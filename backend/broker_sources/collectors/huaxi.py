@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
+import requests
 from bs4 import BeautifulSoup
 
-from ..http_client import DEFAULT_TIMEOUT
+from ..config import BrokerSourceConfig
+from ..http_client import DEFAULT_TIMEOUT, create_session
 from ..models import StandardNotice
 from .base import (
     CollectorError,
@@ -19,6 +22,22 @@ from .base import (
 
 
 class HuaxiCollector(OfficialCollector):
+    def __init__(
+        self,
+        config: BrokerSourceConfig,
+        project_root: Path,
+        output_root: Path,
+        session: requests.Session | None = None,
+        **collector_options: Any,
+    ) -> None:
+        super().__init__(
+            config,
+            project_root,
+            output_root,
+            session=session or create_session(allow_legacy_server_connect=True),
+            **collector_options,
+        )
+
     def list_payload(self, page_number: int) -> dict[str, str]:
         return {
             "funcNo": str(self.config.settings["func_no"]),
@@ -74,7 +93,12 @@ class HuaxiCollector(OfficialCollector):
         base_url = str(self.config.settings["base_url"])
         referer = str(self.config.settings["list_page_url"])
         records: list[dict[str, str]] = []
-        for page_number in range(1, self.config.pages + 1):
+        seen_urls: set[str] = set()
+        for page_number in range(self.start_page, self.max_pages + 1):
+            print(
+                f"[official:{self.config.key}] 请求列表第 {page_number} 页",
+                flush=True,
+            )
             response = self.session.post(
                 api_url,
                 data=self.list_payload(page_number),
@@ -85,9 +109,11 @@ class HuaxiCollector(OfficialCollector):
                 },
                 timeout=DEFAULT_TIMEOUT,
             )
+            self.scanned_pages += 1
             raw_path = self.save_raw(f"lists/page_{page_number}.json", response.content)
             if response.status_code != 200:
                 self.errors.append(f"list page {page_number}: HTTP {response.status_code}")
+                self.stop_reason = f"列表页 HTTP {response.status_code}"
                 continue
             try:
                 payload = response.json()
@@ -99,41 +125,55 @@ class HuaxiCollector(OfficialCollector):
                 continue
             if not page_records:
                 self.errors.append(f"list page {page_number}: no notices parsed")
+                self.stop_reason = "列表页无公告"
                 continue
             self.successful_pages += 1
+            before_since_date = False
             for record in page_records:
+                if self.since_date and record["publish_date"] < self.since_date.isoformat():
+                    before_since_date = True
+                    continue
+                if record["detail_url"] in seen_urls:
+                    self.skipped_count += 1
+                    continue
+                seen_urls.add(record["detail_url"])
                 record["raw_list_path"] = portable_path(raw_path, self.project_root)
-            records.extend(page_records)
+                records.append(record)
+            print(
+                f"[official:{self.config.key}] 列表第 {page_number} 页："
+                f"发现 {len(page_records)} 条，日期范围内 {len(records)} 条累计，"
+                f"已跳过 {self.skipped_count} 条",
+                flush=True,
+            )
+            self._write_checkpoint()
+            if before_since_date:
+                self.stop_reason = "达到日期下限"
+                break
+        if not self.stop_reason:
+            self.stop_reason = "达到最大页数"
 
         self.listed_count = len(records)
-        notices: list[StandardNotice] = []
-        for record in records:
+        def fetch_detail(record: dict[str, str]) -> StandardNotice:
             notice_id = record["notice_id"] or record["detail_url"].rsplit("/", 1)[-1].split(".", 1)[0]
-            try:
-                response = self.session.get(record["detail_url"], timeout=DEFAULT_TIMEOUT)
-                raw_path = self.save_raw(f"details/{notice_id}.html", response.content)
-                if response.status_code != 200:
-                    raise CollectorError(f"HTTP {response.status_code}")
-                content = self.parse_detail(response.content)
-                notices.append(
-                    StandardNotice(
-                        broker_key=self.config.key,
-                        broker_name=self.config.broker_name,
-                        source_kind=self.source_kind,
-                        source_name=self.source_name,
-                        notice_id=notice_id,
-                        notice_type=classify_notice_type(record["title"]),
-                        title=record["title"],
-                        publish_date=record["publish_date"],
-                        source_url=record["detail_url"],
-                        collected_at=utc_now(),
-                        collection_status="success",
-                        content_text=content,
-                        raw_list_path=record["raw_list_path"],
-                        raw_detail_path=portable_path(raw_path, self.project_root),
-                    )
-                )
-            except Exception as exc:  # noqa: BLE001 - continue with other details.
-                self.detail_failure_count += 1
-                self.errors.append(f"detail {record['detail_url']}: {exc}")
-        return notices
+            response = self.session.get(record["detail_url"], timeout=DEFAULT_TIMEOUT)
+            raw_path = self.save_raw(f"details/{notice_id}.html", response.content)
+            if response.status_code != 200:
+                raise CollectorError(f"HTTP {response.status_code}")
+            content = self.parse_detail(response.content)
+            return StandardNotice(
+                broker_key=self.config.key,
+                broker_name=self.config.broker_name,
+                source_kind=self.source_kind,
+                source_name=self.source_name,
+                notice_id=notice_id,
+                notice_type=classify_notice_type(record["title"]),
+                title=record["title"],
+                publish_date=record["publish_date"],
+                source_url=record["detail_url"],
+                collected_at=utc_now(),
+                collection_status="success",
+                content_text=content,
+                raw_list_path=record["raw_list_path"],
+                raw_detail_path=portable_path(raw_path, self.project_root),
+            )
+        return self.collect_details(records, fetch_detail)

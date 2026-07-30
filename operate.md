@@ -14,7 +14,7 @@ notepad frontend\package.json
 # 将 "version": "1.3.1" 改为例如 "1.3.2"
 
 # 3. 提交并推送版本号
-git add frontend\package.json
+git add .
 git commit -m "release: v1.3.2"
 git push
 

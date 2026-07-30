@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { Search, RotateCcw } from "lucide-react";
 import { HoverSelect } from "./hover-select";
 import { MultiHoverSelect } from "./multi-hover-select";
@@ -29,11 +28,11 @@ interface DashboardFiltersProps {
   onMissingBrokerSearch?: (name: string) => void;
   methodOptions: string[];
   sortedBrokers: string[];
-  visibleBrokerCount: number;
   showAllBrokers: boolean;
   setShowAllBrokers: (v: boolean) => void;
-  brokerTagsRef: React.RefObject<HTMLDivElement | null>;
 }
+
+const DEFAULT_VISIBLE_BROKER_COUNT = 20;
 
 const DOMAIN_OPTIONS = [
   "AI与智能化",
@@ -71,11 +70,13 @@ export function DashboardFilters({
   onMissingBrokerSearch,
   methodOptions,
   sortedBrokers,
-  visibleBrokerCount,
   showAllBrokers,
   setShowAllBrokers,
-  brokerTagsRef,
 }: DashboardFiltersProps) {
+  const visibleBrokerCount = showAllBrokers
+    ? sortedBrokers.length
+    : Math.min(DEFAULT_VISIBLE_BROKER_COUNT, sortedBrokers.length);
+
   return (
     <div className="bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5">
       <div className="grid grid-cols-2 items-center gap-2.5 sm:flex sm:flex-wrap sm:gap-4">
@@ -197,27 +198,6 @@ export function DashboardFilters({
             </button>
           )}
           <div className="relative min-w-0 flex-1">
-            <div
-              ref={brokerTagsRef}
-              aria-hidden="true"
-              className="invisible absolute inset-x-0 top-0 flex flex-wrap items-center gap-1.5 pointer-events-none"
-            >
-              {sortedBrokers.map((broker) => (
-                <span
-                  key={broker}
-                  data-broker-tag-measure
-                  className="whitespace-nowrap rounded-lg border border-[#E4EAF2] px-2.5 py-1 text-[12px] font-medium"
-                >
-                  {broker}
-                </span>
-              ))}
-              <span
-                data-broker-more-measure
-                className="whitespace-nowrap rounded-lg px-2.5 py-1 text-[12px] font-semibold"
-              >
-                +{sortedBrokers.length} 更多
-              </span>
-            </div>
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-hidden sm:pb-0">
               {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {
                 const isSelected = brokerNames.includes(broker);

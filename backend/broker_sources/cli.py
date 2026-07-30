@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 from .collectors import CiticCollector, HuaxiCollector
@@ -28,6 +30,12 @@ def resolve_path(value: str | None, default: Path) -> Path:
 def make_collector(
     config: BrokerSourceConfig,
     output_root: Path,
+    *,
+    since_date: date | None = None,
+    max_pages: int | None = None,
+    workers: int = 8,
+    resume: bool = False,
+    overwrite: bool = False,
 ) -> CiticCollector | HuaxiCollector:
     collectors = {
         "citic": CiticCollector,
@@ -36,7 +44,17 @@ def make_collector(
     collector_type = collectors.get(config.collector)
     if collector_type is None:
         raise ValueError(f"unknown collector type: {config.collector}")
-    return collector_type(config, PROJECT_ROOT, output_root)
+    runtime_config = replace(config, pages=max_pages or config.pages)
+    return collector_type(
+        runtime_config,
+        PROJECT_ROOT,
+        output_root,
+        since_date=since_date,
+        max_pages=max_pages,
+        workers=workers,
+        resume=resume,
+        overwrite=overwrite,
+    )
 
 
 def collect_command(args: argparse.Namespace) -> int:
@@ -55,12 +73,31 @@ def collect_command(args: argparse.Namespace) -> int:
         config = configs[key]
         if not config.enabled and not args.include_disabled:
             continue
-        print(f"[official:{key}] 开始采集", flush=True)
-        manifest = make_collector(config, output_root).run()
+        since_date = args.since_date
+        max_pages = args.max_pages or (100 if since_date else config.pages)
+        print(
+            f"[official:{key}] 开始采集 | 日期范围："
+            f"{since_date.isoformat() if since_date else '不限'} 至今 | "
+            f"最大页数：{max_pages} | 详情并发：{args.workers} | "
+            f"断点：{'恢复' if args.resume else '自动复用已完成公告'}",
+            flush=True,
+        )
+        manifest = make_collector(
+            config,
+            output_root,
+            since_date=since_date,
+            max_pages=max_pages,
+            workers=args.workers,
+            resume=args.resume,
+            overwrite=args.overwrite,
+        ).run()
         manifests.append(manifest.to_dict())
         print(
             f"[official:{key}] status={manifest.status} "
-            f"quality_passed={manifest.quality_passed} valid={manifest.valid_count}",
+            f"quality_passed={manifest.quality_passed} "
+            f"pages={manifest.scanned_pages} valid={manifest.valid_count} "
+            f"new={manifest.new_count} skipped={manifest.skipped_count} "
+            f"stop={manifest.stop_reason}",
             flush=True,
         )
     print(json.dumps(manifests, ensure_ascii=False, indent=2))
@@ -107,6 +144,25 @@ def build_parser() -> argparse.ArgumentParser:
     collect = subparsers.add_parser("collect", help="运行启用的官网采集器")
     collect.add_argument("--broker", action="append", help="券商 key，可重复")
     collect.add_argument("--include-disabled", action="store_true")
+    collect.add_argument(
+        "--since-date",
+        type=date.fromisoformat,
+        default=date.fromisoformat(os.getenv("OFFICIAL_SOURCE_SINCE_DATE", "2026-04-01")),
+        help="只采集此日期及之后的公告，默认 2026-04-01，可由 OFFICIAL_SOURCE_SINCE_DATE 覆盖",
+    )
+    collect.add_argument(
+        "--max-pages",
+        type=int,
+        help="最多扫描页数；传入日期时默认 100",
+    )
+    collect.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="详情并发数，默认 8",
+    )
+    collect.add_argument("--resume", action="store_true", help="从未完成 checkpoint 的页继续")
+    collect.add_argument("--overwrite", action="store_true", help="重新下载已有公告详情")
     collect.set_defaults(handler=collect_command)
 
     prepare = subparsers.add_parser("prepare", help="准备统一、去重后的 LLM 输入")

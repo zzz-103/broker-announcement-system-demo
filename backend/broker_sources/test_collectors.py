@@ -4,9 +4,27 @@ import unittest
 
 from backend.broker_sources.collectors.citic import CiticCollector
 from backend.broker_sources.collectors.huaxi import HuaxiCollector
+from backend.broker_sources.http_client import (
+    LEGACY_SERVER_CONNECT_OPTION,
+    LegacyServerConnectAdapter,
+    create_session,
+)
 
 
 class CollectorParserTests(unittest.TestCase):
+    def test_legacy_tls_is_enabled_only_when_requested(self) -> None:
+        default_session = create_session()
+        legacy_session = create_session(allow_legacy_server_connect=True)
+
+        self.assertNotIsInstance(
+            default_session.adapters["https://"],
+            LegacyServerConnectAdapter,
+        )
+        adapter = legacy_session.adapters["https://"]
+        self.assertIsInstance(adapter, LegacyServerConnectAdapter)
+        context = adapter.poolmanager.connection_pool_kw["ssl_context"]
+        self.assertTrue(context.options & LEGACY_SERVER_CONNECT_OPTION)
+
     def test_citic_parses_relative_detail_link_and_full_body(self) -> None:
         list_html = """
         <ul>

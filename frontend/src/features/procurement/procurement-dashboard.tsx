@@ -174,9 +174,7 @@ export default function Dashboard() {
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(72);
 
-  // Broker tags: limit to 2 rows, sorted by data volume
-  const brokerTagsRef = useRef<HTMLDivElement>(null);
-  const [visibleBrokerCount, setVisibleBrokerCount] = useState(999);
+  // Broker tags: show the 20 most active brokers until explicitly expanded.
   const [showAllBrokers, setShowAllBrokers] = useState(false);
 
   const {
@@ -187,7 +185,6 @@ export default function Dashboard() {
     announcementStage,
     procurementMethod,
     finTechOnly,
-    detailFilter,
     setSearch,
     setTimeRange,
     setBrokerNames,
@@ -196,7 +193,6 @@ export default function Dashboard() {
     setAnnouncementStage,
     setProcurementMethod,
     setFinTechOnly,
-    setDetailFilter,
     resetAll,
   } = useFilterStore();
 
@@ -266,8 +262,6 @@ export default function Dashboard() {
       else if (timeRange === "year")
         cutoff = new Date(baseline.getFullYear(), 0, 1);
     }
-    const requirePrice = detailFilter?.hasPrice === "true";
-
     // Keep all dashboard derivation in the visitor's browser and scan the
     // projected records once per filter change instead of allocating a new
     // full array for every individual condition.
@@ -278,7 +272,6 @@ export default function Dashboard() {
       if (primaryDomain && record.primaryDomain !== primaryDomain) return false;
       if (announcementStage && record.announcement_stage !== announcementStage) return false;
       if (procurementMethod && record.procurement_method !== procurementMethod) return false;
-      if (requirePrice && record.display_amount_yuan === null) return false;
       return true;
     });
   }, [
@@ -290,7 +283,6 @@ export default function Dashboard() {
     primaryDomain,
     announcementStage,
     procurementMethod,
-    detailFilter,
   ]);
 
   // Options for dropdowns: derived from real data after other filters only.
@@ -353,67 +345,6 @@ export default function Dashboard() {
     return () => ro.disconnect();
   }, []);
 
-  // Measure broker tags container and calculate visible count (max 2 rows)
-  useLayoutEffect(() => {
-    const container = brokerTagsRef.current;
-    if (!container || sortedBrokers.length === 0) return;
-
-    const measure = () => {
-      if (showAllBrokers) {
-        setVisibleBrokerCount(sortedBrokers.length);
-        return;
-      }
-
-      const containerWidth = container.clientWidth;
-      const tagWidths = Array.from(
-        container.querySelectorAll<HTMLElement>("[data-broker-tag-measure]")
-      ).map((tag) => tag.offsetWidth);
-      const moreButton = container.querySelector<HTMLElement>("[data-broker-more-measure]");
-      if (containerWidth <= 0 || tagWidths.length === 0 || !moreButton) return;
-
-      const gap = 6;
-      let row = 1;
-      let rowWidth = 0;
-      let secondRowStart = -1;
-      let visibleCount = 0;
-
-      for (const tagWidth of tagWidths) {
-        const nextWidth = rowWidth === 0 ? tagWidth : rowWidth + gap + tagWidth;
-        if (nextWidth <= containerWidth) {
-          rowWidth = nextWidth;
-          visibleCount += 1;
-          continue;
-        }
-        if (row === 2) break;
-        row = 2;
-        secondRowStart = visibleCount;
-        rowWidth = tagWidth;
-        visibleCount += 1;
-      }
-
-      if (visibleCount < tagWidths.length) {
-        const moreButtonWidth = moreButton.offsetWidth;
-        while (
-          visibleCount > Math.max(0, secondRowStart) &&
-          rowWidth + gap + moreButtonWidth > containerWidth
-        ) {
-          visibleCount -= 1;
-          rowWidth -= tagWidths[visibleCount] + (visibleCount > secondRowStart ? gap : 0);
-        }
-      }
-
-      setVisibleBrokerCount(visibleCount);
-    };
-
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(container);
-    container
-      .querySelectorAll<HTMLElement>("[data-broker-tag-measure], [data-broker-more-measure]")
-      .forEach((element) => observer.observe(element));
-    return () => observer.disconnect();
-  }, [sortedBrokers, showAllBrokers]);
-
   const hasFilters = Boolean(
     search ||
     brokerNames.length > 0 ||
@@ -421,8 +352,7 @@ export default function Dashboard() {
     announcementStage ||
     procurementMethod ||
     timeRange !== "90d" ||
-    !finTechOnly ||
-    detailFilter
+    !finTechOnly
   );
 
   const openFeedback = useCallback((category?: FeedbackCategory, brokerName = "") => {
@@ -504,10 +434,8 @@ export default function Dashboard() {
           onMissingBrokerSearch={dataStatus === "ready" && !search.trim() ? (brokerName) => openFeedback("broker_request", brokerName) : undefined}
           methodOptions={methodOptions}
           sortedBrokers={sortedBrokers}
-          visibleBrokerCount={visibleBrokerCount}
           showAllBrokers={showAllBrokers}
           setShowAllBrokers={setShowAllBrokers}
-          brokerTagsRef={brokerTagsRef}
         />
 
         {/* Tab Bar - Sticky below header */}

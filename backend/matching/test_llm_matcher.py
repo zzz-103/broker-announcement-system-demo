@@ -117,6 +117,23 @@ class LLMMatcherTests(unittest.TestCase):
             first_prompt = json.loads(client_seen_prompt(client_index=0, output=paths["output"]))
             self.assertLessEqual(len(first_prompt["procurement_candidates"]), 5)
 
+    def test_reads_result_and_procurement_text_from_selected_directories(self) -> None:
+        client = CapturingFakeClient([
+            unmatched(0.99),
+            unmatched(0.99),
+        ])
+        with fixture() as paths:
+            run_fixture(paths, client)
+            prompt = json.loads(client.prompts[0])
+            self.assertIn(
+                "RESULT_SELECTED_MARKDOWN",
+                prompt["result_announcement"]["text_excerpt"],
+            )
+            self.assertIn(
+                "PROCUREMENT_SELECTED_MARKDOWN",
+                prompt["procurement_candidates"][0]["text_excerpt"],
+            )
+
     def test_cache_reuse_skips_llm_requests(self) -> None:
         with fixture() as paths:
             first_client = FakeClient([matched("p1", 0.99), matched("p1", 0.99)])
@@ -194,7 +211,19 @@ class fixture:
             "links": root / "links.csv",
             "scores": root / "scores.csv",
             "output": root / "llm_matching",
+            "result_markdown": root / "selected" / "result" / "notices",
+            "procurement_markdown": root / "selected" / "procurement" / "notices",
         }
+        self.paths["result_markdown"].mkdir(parents=True, exist_ok=True)
+        self.paths["procurement_markdown"].mkdir(parents=True, exist_ok=True)
+        (self.paths["result_markdown"] / "r1.md").write_text(
+            "RESULT_SELECTED_MARKDOWN",
+            encoding="utf-8",
+        )
+        (self.paths["procurement_markdown"] / "p1.md").write_text(
+            "PROCUREMENT_SELECTED_MARKDOWN",
+            encoding="utf-8",
+        )
         write_csv(
             self.paths["result"],
             [
@@ -290,6 +319,8 @@ def run_fixture(paths: dict[str, Path], client: FakeClient) -> dict[str, Any]:
             client=capture,
             max_candidates=5,
             workers=1,
+            procurement_markdown_dir=paths["procurement_markdown"],
+            result_markdown_dir=paths["result_markdown"],
         )
         client.calls = capture.calls
         client.responses = capture.responses
@@ -305,6 +336,8 @@ def run_fixture(paths: dict[str, Path], client: FakeClient) -> dict[str, Any]:
         client=client,
         max_candidates=5,
         workers=1,
+        procurement_markdown_dir=paths["procurement_markdown"],
+        result_markdown_dir=paths["result_markdown"],
     )
 
 

@@ -49,6 +49,13 @@ class CollectionManifest:
     output_dir: str
     raw_dir: str
     errors: list[str] = field(default_factory=list)
+    since_date: str | None = None
+    scanned_pages: int = 0
+    skipped_count: int = 0
+    new_count: int = 0
+    stop_reason: str = ""
+    checkpoint_path: str = ""
+    resumed: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

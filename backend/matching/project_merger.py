@@ -495,11 +495,16 @@ def run_merger(
     # single canonical schema, regardless of whether the procurement source is
     # the current 22-column table or the legacy table without is_broker_project.
     output_rows = [*merged_rows, *standalone_results]
-    if "is_broker_project" not in procurement_fields:
-        output_rows = [
-            {**row, "is_broker_project": "true"}
-            for row in output_rows
-        ]
+    # Older incremental procurement tables may already contain the current
+    # column but leave it blank. Treat that legacy blank the same as the
+    # pre-column format; preserve an explicit false classification.
+    output_rows = [
+        {
+            **row,
+            "is_broker_project": normalize_text(row.get("is_broker_project")) or "true",
+        }
+        for row in output_rows
+    ]
 
     # All validation and selection completes before the output directory is created.
     write_csv_atomic(

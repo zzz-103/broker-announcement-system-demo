@@ -10,9 +10,6 @@ interface FilterStore {
   announcementStage: string;
   procurementMethod: string;
   finTechOnly: boolean;
-  // detail filter (from card clicks)
-  detailFilter: Record<string, string> | null;
-
   setSearch: (v: string) => void;
   setTimeRange: (v: TimeRange) => void;
   setBrokerNames: (v: string[]) => void;
@@ -21,7 +18,6 @@ interface FilterStore {
   setAnnouncementStage: (v: string) => void;
   setProcurementMethod: (v: string) => void;
   setFinTechOnly: (v: boolean) => void;
-  setDetailFilter: (v: Record<string, string> | null) => void;
   resetAll: () => void;
 }
 
@@ -33,7 +29,6 @@ const INITIAL = {
   announcementStage: "",
   procurementMethod: "",
   finTechOnly: true,
-  detailFilter: null as Record<string, string> | null,
 };
 
 export const useFilterStore = create<FilterStore>((set) => ({
@@ -51,6 +46,5 @@ export const useFilterStore = create<FilterStore>((set) => ({
   setAnnouncementStage: (v) => set({ announcementStage: v }),
   setProcurementMethod: (v) => set({ procurementMethod: v }),
   setFinTechOnly: (v) => set({ finTechOnly: v }),
-  setDetailFilter: (v) => set({ detailFilter: v }),
   resetAll: () => set(INITIAL),
 }));

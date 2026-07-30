@@ -33,8 +33,11 @@ DEFAULT_LINKS_CSV = ROOT_DIR / "data" / "staging" / "matching" / "project_links.
 DEFAULT_CANDIDATE_SCORES_CSV = ROOT_DIR / "data" / "staging" / "matching" / "candidate_scores.csv"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "data" / "staging" / "llm_matching"
 DEFAULT_LLM_CONFIG = ROOT_DIR / "config" / "llm_api_config.json"
-DEFAULT_PROCUREMENT_MARKDOWN_DIR = ROOT_DIR / "python-http-www-cfcpn-com-jcw" / "output" / "notices"
-DEFAULT_RESULT_MARKDOWN_DIR = ROOT_DIR / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices"
+DEFAULT_SELECTED_ROOT = (
+    ROOT_DIR / "python-http-www-cfcpn-com-jcw" / "output" / "selected"
+)
+DEFAULT_PROCUREMENT_MARKDOWN_DIR = DEFAULT_SELECTED_ROOT / "procurement" / "notices"
+DEFAULT_RESULT_MARKDOWN_DIR = DEFAULT_SELECTED_ROOT / "result" / "notices"
 DEFAULT_MAX_CANDIDATES = 5
 DEFAULT_WORKERS = 2
 MATCHER_VERSION = "p13d_llm_matcher_v1"
@@ -650,16 +653,23 @@ def process_one(
     client: JsonClient,
     output_dir: Path,
     max_candidates: int,
+    procurement_markdown_dir: Path,
+    result_markdown_dir: Path,
 ) -> MatchResult:
     rid = result_id(result_row)
-    result_excerpt = load_markdown_excerpt(result_row, [DEFAULT_RESULT_MARKDOWN_DIR], rid, expanded=False)
+    result_excerpt = load_markdown_excerpt(
+        result_row,
+        [result_markdown_dir],
+        rid,
+        expanded=False,
+    )
     result_payload = build_result_payload(result_row, result_excerpt)
     candidates = select_candidates(result_row, candidate_rows, procurements_by_id, max_candidates)
     for candidate in candidates:
         procurement_row = procurements_by_id.get(normalize_text(candidate.get("notice_id")), {})
         candidate["text_excerpt"] = load_markdown_excerpt(
             procurement_row or {"source_file": candidate.get("source_file", "")},
-            [DEFAULT_PROCUREMENT_MARKDOWN_DIR],
+            [procurement_markdown_dir],
             normalize_text(candidate.get("notice_id")),
             expanded=False,
         )
@@ -675,7 +685,12 @@ def process_one(
         second_result_payload = result_payload
         second_candidates = candidates
         if first.ok and first.decision and first.decision.decision == "ambiguous":
-            expanded_excerpt = load_markdown_excerpt(result_row, [DEFAULT_RESULT_MARKDOWN_DIR], rid, expanded=True)
+            expanded_excerpt = load_markdown_excerpt(
+                result_row,
+                [result_markdown_dir],
+                rid,
+                expanded=True,
+            )
             second_result_payload = build_result_payload(result_row, expanded_excerpt)
             second_candidates = []
             for candidate in candidates:
@@ -683,7 +698,7 @@ def process_one(
                 procurement_row = procurements_by_id.get(normalize_text(candidate.get("notice_id")), {})
                 updated["text_excerpt"] = load_markdown_excerpt(
                     procurement_row or {"source_file": candidate.get("source_file", "")},
-                    [DEFAULT_PROCUREMENT_MARKDOWN_DIR],
+                    [procurement_markdown_dir],
                     normalize_text(candidate.get("notice_id")),
                     expanded=True,
                 )
@@ -852,6 +867,8 @@ def run_llm_matching(
     workers: int = DEFAULT_WORKERS,
     max_files: int | None = None,
     full_refresh: bool = False,
+    procurement_markdown_dir: Path = DEFAULT_PROCUREMENT_MARKDOWN_DIR,
+    result_markdown_dir: Path = DEFAULT_RESULT_MARKDOWN_DIR,
 ) -> dict[str, Any]:
     if full_refresh:
         safe_full_refresh(output_dir)
@@ -899,6 +916,8 @@ def run_llm_matching(
                 client,
                 output_dir,
                 max_candidates,
+                procurement_markdown_dir,
+                result_markdown_dir,
             ): row
             for row in result_rows
         }
@@ -964,6 +983,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidate-scores-csv", type=Path, default=DEFAULT_CANDIDATE_SCORES_CSV)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--llm-config", type=Path, default=DEFAULT_LLM_CONFIG)
+    parser.add_argument(
+        "--procurement-markdown-dir",
+        type=Path,
+        default=DEFAULT_PROCUREMENT_MARKDOWN_DIR,
+    )
+    parser.add_argument(
+        "--result-markdown-dir",
+        type=Path,
+        default=DEFAULT_RESULT_MARKDOWN_DIR,
+    )
     parser.add_argument("--max-candidates", type=int, default=DEFAULT_MAX_CANDIDATES)
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     parser.add_argument("--max-files", type=int, default=None)
@@ -991,6 +1020,8 @@ def main() -> int:
             workers=max(1, args.workers),
             max_files=args.max_files,
             full_refresh=args.full_refresh,
+            procurement_markdown_dir=args.procurement_markdown_dir.resolve(),
+            result_markdown_dir=args.result_markdown_dir.resolve(),
         )
     except ValueError as exc:
         parser.error(str(exc))
