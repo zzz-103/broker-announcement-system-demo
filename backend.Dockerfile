@@ -1,18 +1,4 @@
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /build/frontend
-RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
-
-COPY frontend/package.json frontend/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
-
-COPY frontend ./
-ARG NEXT_PUBLIC_API_BASE_URL=
-ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm exec next build
-
-
+# syntax=docker/dockerfile:1.7
 FROM python:3.11-slim
 
 # Install tzdata and curl (for healthcheck)
@@ -36,8 +22,9 @@ COPY requirements.txt /app/requirements.txt
 # Adjust the relative requirements path for the container structure
 RUN python -c "import pathlib; p = pathlib.Path('/app/backend/api/requirements.txt'); p.write_text(p.read_text().replace('../../requirements.txt', '/app/requirements.txt'))"
 
-# Install python dependencies
-RUN pip install --no-cache-dir -r /app/backend/api/requirements.txt
+# Keep downloaded wheels between builds without storing them in the image.
+RUN --mount=type=cache,id=broker-backend-pip,target=/root/.cache/pip \
+    pip install -r /app/backend/api/requirements.txt
 
 # Copy backend codebase
 COPY backend /app/backend
@@ -46,9 +33,10 @@ COPY backend /app/backend
 # The heavy OCR extra is intentionally excluded; the pazq/平安证券 image-OCR source
 # is disabled via BAW_DISABLED_BROKERS so rapidocr-onnxruntime is not required.
 COPY broker-app-watch /app/broker-app-watch
-RUN python -m venv /app/broker-app-watch/.venv \
-    && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir --upgrade pip \
-    && /app/broker-app-watch/.venv/bin/pip install --no-cache-dir -e /app/broker-app-watch \
+RUN --mount=type=cache,id=broker-app-watch-pip,target=/root/.cache/pip \
+    python -m venv /app/broker-app-watch/.venv \
+    && /app/broker-app-watch/.venv/bin/pip install --upgrade pip \
+    && /app/broker-app-watch/.venv/bin/pip install -e /app/broker-app-watch \
     && /app/broker-app-watch/.venv/bin/python -c "import yaml, openai; print('broker-app-watch dependencies ok')"
 
 # broker-app-watch subprocess configuration (consumed by backend JobManager)
@@ -57,8 +45,6 @@ ENV APP_WATCH_WORKING_DIR=/app/broker-app-watch
 ENV APP_RELEASES_CSV_PATH=/app/broker-app-watch/data/exports/app_releases.csv
 ENV APP_WATCH_LLM_CONFIG_PATH=/app/backend/config/llm_api_config.json
 ENV BAW_DISABLED_BROKERS=pazq
-
-COPY --from=frontend-builder /build/frontend/out /app/frontend/out
 
 # Expose FastAPI port
 EXPOSE 8000

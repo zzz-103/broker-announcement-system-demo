@@ -93,8 +93,25 @@ function Wait-ForHttpSuccess {
 }
 
 function Test-DeploymentHealth {
-    return (Wait-ForHttpSuccess -Uri "$PublicBaseUrl/api/health") -and
-        (Wait-ForHttpSuccess -Uri "$PublicBaseUrl/")
+    if (-not (Wait-ForHttpSuccess -Uri "$PublicBaseUrl/api/health")) { return $false }
+    if (-not (Wait-ForHttpSuccess -Uri "$PublicBaseUrl/")) { return $false }
+
+    try {
+        $cacheBuster = [uri]::EscapeDataString($GitSha)
+        $versionResponse = Invoke-RestMethod `
+            -Uri "$PublicBaseUrl/version.json?release=$cacheBuster" `
+            -TimeoutSec 10 `
+            -Headers @{ 'Cache-Control' = 'no-cache, no-store' }
+        if ($versionResponse.version -ne $Version -or $versionResponse.git_sha -ne $GitSha) {
+            Write-Warning "Public frontend version mismatch at $PublicBaseUrl. Expected $Version ($GitSha), got $($versionResponse.version) ($($versionResponse.git_sha))."
+            return $false
+        }
+    }
+    catch {
+        Write-Warning "Unable to verify public frontend version at $PublicBaseUrl/version.json: $($_.Exception.Message)"
+        return $false
+    }
+    return $true
 }
 
 function Write-ReleaseRecord {
@@ -191,7 +208,7 @@ try {
     docker run --rm --entrypoint /app/broker-app-watch/.venv/bin/python $BackendImage -c "import broker_app_watch; print('broker-app-watch import ok')"
     Assert-LastExitCode 'Validate broker-app-watch image import'
     Write-Host "Building $FrontendImage from $GitSha"
-    docker build --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
+    docker build --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
     Assert-LastExitCode 'Build frontend image'
 
     New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
