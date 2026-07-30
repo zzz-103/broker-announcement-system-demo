@@ -26,13 +26,20 @@ class DualScraperJobTests(unittest.TestCase):
             .endswith("output/selected/result/notices")
         )
 
-    def test_scraper_runs_both_public_sources_then_prepares_selected_input(self) -> None:
+    def test_scraper_runs_jincai_and_direct_sources_in_parallel_then_prepares_input(self) -> None:
         manager = JobManager()
         stages: list[str] = []
         finished = threading.Event()
+        first_branches_started = threading.Event()
+        stage_lock = threading.Lock()
 
         def run_stage(job_id: str, _builder: object, stage_label: str) -> int:
-            stages.append(stage_label)
+            with stage_lock:
+                stages.append(stage_label)
+                if {"jincai:procurement", "direct"}.issubset(stages):
+                    first_branches_started.set()
+            if stage_label in {"jincai:procurement", "direct"}:
+                self.assertTrue(first_branches_started.wait(timeout=2))
             if stage_label == "source-prepare":
                 finished.set()
             return 0
@@ -48,15 +55,10 @@ class DualScraperJobTests(unittest.TestCase):
                 snapshot = manager.get_job(job.job_id)
 
         self.assertEqual(snapshot["status"], "succeeded")
-        self.assertEqual(
-            stages,
-            [
-                "procurement-scraper",
-                "result-scraper",
-                "official-source",
-                "source-prepare",
-            ],
-        )
+        self.assertEqual(set(stages[:2]), {"jincai:procurement", "direct"})
+        self.assertLess(stages.index("jincai:procurement"), stages.index("jincai:result"))
+        self.assertLess(stages.index("jincai:result"), stages.index("source-prepare"))
+        self.assertLess(stages.index("direct"), stages.index("source-prepare"))
 
     def test_normal_llm_runs_matching_and_merger_after_both_notice_types(self) -> None:
         manager = JobManager()

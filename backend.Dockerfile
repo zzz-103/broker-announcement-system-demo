@@ -5,6 +5,8 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     curl \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=Asia/Shanghai
@@ -30,14 +32,13 @@ RUN --mount=type=cache,id=broker-backend-pip,target=/root/.cache/pip \
 COPY backend /app/backend
 
 # Install broker-app-watch into an isolated venv (dependency isolation per design).
-# The heavy OCR extra is intentionally excluded; the pazq/平安证券 image-OCR source
-# is disabled via BAW_DISABLED_BROKERS so rapidocr-onnxruntime is not required.
+# The OCR extra is required by the Huatai and CITICS Tencent App Store parsers.
 COPY broker-app-watch /app/broker-app-watch
 RUN --mount=type=cache,id=broker-app-watch-pip,target=/root/.cache/pip \
     python -m venv /app/broker-app-watch/.venv \
     && /app/broker-app-watch/.venv/bin/pip install --upgrade pip \
-    && /app/broker-app-watch/.venv/bin/pip install -e /app/broker-app-watch \
-    && /app/broker-app-watch/.venv/bin/python -c "import yaml, openai; print('broker-app-watch dependencies ok')"
+    && /app/broker-app-watch/.venv/bin/pip install -e "/app/broker-app-watch[ocr]" \
+    && /app/broker-app-watch/.venv/bin/python -c "import yaml, openai, rapidocr_onnxruntime; print('broker-app-watch dependencies ok')"
 
 # broker-app-watch subprocess configuration (consumed by backend JobManager)
 ENV APP_WATCH_PYTHON_EXECUTABLE=/app/broker-app-watch/.venv/bin/python

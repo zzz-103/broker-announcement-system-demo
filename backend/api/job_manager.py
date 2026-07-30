@@ -6,6 +6,7 @@ import subprocess
 import threading
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,7 +59,7 @@ class JobManager(JobCommandFactory):
         self._event_sequences: dict[str, int] = {}
         self._running_job_id: str | None = None
         self._active_operation: str | None = None
-        self._processes: dict[str, subprocess.Popen[str]] = {}
+        self._processes: dict[str, dict[str, subprocess.Popen[str]]] = {}
         self._cancel_requested: set[str] = set()
         self._history_limit = settings.job_history_limit
 
@@ -176,8 +177,10 @@ class JobManager(JobCommandFactory):
             if not job:
                 raise JobNotFoundError(job_id)
             snapshot = job.to_dict()
-            process = self._processes.get(job_id)
-            snapshot["process_alive"] = bool(process and process.poll() is None)
+            processes = self._processes.get(job_id, {})
+            snapshot["process_alive"] = any(
+                process.poll() is None for process in processes.values()
+            )
             snapshot["log_count"] = len(self._events.get(job_id, ()))
             snapshot["events"] = [
                 self._public_event(event)
@@ -214,8 +217,11 @@ class JobManager(JobCommandFactory):
             if job.status not in {"running", "pending"}:
                 return {"status": job.status, "message": "job already finished"}
             self._cancel_requested.add(job_id)
-            process = self._processes.get(job_id)
-            pid = process.pid if process else job.pid
+            processes = list(self._processes.get(job_id, {}).values())
+            live_processes = [
+                process for process in processes if process.poll() is None
+            ]
+            pid = live_processes[0].pid if live_processes else job.pid
 
         self._append_event(
             job_id,
@@ -228,8 +234,9 @@ class JobManager(JobCommandFactory):
             },
         )
 
-        if process and process.poll() is None:
-            self._terminate_process_tree(process)
+        if live_processes:
+            for process in live_processes:
+                self._terminate_process_tree(process)
             return {"status": "cancelling", "pid": pid}
 
         if job.job_type == "pipeline":
@@ -294,7 +301,7 @@ class JobManager(JobCommandFactory):
             )
 
             with self._lock:
-                self._processes[job_id] = process
+                self._processes[job_id] = {"main": process}
                 self._jobs[job_id].pid = process.pid
                 self._jobs[job_id].process_alive = True
 
@@ -385,12 +392,28 @@ class JobManager(JobCommandFactory):
 
             stages: list[tuple[str, str, Callable[[], tuple[list[str], Path, dict[str, str]]]]] = []
             if job_type in {"scraper", "pipeline"}:
-                stages.extend([
-                    ("procurement-scraper", "采购公告爬虫", lambda: self._build_scraper_command("procurement")),
-                    ("result-scraper", "结果公告爬虫", lambda: self._build_scraper_command("result")),
-                    ("official-source", "券商官网直连采集", self._build_official_source_command),
-                ])
-            if job_type in {"scraper", "pipeline"}:
+                collection_exit_code = self._execute_collection_branches(job_id, log)
+                if self._is_cancel_requested(job_id):
+                    log("[collection] 已取消，任务停止")
+                    self._finish_job(
+                        job_id,
+                        status="cancelled",
+                        exit_code=collection_exit_code,
+                        error="管理员手动停止",
+                    )
+                    return
+                if collection_exit_code != 0:
+                    log(
+                        f"[collection] 采集失败，退出码 {collection_exit_code}，任务停止",
+                        "stderr",
+                    )
+                    self._finish_job(
+                        job_id,
+                        status="failed",
+                        exit_code=collection_exit_code,
+                        error="公告并行采集失败",
+                    )
+                    return
                 stages.append(
                     ("source-prepare", "公告来源选择与去重", self._build_source_prepare_command)
                 )
@@ -518,7 +541,7 @@ class JobManager(JobCommandFactory):
             )
 
             with self._lock:
-                self._processes[job_id] = process
+                self._processes.setdefault(job_id, {})[stage_label] = process
                 self._jobs[job_id].pid = process.pid
                 self._jobs[job_id].process_alive = True
 
@@ -561,9 +584,67 @@ class JobManager(JobCommandFactory):
             raise
         finally:
             with self._lock:
-                self._processes.pop(job_id, None)
+                processes = self._processes.get(job_id)
+                if processes is not None:
+                    processes.pop(stage_label, None)
+                    if not processes:
+                        self._processes.pop(job_id, None)
                 if job_id in self._jobs:
-                    self._jobs[job_id].process_alive = False
+                    self._jobs[job_id].process_alive = bool(
+                        self._processes.get(job_id)
+                    )
+
+    def _execute_collection_branches(
+        self,
+        job_id: str,
+        log: Callable[[str, str], None],
+    ) -> int:
+        """Run Jincai sequential sub-stages alongside the direct-source branch."""
+
+        def run_jincai() -> int:
+            stages = [
+                (
+                    "jincai:procurement",
+                    "金采网采购公告",
+                    lambda: self._build_scraper_command("procurement"),
+                ),
+                (
+                    "jincai:result",
+                    "金采网结果公告",
+                    lambda: self._build_scraper_command("result"),
+                ),
+            ]
+            for stage_label, stage_name, command_builder in stages:
+                if self._is_cancel_requested(job_id):
+                    return -1
+                log(f"[{stage_label}] {stage_name}阶段开始")
+                exit_code = self._execute_stage(job_id, command_builder, stage_label)
+                if exit_code != 0:
+                    log(f"[{stage_label}] 失败，退出码 {exit_code}", "stderr")
+                    return exit_code
+                log(f"[{stage_label}] 完成")
+            return 0
+
+        def run_direct() -> int:
+            stage_label = "direct"
+            log(f"[{stage_label}] 券商官网直采阶段开始")
+            exit_code = self._execute_stage(
+                job_id,
+                self._build_official_source_command,
+                stage_label,
+            )
+            if exit_code != 0:
+                log(f"[{stage_label}] 失败，退出码 {exit_code}", "stderr")
+                return exit_code
+            log(f"[{stage_label}] 完成")
+            return 0
+
+        log("[collection] 金采网与官网直采开始并行采集")
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="collection") as pool:
+            futures = [pool.submit(run_jincai), pool.submit(run_direct)]
+            exit_codes = [future.result() for future in futures]
+        log("[collection] 两路采集均已结束")
+        return next((code for code in exit_codes if code != 0), 0)
 
     # ------------------------------------------------------------------
     # Termination

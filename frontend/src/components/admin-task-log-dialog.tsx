@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { JobStatus } from "@/lib/api/backend-client";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 export interface AdminTaskLogLine {
@@ -46,7 +47,7 @@ export function AdminTaskLogDialog({
   status,
   logs,
 }: AdminTaskLogDialogProps) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const shouldStickRef = useRef(true);
 
@@ -54,6 +55,30 @@ export function AdminTaskLogDialog({
     () => logs.map((log) => `[${streamText(log.stream)}] ${log.message}`).join("\n"),
     [logs],
   );
+  const logGroups = useMemo(() => {
+    const jincai: AdminTaskLogLine[] = [];
+    const direct: AdminTaskLogLine[] = [];
+    const common: AdminTaskLogLine[] = [];
+    for (const log of logs) {
+      if (
+        log.message.startsWith("[jincai:") ||
+        log.message.startsWith("[procurement-scraper]") ||
+        log.message.startsWith("[result-scraper]")
+      ) {
+        jincai.push(log);
+      } else if (
+        log.message.startsWith("[direct]") ||
+        log.message.startsWith("[official-source]")
+      ) {
+        direct.push(log);
+      } else {
+        common.push(log);
+      }
+    }
+    return { jincai, direct, common };
+  }, [logs]);
+  const hasCollectionLanes =
+    logGroups.jincai.length > 0 || logGroups.direct.length > 0;
 
   useEffect(() => {
     if (!open) {
@@ -69,10 +94,10 @@ export function AdminTaskLogDialog({
   }, [logs, open]);
 
   useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 2000);
+    if (copyState === "idle") return;
+    const timer = window.setTimeout(() => setCopyState("idle"), 2000);
     return () => window.clearTimeout(timer);
-  }, [copied]);
+  }, [copyState]);
 
   const handleScroll = () => {
     const container = containerRef.current;
@@ -83,9 +108,39 @@ export function AdminTaskLogDialog({
 
   const handleCopy = async () => {
     if (!renderedLogs) return;
-    await navigator.clipboard.writeText(renderedLogs);
-    setCopied(true);
+    const copied = await copyTextToClipboard(renderedLogs);
+    setCopyState(copied ? "copied" : "failed");
   };
+
+  const renderLogList = (items: AdminTaskLogLine[]) =>
+    items.length === 0 ? (
+      <div className="rounded-lg border border-dashed border-[#D9E2EC] bg-[#F8FAFC] px-4 py-6 text-center text-[#94A3B8]">
+        等待日志
+      </div>
+    ) : (
+      <div className="space-y-2">
+        {items.map((log, index) => (
+          <div
+            key={`${log.stream}-${index}-${log.message}`}
+            className="flex items-start gap-3 rounded-lg border border-[#EEF2F6] bg-[#FBFCFE] px-3 py-2"
+          >
+            <span
+              className={cn(
+                "mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
+                log.stream === "stdout" && "bg-blue-50 text-blue-700",
+                log.stream === "stderr" && "bg-rose-50 text-rose-700",
+                log.stream === "system" && "bg-slate-100 text-slate-600",
+              )}
+            >
+              {streamText(log.stream)}
+            </span>
+            <span className="min-w-0 whitespace-pre-wrap break-words text-[#24364D]">
+              {log.message}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -106,7 +161,11 @@ export function AdminTaskLogDialog({
               disabled={!renderedLogs}
               className="border-[#D0D8E2] text-[#35537A]"
             >
-              {copied ? "已复制" : "复制日志"}
+              {copyState === "copied"
+                ? "已复制"
+                : copyState === "failed"
+                  ? "复制失败"
+                  : "复制日志"}
             </Button>
           </div>
         </DialogHeader>
@@ -120,29 +179,27 @@ export function AdminTaskLogDialog({
             <div className="rounded-lg border border-dashed border-[#D9E2EC] bg-[#F8FAFC] px-4 py-6 text-center text-[#94A3B8]">
               暂无可查看的任务日志
             </div>
-          ) : (
-            <div className="space-y-2">
-              {logs.map((log, index) => (
-                <div
-                  key={`${log.stream}-${index}-${log.message}`}
-                  className="flex items-start gap-3 rounded-lg border border-[#EEF2F6] bg-[#FBFCFE] px-3 py-2"
-                >
-                  <span
-                    className={cn(
-                      "mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold",
-                      log.stream === "stdout" && "bg-blue-50 text-blue-700",
-                      log.stream === "stderr" && "bg-rose-50 text-rose-700",
-                      log.stream === "system" && "bg-slate-100 text-slate-600",
-                    )}
-                  >
-                    {streamText(log.stream)}
-                  </span>
-                  <span className="min-w-0 whitespace-pre-wrap break-words text-[#24364D]">
-                    {log.message}
-                  </span>
-                </div>
-              ))}
+          ) : hasCollectionLanes ? (
+            <div className="space-y-5">
+              <div className="grid gap-4 lg:grid-cols-2">
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold text-[#35537A]">金采网进度</h3>
+                  {renderLogList(logGroups.jincai)}
+                </section>
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold text-[#35537A]">官网直采进度</h3>
+                  {renderLogList(logGroups.direct)}
+                </section>
+              </div>
+              {logGroups.common.length > 0 && (
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold text-[#35537A]">后续处理日志</h3>
+                  {renderLogList(logGroups.common)}
+                </section>
+              )}
             </div>
+          ) : (
+            renderLogList(logs)
           )}
         </div>
       </DialogContent>
