@@ -1,4 +1,4 @@
-# 世纪证券招采情报平台前端
+# 世纪证券业务信息平台前端
 
 Next.js 16、React 19、TypeScript 与 Tailwind CSS 4 构建的单页看板。开发阶段使用 Next dev；生产阶段输出静态文件，由 FastAPI 同端口托管。
 

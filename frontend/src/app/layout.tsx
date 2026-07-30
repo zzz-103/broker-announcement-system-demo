@@ -3,8 +3,8 @@ import { DeploymentVersionGuard } from '@/components/deployment-version-guard';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: '世纪证券招采情报平台',
-  description: '洞察同行建设方向、公开招采动态、供应商及价格信息',
+  title: '世纪证券业务信息平台',
+  description: '聚合公开招采动态、券商 App 更新及相关业务信息',
   other: {
     google: 'notranslate',
   },

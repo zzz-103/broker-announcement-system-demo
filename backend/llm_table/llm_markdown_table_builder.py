@@ -624,6 +624,55 @@ def build_existing_sha1_map(rows: list[dict[str, Any]]) -> dict[tuple[str, str],
     return sha1_map
 
 
+def migrate_legacy_file_keys(
+    existing_rows: list[dict[str, Any]],
+    files: list[Path],
+) -> tuple[list[dict[str, Any]], int]:
+    """Map legacy flat ``notices`` rows onto the current broker directories.
+
+    Source selection now stores files below ``notices/<broker_key>``. Older
+    output rows used ``broker_folder=notices``, so comparing the parent folder
+    directly made every unchanged document look new. A unique filename is
+    sufficient to migrate; when names collide, the content hash must identify
+    exactly one current file.
+    """
+
+    candidates_by_name: dict[str, list[tuple[tuple[str, str], str]]] = {}
+    current_keys: set[tuple[str, str]] = set()
+    for path in files:
+        file_key = path_file_key(path)
+        current_keys.add(file_key)
+        markdown = normalized_markdown_body(read_markdown_text(path))
+        candidates_by_name.setdefault(path.name, []).append(
+            (file_key, sha1_text(markdown))
+        )
+
+    migrated_rows: list[dict[str, Any]] = []
+    migrated_count = 0
+    for row in existing_rows:
+        migrated_row = dict(row)
+        old_key = row_file_key(row)
+        if old_key not in current_keys:
+            candidates = candidates_by_name.get(old_key[1], [])
+            target: tuple[str, str] | None = None
+            if len(candidates) == 1:
+                target = candidates[0][0]
+            elif candidates:
+                document_sha1 = normalize_scalar(row.get("document_sha1"))
+                matching = [
+                    file_key
+                    for file_key, current_sha1 in candidates
+                    if document_sha1 and document_sha1 == current_sha1
+                ]
+                if len(matching) == 1:
+                    target = matching[0]
+            if target is not None:
+                migrated_row["broker_folder"] = target[0]
+                migrated_count += 1
+        migrated_rows.append(migrated_row)
+    return migrated_rows, migrated_count
+
+
 def select_files_for_processing(
     files: list[Path],
     output_dir: Path,
@@ -631,6 +680,7 @@ def select_files_for_processing(
     overwrite: bool,
     table_fields: list[str] | None = None,
     output_stem: str = "announcement_table",
+    existing_rows: list[dict[str, Any]] | None = None,
 ) -> IncrementalSelectionResult:
     if not incremental:
         return IncrementalSelectionResult(
@@ -643,8 +693,12 @@ def select_files_for_processing(
             changed_files=[],
         )
 
-    existing_rows = load_existing_output_rows(output_dir, table_fields, output_stem)
-    existing_sha1_map = build_existing_sha1_map(existing_rows)
+    active_existing_rows = (
+        existing_rows
+        if existing_rows is not None
+        else load_existing_output_rows(output_dir, table_fields, output_stem)
+    )
+    existing_sha1_map = build_existing_sha1_map(active_existing_rows)
     plans: list[FileProcessingPlan] = []
     skipped_files: list[Path] = []
     new_files: list[Path] = []
@@ -1692,6 +1746,10 @@ def main() -> int:
     llm_config.validate()
 
     existing_rows = load_existing_output_rows(output_dir, runtime.table_fields, runtime.output_stem)
+    existing_rows, migrated_legacy_rows = migrate_legacy_file_keys(
+        existing_rows,
+        discovered_files,
+    )
     pruned_missing_rows = 0
     if args.prune_missing_files:
         current_file_keys = {path_file_key(path) for path in discovered_files}
@@ -1707,6 +1765,7 @@ def main() -> int:
         overwrite=args.overwrite,
         table_fields=runtime.table_fields,
         output_stem=runtime.output_stem,
+        existing_rows=existing_rows,
     )
     plans = selection.plans
     cache_reused_files = sum(
@@ -1743,10 +1802,11 @@ def main() -> int:
             "failed_files": 0,
             "output_rows": len(existing_rows),
             "pruned_missing_rows": pruned_missing_rows,
+            "migrated_legacy_rows": migrated_legacy_rows,
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "message": "未发现新增或变更的 Markdown，沿用现有结构化结果。",
         }
-        if pruned_missing_rows:
+        if pruned_missing_rows or migrated_legacy_rows:
             write_output_bundle(
                 existing_rows,
                 output_dir,
@@ -1932,6 +1992,7 @@ def main() -> int:
         "failed_files": len(failures),
         "output_rows": len(output_rows),
         "pruned_missing_rows": pruned_missing_rows,
+        "migrated_legacy_rows": migrated_legacy_rows,
         "failed_files_path": portable_path(failure_path),
         "finished_at": datetime.now(timezone.utc).isoformat(),
         "broker_summaries": broker_summaries,

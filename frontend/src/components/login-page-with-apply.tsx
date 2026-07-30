@@ -271,8 +271,8 @@ export function LoginPageWithApply() {
               <div className="leading-tight"><p className="text-lg font-semibold tracking-[0.12em] text-white">世纪证券</p><p className="mt-0.5 text-[10px] font-medium tracking-[0.18em] text-blue-100/80">CENTURY SECURITIES</p></div>
             </div>
             <div className="mt-10 max-w-[440px] md:mt-20">
-              <h1 className="text-[32px] font-bold leading-[1.25] tracking-tight text-white md:text-[46px]">世纪证券<br className="hidden md:block" />招采情报平台</h1>
-              <p className="mt-4 max-w-md text-sm leading-relaxed text-blue-100/85 md:text-base">聚合采购公告、智能结构化处理与情报分析</p>
+              <h1 className="text-[32px] font-bold leading-[1.25] tracking-tight text-white md:text-[46px]">世纪证券<br className="hidden md:block" />业务信息平台</h1>
+              <p className="mt-4 max-w-md text-sm leading-relaxed text-blue-100/85 md:text-base">聚合招采公告、券商 App 更新与业务动态分析</p>
             </div>
             <div className="mt-8 grid grid-cols-3 gap-2.5 md:mt-auto md:gap-5">
               {[

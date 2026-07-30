@@ -50,6 +50,10 @@ export function AdminTaskLogDialog({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const shouldStickRef = useRef(true);
+  const jincaiRef = useRef<HTMLDivElement | null>(null);
+  const directRef = useRef<HTMLDivElement | null>(null);
+  const commonRef = useRef<HTMLDivElement | null>(null);
+  const laneStickRef = useRef({ jincai: true, direct: true, common: true });
 
   const renderedLogs = useMemo(
     () => logs.map((log) => `[${streamText(log.stream)}] ${log.message}`).join("\n"),
@@ -83,15 +87,29 @@ export function AdminTaskLogDialog({
   useEffect(() => {
     if (!open) {
       shouldStickRef.current = true;
+      laneStickRef.current = { jincai: true, direct: true, common: true };
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open || !shouldStickRef.current) return;
-    const container = containerRef.current;
-    if (!container) return;
-    container.scrollTop = container.scrollHeight;
-  }, [logs, open]);
+    if (!open) return;
+    if (hasCollectionLanes) {
+      const lanes = [
+        ["jincai", jincaiRef.current],
+        ["direct", directRef.current],
+        ["common", commonRef.current],
+      ] as const;
+      for (const [lane, container] of lanes) {
+        if (container && laneStickRef.current[lane]) {
+          container.scrollTop = container.scrollHeight;
+        }
+      }
+      return;
+    }
+    if (shouldStickRef.current && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+    }
+  }, [hasCollectionLanes, logs, open]);
 
   useEffect(() => {
     if (copyState === "idle") return;
@@ -105,6 +123,15 @@ export function AdminTaskLogDialog({
     const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
     shouldStickRef.current = distanceToBottom < 24;
   };
+
+  const handleLaneScroll =
+    (lane: keyof typeof laneStickRef.current) =>
+    (event: React.UIEvent<HTMLDivElement>) => {
+      const container = event.currentTarget;
+      const distanceToBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      laneStickRef.current[lane] = distanceToBottom < 24;
+    };
 
   const handleCopy = async () => {
     if (!renderedLogs) return;
@@ -181,20 +208,38 @@ export function AdminTaskLogDialog({
             </div>
           ) : hasCollectionLanes ? (
             <div className="space-y-5">
-              <div className="grid gap-4 lg:grid-cols-2">
-                <section>
-                  <h3 className="mb-2 text-xs font-semibold text-[#35537A]">金采网进度</h3>
-                  {renderLogList(logGroups.jincai)}
+              <div className="grid items-stretch gap-4 sm:grid-cols-2">
+                <section className="flex h-[42vh] min-h-[280px] flex-col overflow-hidden rounded-xl border border-[#D9E2EC] bg-white">
+                  <h3 className="border-b border-[#E4E9F0] bg-[#F8FAFC] px-4 py-2.5 text-xs font-semibold text-[#35537A]">金采网进度</h3>
+                  <div
+                    ref={jincaiRef}
+                    onScroll={handleLaneScroll("jincai")}
+                    className="min-h-0 flex-1 overflow-y-auto p-3"
+                  >
+                    {renderLogList(logGroups.jincai)}
+                  </div>
                 </section>
-                <section>
-                  <h3 className="mb-2 text-xs font-semibold text-[#35537A]">官网直采进度</h3>
-                  {renderLogList(logGroups.direct)}
+                <section className="flex h-[42vh] min-h-[280px] flex-col overflow-hidden rounded-xl border border-[#D9E2EC] bg-white">
+                  <h3 className="border-b border-[#E4E9F0] bg-[#F8FAFC] px-4 py-2.5 text-xs font-semibold text-[#35537A]">官网直采进度</h3>
+                  <div
+                    ref={directRef}
+                    onScroll={handleLaneScroll("direct")}
+                    className="min-h-0 flex-1 overflow-y-auto p-3"
+                  >
+                    {renderLogList(logGroups.direct)}
+                  </div>
                 </section>
               </div>
               {logGroups.common.length > 0 && (
-                <section>
-                  <h3 className="mb-2 text-xs font-semibold text-[#35537A]">后续处理日志</h3>
-                  {renderLogList(logGroups.common)}
+                <section className="overflow-hidden rounded-xl border border-[#D9E2EC] bg-white">
+                  <h3 className="border-b border-[#E4E9F0] bg-[#F8FAFC] px-4 py-2.5 text-xs font-semibold text-[#35537A]">后续处理日志</h3>
+                  <div
+                    ref={commonRef}
+                    onScroll={handleLaneScroll("common")}
+                    className="max-h-[22vh] overflow-y-auto p-3"
+                  >
+                    {renderLogList(logGroups.common)}
+                  </div>
                 </section>
               )}
             </div>

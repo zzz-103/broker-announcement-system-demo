@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import Image from "next/image";
-import { Download, Settings, LogOut, Sparkles, ArrowLeft, HelpCircle, MessageSquarePlus } from "lucide-react";
+import { Download, Settings, LogOut, ArrowLeft, HelpCircle, MessageSquarePlus } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate } from "@/lib/announcement-data";
 import { ModuleSwitcher, type ActiveModule } from "@/components/app-watch/module-switcher";
@@ -82,14 +82,14 @@ export function DashboardHeader({
           )}
           <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg sm:size-9" priority />
           <h1 className="min-w-0 text-[15px] font-bold leading-tight tracking-wide text-white sm:text-[18px]">
-            <span className="sm:hidden">世纪证券招采平台</span><span className="hidden sm:inline">世纪证券招采情报平台</span>
+            <span>世纪证券业务信息平台</span>
           </h1>
           <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] font-medium text-blue-100">
             v{APP_VERSION}
           </span>
         </div>
         <p className="mt-0.5 hidden truncate text-[11px] font-normal text-[#B7C6D9] sm:block sm:text-[12px]">
-          洞察招采趋势 · 追踪供应商动态 · 辅助科技采购决策
+          跟踪招采动态 · 监测券商 App 更新 · 辅助业务研判
         </p>
       </div>
 
