@@ -22,6 +22,9 @@
 | `ytzq` | 银泰证券 | 银泰掌易宝、掌如 e、银泰汇点期权 | api | `ytzq_software_api` |
 | `htzq` | 华泰证券 | 涨乐财富通 | http + OCR | `qq_app_detail_ocr` |
 | `citics` | 中信证券 | 中信证券 | http + OCR | `qq_app_detail_ocr` |
+| `csco_jinfan` | 世纪证券 | 前海金帆 | http + OCR | `qq_app_detail_ocr` |
+| `csco_linghang` | 世纪证券 | 前海领航 | http + OCR | `qq_app_detail_ocr` |
+| `csco_zhaocaimao` | 世纪证券 | 世纪招财猫 | http + OCR | `qq_app_detail_ocr` |
 
 完整来源定义见 `config/brokers.yaml`。
 

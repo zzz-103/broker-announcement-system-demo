@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
-from .collectors import CiticCollector, HuaxiCollector
+from .collectors import CenturyCollector, CiticCollector, HuaxiCollector
 from .config import DEFAULT_CONFIG_PATH, BrokerSourceConfig, load_configs
 from .selector import prepare_selected_sources
 
@@ -36,8 +36,9 @@ def make_collector(
     workers: int = 8,
     resume: bool = False,
     overwrite: bool = False,
-) -> CiticCollector | HuaxiCollector:
+) -> CenturyCollector | CiticCollector | HuaxiCollector:
     collectors = {
+        "century": CenturyCollector,
         "citic": CiticCollector,
         "huaxi": HuaxiCollector,
     }

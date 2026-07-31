@@ -218,3 +218,48 @@ brokers:
       screenshot_alt: 精彩截图-中信证券2026官方新版
       screenshot_limit: 1
       min_score: 0.5
+
+  - broker_code: csco_jinfan
+    broker_name: 世纪证券
+    app_name: 前海金帆
+    source_url: https://sj.qq.com/appdetail/com.zztzt.sjscgen
+    source_type: http
+    parser: qq_app_detail_ocr
+    enabled: true
+    parser_options:
+      section_headings:
+        - 简介
+        - 详细信息
+      screenshot_alt: 精彩截图-前海金帆2026官方新版
+      screenshot_limit: 5
+      min_score: 0.5
+
+  - broker_code: csco_linghang
+    broker_name: 世纪证券
+    app_name: 前海领航
+    source_url: https://sj.qq.com/appdetail/com.tdx.AndroidtdxSJZQ
+    source_type: http
+    parser: qq_app_detail_ocr
+    enabled: true
+    parser_options:
+      section_headings:
+        - 简介
+        - 详细信息
+      screenshot_alt: 精彩截图-前海领航2026官方新版
+      screenshot_limit: 5
+      min_score: 0.5
+
+  - broker_code: csco_zhaocaimao
+    broker_name: 世纪证券
+    app_name: 世纪招财猫
+    source_url: https://sj.qq.com/appdetail/com.csco.thsapp
+    source_type: http
+    parser: qq_app_detail_ocr
+    enabled: true
+    parser_options:
+      section_headings:
+        - 简介
+        - 详细信息
+      screenshot_alt: 精彩截图-世纪招财猫2026官方新版
+      screenshot_limit: 5
+      min_score: 0.5

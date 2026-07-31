@@ -33,6 +33,24 @@
         "func_no": "741000",
         "catalog_id": "15"
       }
+    },
+    {
+      "key": "century_securities",
+      "broker_name": "世纪证券",
+      "collector": "century",
+      "enabled": true,
+      "pages": 2,
+      "page_size": 10,
+      "min_content_chars": 80,
+      "min_detail_success_ratio": 0.8,
+      "aliases": ["世纪证券有限责任公司", "世纪证券"],
+      "settings": {
+        "base_url": "https://www.csco.com.cn",
+        "list_page_url": "https://www.csco.com.cn/PurchasingReport.shtml",
+        "api_url": "https://www.csco.com.cn/Handler/ContentHandler.aspx",
+        "api_method": "POST",
+        "column_id": "844"
+      }
     }
   ]
 }

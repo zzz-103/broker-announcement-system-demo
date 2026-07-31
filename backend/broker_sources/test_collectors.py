@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from backend.broker_sources.collectors.century import CenturyCollector
 from backend.broker_sources.collectors.citic import CiticCollector
 from backend.broker_sources.collectors.huaxi import HuaxiCollector
 from backend.broker_sources.http_client import (
@@ -12,6 +13,42 @@ from backend.broker_sources.http_client import (
 
 
 class CollectorParserTests(unittest.TestCase):
+    def test_century_parses_xhr_items_and_separates_notice_types(self) -> None:
+        payload = {
+            "status": True,
+            "data": {
+                "TotalPages": 62,
+                "Items": [
+                    {
+                        "Whir_U_ContentNew_PID": 61088,
+                        "Title": "世纪证券合规风控系统一期项目维护费项目采购中选公示",
+                        "Content": "<p>中选单位：上海金仕达软件科技股份有限公司</p>",
+                        "Timesamp": 1784851200000,
+                    },
+                    {
+                        "Whir_U_ContentNew_PID": 61062,
+                        "Title": "世纪证券总部大楼职场办公家具利旧搬迁及新增项目招标公告",
+                        "Content": "<p>项目最高限价：162万元</p>",
+                        "Timesamp": 1784678400000,
+                    },
+                ],
+            },
+        }
+
+        records, total_pages = CenturyCollector.parse_list(
+            payload,
+            "https://www.csco.com.cn/PurchasingReport.shtml",
+        )
+
+        self.assertEqual(total_pages, 62)
+        self.assertEqual([item["notice_type"] for item in records], ["result", "procurement"])
+        self.assertEqual(records[0]["publish_date"], "2026-07-24")
+        self.assertEqual(
+            records[0]["detail_url"],
+            "https://www.csco.com.cn/PurchasingReport.shtml#notice-61088",
+        )
+        self.assertIn("上海金仕达", records[0]["content_text"])
+
     def test_legacy_tls_is_enabled_only_when_requested(self) -> None:
         default_session = create_session()
         legacy_session = create_session(allow_legacy_server_connect=True)

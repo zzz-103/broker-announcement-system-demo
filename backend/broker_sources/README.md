@@ -26,6 +26,7 @@
 ```bash
 python -m backend.broker_sources.cli collect --broker citic_securities
 python -m backend.broker_sources.cli collect --broker huaxi_securities
+python -m backend.broker_sources.cli collect --broker century_securities
 python -m backend.broker_sources.cli prepare
 ```
 
@@ -45,6 +46,11 @@ python -m backend.broker_sources.cli prepare
   JSON 的 `url` 字段，正文读取 `.article_cont`。无需浏览器自动化。
   Windows/OpenSSL 会为华西会话单独启用旧式服务端 TLS 重协商兼容；
   其他采集器仍使用默认 TLS 策略。
+- 世纪证券：采购公告页直接调用真实 XHR 接口
+  `POST https://www.csco.com.cn/Handler/ContentHandler.aspx`，参数为
+  `action=GetColumnInfo`、`Column=844`、`Page`。接口在同一列表返回完整正文，
+  采集器按标题和正文将“招标公告”写入 `procurement`，将“中标/中选公示”
+  写入 `result`，再进入现有来源选择与匹配流程，无需浏览器自动化。
 
 ## 可选环境变量
 
