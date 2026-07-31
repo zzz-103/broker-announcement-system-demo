@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from backend.matching import project_matcher
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = ROOT_DIR.parent
 DEFAULT_PROCUREMENT_CSV = ROOT_DIR / "data" / "staging" / "announcement_table.csv"
 DEFAULT_RESULT_CSV = ROOT_DIR / "data" / "staging" / "result" / "result_table.csv"
 DEFAULT_VERIFIED_LINKS_CSV = ROOT_DIR / "data" / "staging" / "llm_matching" / "llm_verified_links.csv"
@@ -252,10 +254,116 @@ def exclusion_row(link: dict[str, str], result_row: dict[str, str] | None, reaso
     }
 
 
+STANDALONE_NON_FINTECH_PHRASES = (
+    "工程装修",
+    "物业",
+    "保洁",
+    "法律服务",
+    "审计服务",
+    "办公用品",
+    "员工活动",
+    "餐饮",
+    "车辆",
+    "驾驶",
+    "印刷",
+    "广告制作",
+)
+STANDALONE_SYSTEM_OBJECT_PHRASES = (
+    "系统",
+    "平台",
+    "软件",
+    "应用",
+    "数据库",
+    "接口",
+    "引擎",
+    "网关",
+    "终端",
+    "内核",
+    "数据",
+)
+STANDALONE_DOMAIN_RULES = (
+    ("网络安全与监管科技", ("风控", "风险管理", "合规", "反洗钱", "监管")),
+    ("投研资讯与金融数据", ("行情", "金融数据", "资讯", "研报", "投研")),
+    ("交易、柜台与核心系统", ("交易", "柜台", "清算", "结算", "估值", "订单")),
+    ("投行与资本市场", ("投行", "资本市场", "质控")),
+)
+
+
+def _standalone_result_text(result_row: dict[str, str]) -> tuple[str, str]:
+    """Return title and, when available, the selected result Markdown text."""
+    title = normalize_text(result_row.get("project_name") or result_row.get("title"))
+    markdown_name = Path(normalize_text(result_row.get("markdown_file"))).name
+    if not markdown_name:
+        return title, title
+
+    configured_root = os.getenv("LLM_RESULT_INPUT_DIR")
+    roots = [
+        Path(configured_root) if configured_root else PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "selected" / "result" / "notices",
+        PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices",
+    ]
+    broker_folder = normalize_text(result_row.get("broker_folder"))
+    for root in roots:
+        if not root.is_absolute():
+            root = PROJECT_ROOT / root
+        root = root.resolve()
+        candidate = (root / broker_folder / markdown_name).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            continue
+        try:
+            body = candidate.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        return title, f"{title}\n{body[:200_000]}"
+    return title, title
+
+
+def standalone_result_classification(result_row: dict[str, str]) -> dict[str, str]:
+    """Derive existing classification fields for an unlinked result notice.
+
+    Result notices have a deliberately smaller extraction schema. This conservative
+    fallback only fills fields when the title itself identifies both a financial
+    business context and a system/software/data object.
+    """
+    title, context = _standalone_result_text(result_row)
+    text = context.casefold()
+    if not title or any(phrase in text for phrase in STANDALONE_NON_FINTECH_PHRASES):
+        return {}
+
+    domain = next(
+        (
+            candidate_domain
+            for candidate_domain, phrases in STANDALONE_DOMAIN_RULES
+            if any(phrase.casefold() in text for phrase in phrases)
+        ),
+        "",
+    )
+    has_system_object = any(phrase.casefold() in text for phrase in STANDALONE_SYSTEM_OBJECT_PHRASES)
+    if not domain or not has_system_object:
+        return {}
+
+    action = ""
+    if re.search(r"续签|续约|续订|延续", title):
+        action = "续采续约"
+    elif re.search(r"升级|改造|适配|优化", title):
+        action = "升级改造"
+    elif "扩容" in title:
+        action = "扩容"
+    elif re.search(r"维保|维护|运维", title):
+        action = "维保"
+
+    return {
+        "procurement_category": "IT软硬件",
+        "project_subcategory": "业务系统与软件",
+        "procurement_action": action,
+        "procurement_scope_summary": title,
+    }
+
+
 def standalone_result_row(result_row: dict[str, str], result_notice_id: str) -> dict[str, str]:
     """Convert an unlinked result notice into a publishable dashboard row."""
     result_title = normalize_text(result_row.get("title"))
     winning_amount = normalize_text(result_row.get("winning_amount"))
+    classification = standalone_result_classification(result_row)
     return {
         "broker_folder": normalize_text(result_row.get("broker_folder")),
         "markdown_file": normalize_text(result_row.get("markdown_file")),
@@ -266,12 +374,12 @@ def standalone_result_row(result_row: dict[str, str], result_notice_id: str) -> 
         "is_broker_project": normalize_text(result_row.get("is_broker_project")) or "true",
         "publish_date": normalize_text(result_row.get("publish_date")),
         "announcement_stage": "结果公示",
-        "procurement_category": "",
-        "project_subcategory": "",
+        "procurement_category": classification.get("procurement_category", ""),
+        "project_subcategory": classification.get("project_subcategory", ""),
         "project_name": normalize_text(result_row.get("project_name")) or result_title,
         "procurement_method": "",
-        "procurement_action": "",
-        "procurement_scope_summary": "",
+        "procurement_action": classification.get("procurement_action", ""),
+        "procurement_scope_summary": classification.get("procurement_scope_summary", ""),
         "budget_amount_yuan": "",
         "ceiling_price_yuan": "",
         "winning_amount_yuan": winning_amount,

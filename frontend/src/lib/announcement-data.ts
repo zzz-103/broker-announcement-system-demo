@@ -19,6 +19,8 @@ interface RawCsvRow {
   project_subcategory?: string;
   project_name?: string;
   procurement_method?: string;
+  procurement_action?: string;
+  procurement_scope_summary?: string;
   budget_amount_yuan?: string;
   winning_supplier?: string;
   winning_amount_yuan?: string;
@@ -90,7 +92,7 @@ export interface LoadedAnnouncementData {
 }
 
 // ─── Domain classification ───
-const DOMAIN_RULES: { domain: string; keywords: string[] }[] = [
+const DOMAIN_RULES: { domain: string; keywords: string[]; requiresSystemContext?: boolean }[] = [
   {
     domain: "AI与智能化",
     keywords: [
@@ -133,7 +135,7 @@ const DOMAIN_RULES: { domain: string; keywords: string[] }[] = [
     keywords: [
       "信息安全", "网络安全", "数据安全", "防火墙", "态势感知", "漏洞",
       "渗透测试", "终端安全", "反洗钱", "监管报送", "风险管理", "合规管理",
-      "灾备", "容灾",
+      "风控", "灾备", "容灾",
     ],
   },
   {
@@ -154,14 +156,24 @@ const DOMAIN_RULES: { domain: string; keywords: string[] }[] = [
   {
     domain: "投研资讯与金融数据",
     keywords: [
-      "Wind", "同花顺", "金融数据", "行情数据", "资讯服务", "研报",
+      "Wind", "同花顺", "金融数据", "行情数据", "行情系统", "期货行情", "资讯服务", "研报",
       "投研数据", "舆情", "数据终端", "资讯终端",
     ],
   },
+  {
+    domain: "投行与资本市场",
+    keywords: ["投行", "资本市场", "质控", "承销", "保荐"],
+    requiresSystemContext: true,
+  },
+];
+
+const SYSTEM_OBJECT_KEYWORDS = [
+  "系统", "平台", "软件", "应用", "数据库", "接口", "引擎", "网关",
+  "终端", "内核", "模块",
 ];
 
 const NON_FINTECH_KEYWORDS = [
-  "工程装修", "物业", "办公用品", "员工活动", "租赁", "法律服务",
+  "工程装修", "物业", "办公用品", "员工活动", "法律服务",
   "审计服务", "行政采购", "装修", "保洁", "安保", "餐饮", "车辆",
   "驾驶", "印刷", "广告制作",
 ];
@@ -250,9 +262,11 @@ function parsePositiveAmount(raw: string | undefined): number | null {
 function classifyDomain(
   projectName: string,
   subcategory: string,
-  category: string
+  category: string,
+  scopeSummary = ""
 ): { primaryDomain: string; isFinTech: boolean } {
-  const text = `${projectName} ${subcategory} ${category}`;
+  const text = `${projectName} ${subcategory} ${category} ${scopeSummary}`;
+  const hasSystemContext = SYSTEM_OBJECT_KEYWORDS.some((kw) => text.includes(kw));
 
   // Check non-fintech first for category-based items
   for (const kw of NON_FINTECH_KEYWORDS) {
@@ -263,7 +277,7 @@ function classifyDomain(
 
   for (const rule of DOMAIN_RULES) {
     for (const kw of rule.keywords) {
-      if (text.includes(kw)) {
+      if (text.includes(kw) && (!rule.requiresSystemContext || hasSystemContext)) {
         return { primaryDomain: rule.domain, isFinTech: true };
       }
     }
@@ -354,10 +368,12 @@ export function processRecords(rawRows: RawCsvRow[]): ProcessedRecord[] {
 
     const subcategory = row.project_subcategory?.trim() ?? "";
     const category = row.procurement_category?.trim() ?? "";
+    const scopeSummary = row.procurement_scope_summary?.trim() ?? "";
     const { primaryDomain, isFinTech } = classifyDomain(
       projectNameRaw,
       subcategory,
-      category
+      category,
+      scopeSummary
     );
     const topicTags = generateTags(projectNameRaw, subcategory);
     const sourceName = (row.source ?? row.data_source ?? "").trim();

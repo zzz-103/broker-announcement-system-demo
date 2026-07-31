@@ -139,6 +139,26 @@ def _non_empty_rows(rows: Iterable[dict[str, str]]) -> list[dict[str, str]]:
     return [row for row in rows if any(str(value or "").strip() for value in row.values())]
 
 
+def _normalize_legacy_business_system_fields(row: dict[str, str]) -> None:
+    """Keep legacy finance-system labels compatible with the current IT taxonomy."""
+    category = str(row.get("procurement_category") or "").strip()
+    subcategory = str(row.get("project_subcategory") or "").strip()
+    text = " ".join(
+        str(row.get(field) or "").strip()
+        for field in ("project_name", "procurement_scope_summary", "project_subcategory")
+    )
+    has_business_context = any(term in text for term in ("投行", "资本市场", "质控", "风控"))
+    has_system_object = any(term in text for term in ("系统", "平台", "软件", "内核", "数据库", "接口"))
+    if (
+        category == "专业及金融服务"
+        and subcategory == "投行与资本市场"
+        and has_business_context
+        and has_system_object
+    ):
+        row["procurement_category"] = "IT软硬件"
+        row["project_subcategory"] = "业务系统与软件"
+
+
 def _canonicalize_rows(
     path: Path,
     *,
@@ -173,6 +193,7 @@ def _canonicalize_rows(
             if classification not in {"true", "false"}:
                 raise SupplementalDataError(f"{source_label} CSV contains an invalid is_broker_project value")
             normalized_row["is_broker_project"] = classification
+        _normalize_legacy_business_system_fields(normalized_row)
         canonical_rows.append(normalized_row)
         source_rows.append({key: str(value or "") for key, value in row.items() if key})
 

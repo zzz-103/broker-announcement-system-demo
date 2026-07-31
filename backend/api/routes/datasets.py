@@ -42,6 +42,8 @@ DASHBOARD_ANNOUNCEMENT_FIELDS = (
     "project_subcategory",
     "project_name",
     "procurement_method",
+    "procurement_action",
+    "procurement_scope_summary",
     "budget_amount_yuan",
     "winning_amount_yuan",
     "winning_supplier",
