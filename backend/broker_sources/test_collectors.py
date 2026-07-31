@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from backend.broker_sources.collectors.base import OfficialCollector, safe_filename
+from backend.broker_sources.config import BrokerSourceConfig
 from backend.broker_sources.collectors.century import CenturyCollector
 from backend.broker_sources.collectors.citic import CiticCollector
 from backend.broker_sources.collectors.huaxi import HuaxiCollector
@@ -10,9 +17,95 @@ from backend.broker_sources.http_client import (
     LegacyServerConnectAdapter,
     create_session,
 )
+from backend.broker_sources.models import StandardNotice
+
+
+def collector_config() -> BrokerSourceConfig:
+    return BrokerSourceConfig(
+        key="huaxi_securities",
+        broker_name="华西证券",
+        collector="huaxi",
+        enabled=True,
+        pages=100,
+        page_size=10,
+        min_content_chars=1,
+        min_detail_success_ratio=0.8,
+        aliases=(),
+        settings={
+            "base_url": "https://example.com",
+            "list_page_url": "https://example.com/list",
+            "api_url": "https://example.com/api",
+            "func_no": "741000",
+            "catalog_id": "15",
+        },
+    )
+
+
+class _DummyCollector(OfficialCollector):
+    def collect_notices(self) -> list[StandardNotice]:
+        return []
 
 
 class CollectorParserTests(unittest.TestCase):
+    def test_incremental_probe_stops_after_two_existing_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            collector = _DummyCollector(collector_config(), Path(directory), Path(directory))
+            self.assertFalse(collector._should_stop_after_list_page(False))
+            self.assertTrue(collector._should_stop_after_list_page(False))
+            self.assertEqual(collector.stop_reason, "前两页均为已下载数据")
+
+    def test_incremental_probe_allows_two_extra_pages_when_first_two_are_new(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            collector = _DummyCollector(collector_config(), Path(directory), Path(directory))
+            self.assertFalse(collector._should_stop_after_list_page(True))
+            self.assertFalse(collector._should_stop_after_list_page(True))
+            self.assertFalse(collector._should_stop_after_list_page(True))
+            self.assertTrue(collector._should_stop_after_list_page(True))
+            self.assertEqual(collector.scanned_pages, 0)
+
+    def test_bounded_probe_preserves_previous_downloaded_notices(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old_run = root / "runs" / "old" / "notices"
+            old_run.mkdir(parents=True)
+            notice = StandardNotice(
+                broker_key="huaxi_securities",
+                broker_name="华西证券",
+                source_kind="official",
+                source_name="券商官网",
+                notice_id="1",
+                notice_type="procurement",
+                title="旧公告",
+                publish_date="2026-07-01",
+                source_url="https://example.com/1",
+                collected_at="2026-07-01T00:00:00+00:00",
+                collection_status="success",
+                content_text="公告正文足够长",
+            )
+            old_file = old_run / safe_filename(notice)
+            old_file.write_text("旧公告正文", encoding="utf-8")
+            checkpoint_dir = root / "checkpoints"
+            checkpoint_dir.mkdir()
+            (checkpoint_dir / "huaxi_securities.json").write_text(
+                json.dumps(
+                    {
+                        "notices": [
+                            {
+                                "source_url": notice.source_url,
+                                "notice": notice.to_dict(),
+                                "markdown_path": old_file.as_posix(),
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            collector = _DummyCollector(collector_config(), root, root)
+            preserved = collector._preserve_previous_notices([])
+            self.assertEqual([item.source_url for item in preserved], [notice.source_url])
+            self.assertTrue((collector.notices_dir / old_file.name).exists())
+
     def test_century_parses_xhr_items_and_separates_notice_types(self) -> None:
         payload = {
             "status": True,

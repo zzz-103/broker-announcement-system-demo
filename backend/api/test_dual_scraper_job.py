@@ -3,12 +3,26 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+import os
 from unittest.mock import patch
 
 from backend.api.job_manager import JobManager
+from backend.api.job_commands import PROJECT_ROOT
 
 
 class DualScraperJobTests(unittest.TestCase):
+    def test_legacy_result_input_env_is_migrated_to_selected_directory(self) -> None:
+        manager = JobManager()
+        legacy_path = str(PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices")
+        with patch.dict(os.environ, {"LLM_RESULT_INPUT_DIR": legacy_path}):
+            command, _working_dir, _env = manager._build_llm_command(notice_type="result")
+        input_index = command.index("--input-dir") + 1
+        self.assertTrue(
+            command[input_index]
+            .replace("\\", "/")
+            .endswith("output/selected/result/notices")
+        )
+
     def test_llm_matcher_receives_selected_markdown_directories(self) -> None:
         manager = JobManager()
         command, _working_dir, _env = manager._build_llm_matching_command()

@@ -99,6 +99,11 @@ class OfficialCollector(ABC):
         self.started_at = utc_now()
         self.checkpoint_path = output_root / "checkpoints" / f"{config.key}.json"
         self.previous_checkpoint = self._load_checkpoint()
+        self.previous_checkpoint_entries: dict[str, dict[str, Any]] = {
+            str(item.get("source_url")): item
+            for item in self.previous_checkpoint.get("notices", [])
+            if isinstance(item, dict) and item.get("source_url")
+        }
         self.resumed = bool(
             resume
             and self.previous_checkpoint
@@ -124,11 +129,11 @@ class OfficialCollector(ABC):
         self.new_count = 0
         self.stop_reason = ""
         self.current_notices: list[StandardNotice] = []
-        self.checkpoint_entries: dict[str, dict[str, Any]] = {
-            str(item.get("source_url")): item
-            for item in self.previous_checkpoint.get("notices", [])
-            if isinstance(item, dict) and item.get("source_url")
-        }
+        self.checkpoint_entries: dict[str, dict[str, Any]] = dict(
+            self.previous_checkpoint_entries
+        )
+        self._page_new_flags: list[bool] = []
+        self._incremental_probe_enabled = not overwrite and not self.resumed
         self.start_page = 1
         if self.resumed:
             self.start_page = max(
@@ -196,6 +201,65 @@ class OfficialCollector(ABC):
             "markdown_path": portable_path(target, self.project_root),
         }
 
+    def _should_stop_after_list_page(self, page_has_new_notice: bool) -> bool:
+        """Limit list-page requests while retaining the downloaded history.
+
+        The first two pages are the duplicate probe.  If both pages contain
+        only notices that were already downloaded, the collector stops there.
+        If both pages contain new notices, it probes two additional pages and
+        then stops; this avoids walking a long archive on every incremental
+        run while still covering a burst of new notices.
+        """
+
+        if not self._incremental_probe_enabled:
+            return False
+
+        self._page_new_flags.append(page_has_new_notice)
+        page_count = len(self._page_new_flags)
+        if page_count < 2:
+            return False
+        first_two = self._page_new_flags[:2]
+        if page_count == 2:
+            if not any(first_two):
+                self.stop_reason = "前两页均为已下载数据"
+                return True
+            if not all(first_two):
+                self.stop_reason = "前两页重复检查完成"
+                return True
+            return False
+        if all(first_two) and page_count >= 4:
+            self.stop_reason = "前两页均为新数据，追加比对两页后停止"
+            return True
+        return False
+
+    def _preserve_previous_notices(
+        self, notices: list[StandardNotice]
+    ) -> list[StandardNotice]:
+        """Copy previously downloaded notices omitted by the bounded probe."""
+
+        if self.overwrite or not self.previous_checkpoint_entries:
+            return notices
+
+        result = list(notices)
+        current_urls = {notice.source_url for notice in result}
+        for source_url in self.previous_checkpoint_entries:
+            if source_url in current_urls:
+                continue
+            entry = self.previous_checkpoint_entries[source_url]
+            payload = entry.get("notice")
+            if not isinstance(payload, dict):
+                continue
+            publish_date = str(payload.get("publish_date") or "")
+            if self.since_date and publish_date and publish_date < self.since_date.isoformat():
+                continue
+            reused = self._reuse_notice(source_url)
+            if reused is None:
+                continue
+            result.append(reused)
+            current_urls.add(source_url)
+            self.skipped_count += 1
+        return result
+
     def collect_details(
         self,
         records: list[dict[str, str]],
@@ -256,6 +320,9 @@ class OfficialCollector(ABC):
             notices = self.collect_notices()
         except Exception as exc:  # noqa: BLE001 - failure must create a fallback manifest.
             self.errors.append(f"{exc.__class__.__name__}: {exc}")
+
+        notices = self._preserve_previous_notices(notices)
+        self.current_notices = notices
 
         valid = [
             notice

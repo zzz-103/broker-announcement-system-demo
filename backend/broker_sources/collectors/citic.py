@@ -82,6 +82,7 @@ class CiticCollector(OfficialCollector):
                 continue
             self.successful_pages += 1
             before_since_date = False
+            page_has_new_notice = False
             for record in page_records:
                 if self.since_date and record["publish_date"] < self.since_date.isoformat():
                     before_since_date = True
@@ -90,6 +91,10 @@ class CiticCollector(OfficialCollector):
                     self.skipped_count += 1
                     continue
                 seen_urls.add(record["detail_url"])
+                page_has_new_notice = (
+                    page_has_new_notice
+                    or record["detail_url"] not in self.previous_checkpoint_entries
+                )
                 record["raw_list_path"] = portable_path(raw_path, self.project_root)
                 records.append(record)
             print(
@@ -101,6 +106,8 @@ class CiticCollector(OfficialCollector):
             self._write_checkpoint()
             if before_since_date:
                 self.stop_reason = "达到日期下限"
+                break
+            if self._should_stop_after_list_page(page_has_new_notice):
                 break
         if not self.stop_reason:
             self.stop_reason = "达到最大页数"

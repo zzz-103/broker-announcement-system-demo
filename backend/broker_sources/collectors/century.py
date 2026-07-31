@@ -129,6 +129,7 @@ class CenturyCollector(OfficialCollector):
 
             self.successful_pages += 1
             before_since_date = False
+            page_has_new_notice = False
             raw_portable_path = portable_path(raw_path, self.project_root)
             for record in page_records:
                 if self.since_date and record["publish_date"] < self.since_date.isoformat():
@@ -138,6 +139,10 @@ class CenturyCollector(OfficialCollector):
                     self.skipped_count += 1
                     continue
                 seen_urls.add(record["detail_url"])
+                page_has_new_notice = (
+                    page_has_new_notice
+                    or record["detail_url"] not in self.previous_checkpoint_entries
+                )
                 reused = self._reuse_notice(record["detail_url"])
                 if reused is not None:
                     self.current_notices.append(reused)
@@ -173,6 +178,8 @@ class CenturyCollector(OfficialCollector):
             self._write_checkpoint()
             if before_since_date:
                 self.stop_reason = "达到日期下限"
+                break
+            if self._should_stop_after_list_page(page_has_new_notice):
                 break
             if total_pages and page_number >= total_pages:
                 self.stop_reason = "达到接口总页数"

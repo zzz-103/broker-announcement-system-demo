@@ -274,6 +274,19 @@ class JobCommandFactory:
             else scraper_output / "selected" / "procurement" / "notices"
         )
         input_dir = resolve_project_path(input_env, input_default)
+        # Older production .env files pointed the result LLM at the former
+        # flat output/result/notices directory.  Once source selection is in
+        # use, that directory is stale and omits the current direct-source
+        # result notices.  Prefer the canonical selected directory only for
+        # this exact legacy default; custom configured input directories remain
+        # respected.
+        legacy_default = (
+            scraper_output / "result" / "notices"
+            if notice_type == "result"
+            else scraper_output / "notices"
+        ).resolve()
+        if not external and input_dir == legacy_default and input_default.exists():
+            input_dir = input_default.resolve()
         output_dir = resolve_project_path(
             os.getenv("LLM_RESULT_OUTPUT_DIR")
             if notice_type == "result"
