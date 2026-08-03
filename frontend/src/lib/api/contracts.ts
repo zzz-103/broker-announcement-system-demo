@@ -1,3 +1,23 @@
+import type {
+  AppUpdateData,
+  DashboardAiAnalysis,
+  DashboardDatasetKey,
+  DashboardFilters,
+  DashboardManifest,
+  DashboardOverview,
+  TenderProjectData,
+} from "@dashboard-data/contracts";
+
+export type {
+  AppUpdateData,
+  DashboardAiAnalysis,
+  DashboardDatasetKey,
+  DashboardFilters,
+  DashboardManifest,
+  DashboardOverview,
+  TenderProjectData,
+};
+
 export type JobStatus = "idle" | "running" | "succeeded" | "failed" | "cancelled";
 export type JobType = "scraper" | "llm" | "pipeline" | "llm-external" | "app-watch";
 
@@ -42,6 +62,18 @@ export type JobEvent =
 export interface DatasetResponse {
   records: Record<string, string>[];
   meta: { count: number; updated_at: string | null };
+}
+
+export type DashboardDatasetResponse =
+  | DashboardOverview
+  | DashboardFilters
+  | TenderProjectData[]
+  | AppUpdateData[]
+  | DashboardAiAnalysis;
+export interface DashboardExportResponse {
+  message: string;
+  manifest: DashboardManifest;
+  download_url: string;
 }
 export type AnnouncementsResponse = DatasetResponse;
 export type AppReleasesResponse = DatasetResponse;

@@ -35,22 +35,36 @@ export function KeyProjectRadar({
   onSelectProject,
 }: KeyProjectRadarProps) {
   const projects = useMemo(() => {
-    // Deduplicate by projectKey
-    const seen = new Set<string>();
-    const unique = data.filter((r) => {
-      if (seen.has(r.projectKey)) return false;
-      seen.add(r.projectKey);
-      return true;
-    });
+    const updateTime = (record: ProcessedRecord) => {
+      const processed = new Date(record.processed_at).getTime();
+      return Number.isFinite(processed)
+        ? processed
+        : record.validPublishDate?.getTime() ?? 0;
+    };
+    const latestByProject = new Map<string, ProcessedRecord>();
+    for (const record of data) {
+      const current = latestByProject.get(record.projectKey);
+      if (!current || updateTime(record) > updateTime(current)) {
+        latestByProject.set(record.projectKey, record);
+      }
+    }
 
-    return unique
+    return [...latestByProject.values()]
       .map((r) => ({
         record: r,
         score: scoreProject(r, baseline),
         reason: getScoreReason(r),
       }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, 6);
+      .slice(0, 6)
+      .sort((a, b) => {
+        const updateDiff = updateTime(b.record) - updateTime(a.record);
+        if (updateDiff !== 0) return updateDiff;
+        return (
+          (b.record.validPublishDate?.getTime() ?? 0) -
+          (a.record.validPublishDate?.getTime() ?? 0)
+        );
+      });
   }, [data, baseline]);
 
   const getAccentColor = (stage: string, domain: string) => {
@@ -145,4 +159,3 @@ export function KeyProjectRadar({
     </div>
   );
 }
-

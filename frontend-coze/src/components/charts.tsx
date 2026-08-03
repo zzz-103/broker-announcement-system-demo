@@ -11,8 +11,7 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ProcessedRecord } from "@/lib/announcement-data";
-import { uniqueCount } from "@/lib/announcement-data";
-import { useFilterStore } from "@/store/filter-store";
+import { ANNOUNCEMENT_STAGES } from "@/lib/announcement-data";
 
 // Register only the components we use (tree-shaking)
 echarts.use([
@@ -41,7 +40,6 @@ function EmptyChartState() {
 export function ProcurementTrendChart({ data }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
-  const { setAnnouncementStage } = useFilterStore();
 
   const chartData = useMemo(() => {
     // Group by month
@@ -119,6 +117,14 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           type: "bar",
           data: chartData.projects,
           itemStyle: { color: "#2563EB", borderRadius: [3, 3, 0, 0] },
+          emphasis: {
+            focus: "series",
+            itemStyle: {
+              color: "#3B82F6",
+              shadowBlur: 10,
+              shadowColor: "rgba(37, 99, 235, 0.35)",
+            },
+          },
           barMaxWidth: 24,
         },
         {
@@ -129,6 +135,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           itemStyle: { color: "#0F9F8F" },
           symbol: "circle",
           symbolSize: 6,
+          emphasis: { focus: "series", scale: 1.7 },
         },
         {
           name: "公开金额样本",
@@ -138,6 +145,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           itemStyle: { color: "#F59E0B" },
           symbol: "circle",
           symbolSize: 6,
+          emphasis: { focus: "series", scale: 1.7 },
         },
       ],
     });
@@ -151,7 +159,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[14px] font-bold text-[#172033]">
           公开招采趋势
@@ -240,6 +248,13 @@ export function DomainDistributionChart({ data }: ChartsProps) {
             },
             borderRadius: [0, 4, 4, 0],
           },
+          emphasis: {
+            focus: "self",
+            itemStyle: {
+              shadowBlur: 10,
+              shadowColor: "rgba(37, 99, 235, 0.30)",
+            },
+          },
           barMaxWidth: 16,
           label: {
             show: true,
@@ -264,7 +279,7 @@ export function DomainDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         金融科技方向
       </h3>
@@ -283,18 +298,18 @@ export function StageDistributionChart({ data }: ChartsProps) {
   const chartData = useMemo(() => {
     const stageCounts: Record<string, number> = {};
     for (const r of data) {
-      const stage = r.announcement_stage || "待确认";
+      const stage = r.announcement_stage || "其他";
       stageCounts[stage] = (stageCounts[stage] || 0) + 1;
     }
     const colorMap: Record<string, string> = {
       采购招标: "#2563EB",
       结果公示: "#0F9F8F",
       流标废标: "#D64545",
-      待确认: "#98A2B3",
+      其他: "#98A2B3",
     };
-    return Object.entries(stageCounts).map(([name, value]) => ({
+    return ANNOUNCEMENT_STAGES.map((name) => ({
       name,
-      value,
+      value: stageCounts[name] || 0,
       itemStyle: { color: colorMap[name] || "#98A2B3" },
     }));
   }, [data]);
@@ -346,6 +361,15 @@ export function StageDistributionChart({ data }: ChartsProps) {
           center: ["29%", "50%"],
           avoidLabelOverlap: false,
           label: { show: false },
+          emphasis: {
+            focus: "self",
+            scale: true,
+            scaleSize: 7,
+            itemStyle: {
+              shadowBlur: 12,
+              shadowColor: "rgba(16, 40, 71, 0.24)",
+            },
+          },
           data: chartData,
         },
       ],
@@ -359,7 +383,7 @@ export function StageDistributionChart({ data }: ChartsProps) {
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4">
+    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         公告阶段
       </h3>
@@ -370,4 +394,3 @@ export function StageDistributionChart({ data }: ChartsProps) {
     </div>
   );
 }
-

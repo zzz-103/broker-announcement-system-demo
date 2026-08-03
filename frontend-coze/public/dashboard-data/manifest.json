@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0.0",
+  "minimum_reader_version": "1.0.0",
+  "package_version": "dashboard-e01db3e86d49bec6674f",
+  "generated_at": "2026-08-02T18:04:04.638079+00:00",
+  "source": "世纪证券业务信息平台标准化导出",
+  "timezone": "UTC",
+  "datasets": {
+    "overview": {
+      "file": "overview.json",
+      "record_count": 1,
+      "bytes": 321,
+      "sha256": "659da4118791ab9876d6d98af55c3b9726d97576192e64b00b6807d6e01bc707",
+      "available": true,
+      "reason": null,
+      "period": null
+    },
+    "filters": {
+      "file": "filters.json",
+      "record_count": 1,
+      "bytes": 2374,
+      "sha256": "d8013d8dc61e2dec62cc525cfdd13a9c84fd36e9cfcefec157bfd9c895ae40c2",
+      "available": true,
+      "reason": null,
+      "period": null
+    },
+    "tender_projects": {
+      "file": "tender_projects.json",
+      "record_count": 11291,
+      "bytes": 11712660,
+      "sha256": "8c3b5a57dd6dca71ffd5e7314bd6a9e0e6185fb03e274c20c4543c2989d37154",
+      "available": true,
+      "reason": null,
+      "period": {
+        "from": "2020-08-19",
+        "to": "2026-07-28"
+      }
+    },
+    "app_updates": {
+      "file": "app_updates.json",
+      "record_count": 20,
+      "bytes": 32059,
+      "sha256": "73478d433e89ac51ada78ca3a1c5a6cba9982856d516f2a58256ac02081c4b6b",
+      "available": true,
+      "reason": null,
+      "period": {
+        "from": "2022-06-14",
+        "to": "2026-07-14"
+      }
+    },
+    "ai_analysis": {
+      "file": "ai_analysis.json",
+      "record_count": 1,
+      "bytes": 3262,
+      "sha256": "d4dbae50b534db4713e168a0bebb9d970b8ddaad2cb629a95dfa818c8f1dfd07",
+      "available": true,
+      "reason": null,
+      "period": null
+    }
+  }
+}

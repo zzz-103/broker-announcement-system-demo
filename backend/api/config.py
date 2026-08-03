@@ -64,6 +64,20 @@ class Settings:
         )
 
     @property
+    def ai_analysis_cache_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("AI_ANALYSIS_CACHE_PATH"),
+            PROJECT_ROOT / "backend" / "data" / "ai-analysis.json",
+        )
+
+    @property
+    def dashboard_data_export_dir(self) -> Path:
+        return resolve_project_path(
+            os.getenv("DASHBOARD_DATA_EXPORT_DIR"),
+            PROJECT_ROOT / "backend" / "data" / "dashboard-data",
+        )
+
+    @property
     def merged_announcement_csv_path(self) -> Path:
         output_dir = resolve_project_path(
             os.getenv("MATCHING_MERGED_OUTPUT_DIR"),

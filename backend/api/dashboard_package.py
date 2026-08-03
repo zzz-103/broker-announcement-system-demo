@@ -1,0 +1,566 @@
+from __future__ import annotations
+
+"""Build and export the public dashboard data package.
+
+The package is the only data contract shared by the API dashboard and the
+standalone static dashboard.  Raw CSV files remain the crawler/LLM boundary;
+all display-oriented normalization happens here once.
+"""
+
+import csv
+import hashlib
+import io
+import json
+import os
+import re
+import threading
+import zipfile
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from .config import settings
+
+
+SCHEMA_VERSION = "1.0.0"
+READER_VERSION = "1.0.0"
+PACKAGE_FILES = {
+    "overview": "overview.json",
+    "filters": "filters.json",
+    "tender_projects": "tender_projects.json",
+    "app_updates": "app_updates.json",
+    "ai_analysis": "ai_analysis.json",
+}
+REQUIRED_KEYS = ("overview", "filters", "tender_projects", "app_updates", "ai_analysis")
+
+BROKER_ALIASES = {
+    "国泰海通": "国泰海通证券",
+    "国泰海通证券股份有限公司": "国泰海通证券",
+    "国泰君安": "国泰海通证券",
+    "国泰君安证券": "国泰海通证券",
+    "国泰君安证券股份有限公司": "国泰海通证券",
+    "海通证券": "国泰海通证券",
+    "海通证券股份有限公司": "国泰海通证券",
+    "中银国际": "中银国际证券",
+    "中银国际证券有限责任公司": "中银国际证券",
+    "中银国际证券股份有限公司": "中银国际证券",
+    "中信建投": "中信建投证券",
+    "中信建投证券股份有限公司": "中信建投证券",
+    "中国银河": "中国银河证券",
+    "中国银河证券股份有限公司": "中国银河证券",
+    "中金财富": "中金财富证券",
+    "中国中金财富证券有限公司": "中金财富证券",
+    "光大证券股份有限公司": "光大证券",
+    "南京证券股份有限公司": "南京证券",
+    "申万宏源": "申万宏源证券",
+    "申万宏源证券有限公司": "申万宏源证券",
+    "国联证券": "国联民生证券",
+    "国联证券股份有限公司": "国联民生证券",
+    "民生证券": "国联民生证券",
+    "民生证券股份有限公司": "国联民生证券",
+    "安信证券": "国投证券",
+    "安信证券股份有限公司": "国投证券",
+    "华融证券": "国新证券",
+    "华融证券股份有限公司": "国新证券",
+    "新时代证券": "诚通证券",
+    "新时代证券股份有限公司": "诚通证券",
+}
+
+DOMAIN_RULES = (
+    ("AI与智能化", ("AI", "AIGC", "大模型", "智能体", "人工智能", "机器学习", "知识库", "智能客服", "语音识别", "OCR", "智能投研", "智能问答", "智能运营")),
+    ("数据治理与数据平台", ("数据治理", "数据仓库", "数据中台", "数据平台", "湖仓", "数据湖", "指标平台", "主数据", "元数据", "数据质量", "数据资产", "数据集市", "BI", "驾驶舱", "实时数据", "数据交换")),
+    ("财富管理与客户经营", ("财富管理", "财富CRM", "CRM", "客户画像", "客户运营", "营销平台", "精准营销", "投顾平台", "产品销售", "客户服务")),
+    ("APP与数字化渠道", ("APP", "移动端", "手机证券", "鸿蒙", "小程序", "互联网金融", "网上交易", "客户端", "数字渠道", "移动应用")),
+    ("交易、柜台与核心系统", ("交易系统", "核心交易", "柜台", "集中交易", "极速交易", "两融", "融资融券", "期权", "清算", "结算", "估值", "登记结算", "法人清算", "行情交易", "OMS", "订单管理")),
+    ("网络安全与监管科技", ("信息安全", "网络安全", "数据安全", "防火墙", "态势感知", "漏洞", "渗透测试", "终端安全", "反洗钱", "监管报送", "风险管理", "合规管理", "风控", "灾备", "容灾")),
+    ("云计算、算力与基础设施", ("服务器", "存储", "算力", "云平台", "云计算", "容器", "虚拟化", "数据库", "操作系统", "交换机", "路由器", "网络设备", "机房", "备份", "硬件设备")),
+    ("IT运维与技术服务", ("运维", "维保", "驻场", "技术支持", "技术服务", "开发外包", "人员外包", "系统维护", "续保", "续采")),
+    ("投研资讯与金融数据", ("Wind", "同花顺", "金融数据", "行情数据", "行情系统", "期货行情", "资讯服务", "研报", "投研数据", "舆情", "数据终端", "资讯终端")),
+)
+CAPITAL_MARKET_KEYWORDS = ("投行", "资本市场", "质控", "承销", "保荐")
+SYSTEM_OBJECT_KEYWORDS = ("系统", "平台", "软件", "应用", "数据库", "接口", "引擎", "网关", "终端", "内核", "模块")
+NON_FINTECH_KEYWORDS = ("工程装修", "物业", "办公用品", "员工活动", "法律服务", "审计服务", "行政采购", "装修", "保洁", "安保", "餐饮", "车辆", "驾驶", "印刷", "广告制作")
+TAG_RULES = (
+    ("信创", ("信创", "国产化", "国产", "自主可控", "适配")),
+    ("AI", ("AI", "AIGC", "大模型", "智能体", "人工智能")),
+    ("数据治理", ("数据治理", "数据质量", "主数据", "元数据")),
+    ("二期建设", ("二期", "三期", "四期", "第二阶段")),
+    ("系统升级", ("升级", "改造", "扩容", "优化")),
+    ("新建", ("新建", "建设", "构建", "搭建")),
+    ("续采", ("续采", "续保", "续费", "延续")),
+    ("运维", ("运维", "维保", "维护", "驻场")),
+    ("软件采购", ("软件", "License", "授权", "许可")),
+    ("硬件采购", ("硬件", "服务器", "设备", "采购设备")),
+    ("外包服务", ("外包", "驻场", "人员外包", "人力外包")),
+)
+STAGE_SUFFIXES = ("采购公告", "招标公告", "结果公告", "结果公示", "中标公告", "成交公告", "流标公告", "废标公告", "候选人公示")
+INVALID_BROKERS = {"", "未知", "未识别", "主体待识别", "券商待识别", "无法识别", "未提供", "无", "null", "undefined", "-", "--"}
+PRIVATE_PATH_PATTERN = re.compile(r"(?i)(?<![A-Za-z0-9])(?:[a-z]:[\\/]|/(?:Volumes|Users|home|app)/)")
+PRIVATE_HOST_PATTERN = re.compile(r"(?i)(?<![A-Za-z0-9])(?:localhost|127\.0\.0\.1|::1)(?::\d+)?(?:[/\\?]|$)")
+
+
+def _text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _normalize_broker(value: object) -> str:
+    name = re.sub(r"\s+", "", _text(value))
+    return BROKER_ALIASES.get(name, name)
+
+
+def _public_source_name(value: object) -> str:
+    source = _text(value)
+    looks_like_relative_path = ("/" in source or "\\" in source) and not re.match(r"(?i)^https?://", source)
+    return "公开招采数据" if looks_like_relative_path or PRIVATE_PATH_PATTERN.search(source) or PRIVATE_HOST_PATTERN.search(source) else source
+
+
+def _public_source_url(value: object) -> str:
+    """Keep only public web links in the package.
+
+    App-watch source URLs are useful in the detail drawer, but a malformed
+    local/file URL must never expose a crawler path in a public static bundle.
+    """
+    source = _text(value)
+    if not source:
+        return ""
+    try:
+        parsed = urlparse(source)
+    except ValueError:
+        return ""
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+        return ""
+    if hostname in {"localhost", "127.0.0.1", "::1"} or PRIVATE_PATH_PATTERN.search(source):
+        return ""
+    return source
+
+
+def _parse_positive_amount(*values: object) -> float | None:
+    for value in values:
+        text = _text(value)
+        if not text:
+            continue
+        try:
+            parsed = float(text)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return None
+
+
+def _parse_date(value: object) -> tuple[str, int | None]:
+    text = _text(value)
+    if not text:
+        return "", None
+    candidates = (text, text.replace("/", "-").replace(".", "-").replace("年", "-").replace("月", "-").replace("日", ""))
+    formats = ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y%m%d", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S")
+    for candidate in candidates:
+        for fmt in formats:
+            try:
+                parsed = datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.astimezone(timezone.utc)
+            return parsed.date().isoformat(), int(parsed.timestamp() * 1000)
+    return "", None
+
+
+def _normalize_project_name(value: object) -> str:
+    name = _text(value).translate(str.maketrans("０１２３４５６７８９ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ", "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"))
+    name = name.replace("（", "(").replace("）", ")")
+    name = re.sub(r"\s+", " ", name)
+    for suffix in STAGE_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            name = name[: -len(suffix)]
+            break
+    return name.strip() or _text(value)
+
+
+def _supplier(value: object) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return re.sub(r"\s+", " ", text)
+    if isinstance(parsed, list):
+        names = [_text(item) for item in parsed if _text(item)]
+        return "、".join(names) if names else ""
+    return re.sub(r"\s+", " ", text)
+
+
+def _stage(value: object) -> str:
+    text = _text(value)
+    if re.search(r"流标|废标", text):
+        return "流标废标"
+    if re.search(r"结果|中标|成交|候选人公示", text):
+        return "结果公示"
+    if re.search(r"采购|招标|询价|供应商招募|单一来源|竞争性谈判", text):
+        return "采购招标"
+    return "其他"
+
+
+def _classify(project: str, subcategory: str, category: str, scope_summary: str = "") -> tuple[str, bool]:
+    text = f"{project} {subcategory} {category} {scope_summary}"
+    if any(keyword in text for keyword in NON_FINTECH_KEYWORDS):
+        return "非金融科技及其他", False
+    for domain, keywords in DOMAIN_RULES:
+        if any(keyword in text for keyword in keywords):
+            return domain, True
+    if any(keyword in text for keyword in CAPITAL_MARKET_KEYWORDS) and any(keyword in text for keyword in SYSTEM_OBJECT_KEYWORDS):
+        return "投行与资本市场", True
+    if category == "IT软硬件":
+        return "IT运维与技术服务", True
+    return "非金融科技及其他", False
+
+
+def _tags(project: str, subcategory: str) -> list[str]:
+    text = f"{project} {subcategory}"
+    return [tag for tag, keywords in TAG_RULES if any(keyword in text for keyword in keywords)]
+
+
+def _score(record: dict[str, Any], baseline: int | None) -> tuple[int, str]:
+    score = 0
+    domain = record["primary_domain"]
+    if domain == "AI与智能化": score += 30
+    if domain == "交易、柜台与核心系统": score += 20
+    if "信创" in record["topic_tags"]: score += 15
+    if record["announcement_stage"] == "结果公示": score += 15
+    if record["supplier_name"]: score += 10
+    if record["display_amount_kind"] == "winning": score += 10
+    if record["display_amount_kind"] == "budget": score += 5
+    if baseline is not None and record["publish_timestamp"] is not None and baseline - record["publish_timestamp"] <= 30 * 86400000:
+        score += 20
+    reasons = []
+    if domain == "AI与智能化": reasons.append("近期新增的AI与智能化项目")
+    if domain == "交易、柜台与核心系统": reasons.append("涉及核心交易系统建设")
+    if "信创" in record["topic_tags"]: reasons.append("具有信创或国产化属性")
+    if record["announcement_stage"] == "结果公示" and record["supplier_name"]: reasons.append("结果公告已披露供应商")
+    if record["display_amount_kind"] == "winning": reasons.append("公告公开披露成交金额")
+    if record["display_amount_kind"] == "budget": reasons.append("公告公开披露项目预算")
+    return score, reasons[0] if reasons else "公开招采动态值得关注"
+
+
+def _safe_id(row: dict[str, str], project_key: str) -> str:
+    source = _text(row.get("document_sha1"))
+    if source:
+        return source
+    return hashlib.sha1(f"{project_key}|{_text(row.get('publish_date'))}|{_text(row.get('announcement_stage'))}".encode("utf-8")).hexdigest()
+
+
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return [{str(key): value or "" for key, value in row.items()} for row in csv.DictReader(handle)]
+
+
+def _build_tenders(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for row in _read_csv(path):
+        broker = _normalize_broker(row.get("broker_name")) or "主体待识别"
+        project = _text(row.get("project_name"))
+        normalized_project = _normalize_project_name(project)
+        project_key = f"{broker}||{normalized_project}"
+        publish_date, publish_timestamp = _parse_date(row.get("publish_date"))
+        budget = _parse_positive_amount(row.get("budget_amount_yuan"))
+        winning = _parse_positive_amount(row.get("winning_amount_yuan"), row.get("winning_amount"))
+        display = winning if winning is not None else budget
+        display_kind = "winning" if winning is not None else "budget" if budget is not None else None
+        supplier = _supplier(row.get("winning_supplier") or row.get("winner") or row.get("winner_candidates"))
+        domain, is_fintech = _classify(
+            project,
+            _text(row.get("project_subcategory")),
+            _text(row.get("procurement_category")),
+            _text(row.get("procurement_scope_summary")),
+        )
+        stage = _stage(row.get("announcement_stage"))
+        source_name = _public_source_name(row.get("source") or row.get("data_source"))
+        record = {
+            "id": _safe_id(row, project_key),
+            "broker_name": broker,
+            "is_broker_project": None if _text(row.get("is_broker_project")).lower() not in {"true", "false"} else _text(row.get("is_broker_project")).lower() == "true",
+            "publish_date": publish_date,
+            "publish_timestamp": publish_timestamp,
+            "announcement_stage": stage,
+            "project_name": project,
+            "normalized_project_name": normalized_project,
+            "procurement_method": _text(row.get("procurement_method")),
+            "budget_amount_yuan": budget,
+            "winning_amount_yuan": winning,
+            "display_amount_yuan": display,
+            "display_amount_kind": display_kind,
+            "supplier_name": supplier,
+            "source_name": source_name,
+            "processed_at": _text(row.get("processed_at")),
+            "project_key": project_key,
+            "amount_sample_key": f"{project_key}||{display_kind}||{display}" if display is not None else None,
+            "primary_domain": domain,
+            "topic_tags": _tags(project, _text(row.get("project_subcategory"))),
+            "is_fintech": is_fintech,
+        }
+        record["search_text"] = "\n".join((project, broker, supplier, record["procurement_method"])).lower()
+        records.append(record)
+    baseline = max((r["publish_timestamp"] for r in records if r["publish_timestamp"] is not None), default=None)
+    for record in records:
+        record["priority_score"], record["priority_reason"] = _score(record, baseline)
+    return records
+
+
+def _json_array(value: object) -> list[str]:
+    if isinstance(value, list):
+        return [_text(item) for item in value if _text(item)]
+    text = _text(value)
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return [text]
+    return [_text(item) for item in parsed if _text(item)] if isinstance(parsed, list) else [text]
+
+
+def _build_app_updates(path: Path) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for row in _read_csv(path):
+        broker = _normalize_broker(row.get("broker_name"))
+        app = _text(row.get("app_name"))
+        summary = _text(row.get("update_summary"))
+        if not (broker or app or summary):
+            continue
+        date, timestamp = _parse_date(row.get("publish_date"))
+        records.append({
+            "id": hashlib.sha1("|".join((_text(row.get("broker_code")), app, _text(row.get("app_version")), date, summary)).encode("utf-8")).hexdigest(),
+            "broker_code": _text(row.get("broker_code")),
+            "broker_name": broker,
+            "app_name": app,
+            "source_url": _public_source_url(row.get("source_url")),
+            "content_sha256": _text(row.get("content_sha256")),
+            "crawl_time": _text(row.get("crawl_time")),
+            "app_version": _text(row.get("app_version")),
+            "platform": _text(row.get("platform")) or "未知",
+            "publish_date": date,
+            "publish_timestamp": timestamp,
+            "update_type": _text(row.get("update_type")) or "其他",
+            "update_summary": summary,
+            "feature_tags": _json_array(row.get("feature_tags")),
+            "highlights": _json_array(row.get("highlights")),
+            "processed_at": _text(row.get("processed_at")),
+        })
+    for record in records:
+        record["search_text"] = "\n".join((record["broker_name"], record["broker_code"], record["app_name"], record["app_version"], record["update_summary"], record["update_type"], " ".join(record["feature_tags"]), " ".join(record["highlights"]))).lower()
+    return sorted(records, key=lambda item: (item["publish_timestamp"] or 0, item["id"]), reverse=True)
+
+
+def _analysis(path: Path) -> tuple[dict[str, Any], bool, str | None]:
+    if not path.exists():
+        return {"content": None, "updated_at": None, "meta": None}, False, "暂无 AI 情报分析缓存"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {"content": None, "updated_at": None, "meta": None}, False, "AI 情报分析文件无法解析"
+    content = payload.get("content") if isinstance(payload, dict) else None
+    if not isinstance(content, str):
+        content = payload.get("analysis", {}).get("content") if isinstance(payload, dict) and isinstance(payload.get("analysis"), dict) else None
+    meta = payload.get("meta") if isinstance(payload, dict) else None
+    updated_at = payload.get("updated_at") if isinstance(payload, dict) else None
+    if not isinstance(updated_at, str) and isinstance(payload, dict):
+        updated_at = payload.get("updatedAt")
+    if not isinstance(updated_at, str) and isinstance(meta, dict):
+        updated_at = meta.get("generated_at")
+    return {"content": content if isinstance(content, str) else None, "updated_at": updated_at if isinstance(updated_at, str) else None, "meta": meta if isinstance(meta, dict) else None}, bool(content), None if content else "AI 情报分析文件没有可展示内容"
+
+
+def _fingerprint(path: Path) -> tuple[bool, int, int]:
+    try:
+        stat = path.stat()
+    except OSError:
+        return False, 0, 0
+    return True, stat.st_mtime_ns, stat.st_size
+
+
+def _period(records: list[dict[str, Any]], date_key: str = "publish_date") -> dict[str, str | None]:
+    dates = [record[date_key] for record in records if record.get(date_key)]
+    return {"from": min(dates) if dates else None, "to": max(dates) if dates else None}
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _atomic_write(path: Path, body: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_bytes(body)
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+@dataclass(frozen=True, slots=True)
+class PackageArtifact:
+    key: str
+    filename: str
+    body: bytes
+    count: int | None
+    period: dict[str, str | None] | None
+    available: bool
+    reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DashboardPackage:
+    manifest: dict[str, Any]
+    artifacts: dict[str, PackageArtifact]
+
+    def body(self, key: str) -> bytes:
+        if key == "manifest":
+            return json.dumps(self.manifest, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+        return self.artifacts[key].body
+
+
+class DashboardPackageBuilder:
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._fingerprint: tuple[tuple[bool, int, int], ...] | None = None
+        self._package: DashboardPackage | None = None
+
+    def source_paths(self) -> dict[str, Path]:
+        return {
+            "tender_projects": settings.announcement_csv_path,
+            "app_updates": settings.app_releases_csv_path,
+            "ai_analysis": settings.ai_analysis_cache_path,
+        }
+
+    def export_manifest_path(self) -> Path:
+        return settings.dashboard_data_export_dir / "manifest.json"
+
+    def build(self, force: bool = False) -> DashboardPackage:
+        paths = self.source_paths()
+        fingerprint = tuple(_fingerprint(paths[key]) for key in ("tender_projects", "app_updates", "ai_analysis"))
+        with self._lock:
+            if not force and self._package is not None and self._fingerprint == fingerprint:
+                return self._package
+            tenders = _build_tenders(paths["tender_projects"])
+            app_updates = _build_app_updates(paths["app_updates"])
+            analysis, analysis_available, analysis_reason = _analysis(paths["ai_analysis"])
+            overview = {
+                "schema_version": SCHEMA_VERSION,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "tender_projects": {
+                    "record_count": len(tenders),
+                    "broker_count": len({r["broker_name"] for r in tenders if r["broker_name"].lower() not in INVALID_BROKERS and r["is_broker_project"] is not False}),
+                    "fintech_count": sum(1 for r in tenders if r["is_fintech"]),
+                    "period": _period(tenders),
+                },
+                "app_updates": {
+                    "record_count": len(app_updates),
+                    "broker_count": len({r["broker_name"] or r["broker_code"] for r in app_updates if r["broker_name"] or r["broker_code"]}),
+                    "app_count": len({f"{r['broker_code'] or r['broker_name']}||{r['app_name']}" for r in app_updates if r["app_name"]}),
+                    "period": _period(app_updates),
+                },
+            }
+            filter_payload = {
+                "schema_version": SCHEMA_VERSION,
+                "procurement": {
+                    "brokers": sorted({r["broker_name"] for r in tenders if r["broker_name"].lower() not in INVALID_BROKERS and r["is_broker_project"] is not False}, key=lambda value: value),
+                    "domains": sorted({r["primary_domain"] for r in tenders}),
+                    "stages": ["采购招标", "结果公示", "流标废标", "其他"],
+                    "procurement_methods": sorted({r["procurement_method"] for r in tenders if r["procurement_method"]}),
+                    "default_time_range": "90d",
+                    "default_fintech_only": True,
+                },
+                "app_updates": {
+                    "brokers": sorted({r["broker_name"] for r in app_updates if r["broker_name"]}),
+                    "apps": sorted({r["app_name"] for r in app_updates if r["app_name"]}),
+                    "update_types": sorted({r["update_type"] for r in app_updates}),
+                    "feature_tags": sorted({tag for r in app_updates for tag in r["feature_tags"]}),
+                },
+            }
+            artifacts: dict[str, PackageArtifact] = {}
+            raw_payloads = {
+                "overview": (overview, 1, None, True, None),
+                "filters": (filter_payload, 1, None, True, None),
+                "tender_projects": (tenders, len(tenders), _period(tenders), bool(tenders) or paths["tender_projects"].exists(), None if tenders or paths["tender_projects"].exists() else "正式招采数据文件不存在"),
+                "app_updates": (app_updates, len(app_updates), _period(app_updates), bool(app_updates), "暂无券商 App 更新数据" if not app_updates else None),
+                "ai_analysis": (analysis, 1 if analysis_available else 0, None, analysis_available, analysis_reason),
+            }
+            for key, (payload, count, period, available, reason) in raw_payloads.items():
+                body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+                artifacts[key] = PackageArtifact(key, PACKAGE_FILES[key], body, count, period, available, reason)
+            generated_at = overview["generated_at"]
+            package_hash = _sha256(b"".join(artifacts[key].body for key in REQUIRED_KEYS))[:20]
+            datasets = {
+                key: {
+                    "file": artifact.filename,
+                    "record_count": artifact.count,
+                    "bytes": len(artifact.body),
+                    "sha256": _sha256(artifact.body),
+                    "available": artifact.available,
+                    "reason": artifact.reason,
+                    "period": artifact.period,
+                }
+                for key, artifact in artifacts.items()
+            }
+            manifest = {
+                "schema_version": SCHEMA_VERSION,
+                "minimum_reader_version": READER_VERSION,
+                "package_version": f"dashboard-{package_hash}",
+                "generated_at": generated_at,
+                "source": "世纪证券业务信息平台标准化导出",
+                "timezone": "UTC",
+                "datasets": datasets,
+            }
+            self._fingerprint = fingerprint
+            self._package = DashboardPackage(manifest, artifacts)
+            return self._package
+
+    def export(
+        self,
+        package: DashboardPackage | None = None,
+        target: Path | None = None,
+        write_zip: bool = True,
+    ) -> Path:
+        package = package or self.build()
+        target = (target or settings.dashboard_data_export_dir).resolve()
+        target.mkdir(parents=True, exist_ok=True)
+        for key in ("manifest", *REQUIRED_KEYS):
+            filename = "manifest.json" if key == "manifest" else package.artifacts[key].filename
+            _atomic_write(target / filename, package.body(key))
+        if write_zip:
+            zip_target = target.with_suffix(".zip")
+            zip_temp = zip_target.with_name(f".{zip_target.name}.{os.getpid()}.tmp")
+            try:
+                with zipfile.ZipFile(zip_temp, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+                    for key in ("manifest", *REQUIRED_KEYS):
+                        filename = "manifest.json" if key == "manifest" else package.artifacts[key].filename
+                        archive.writestr(f"dashboard-data/{filename}", package.body(key))
+                os.replace(zip_temp, zip_target)
+            finally:
+                try:
+                    zip_temp.unlink()
+                except FileNotFoundError:
+                    pass
+        return target
+
+
+dashboard_package_builder = DashboardPackageBuilder()
+
+
+def package_zip_bytes(package: DashboardPackage | None = None) -> bytes:
+    package = package or dashboard_package_builder.build()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+        for key in ("manifest", *REQUIRED_KEYS):
+            filename = "manifest.json" if key == "manifest" else package.artifacts[key].filename
+            archive.writestr(f"dashboard-data/{filename}", package.body(key))
+    return output.getvalue()

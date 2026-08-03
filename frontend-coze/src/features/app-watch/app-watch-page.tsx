@@ -1,0 +1,328 @@
+"use client";
+
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { RefreshCw, TrendingUp, List, ArrowLeft } from "lucide-react";
+import Image from "next/image";
+import { DashboardDataError, invalidateStaticPackageCache } from "@/lib/static-dashboard-data";
+import { publicAssetPath } from "@/lib/public-path";
+import type { DashboardFilters, DashboardOverview } from "@dashboard-data/contracts";
+import {
+  AppReleaseNotGeneratedError,
+  getAppReleaseStatistics,
+  loadAppReleases,
+  formatReleaseDate,
+  appReleaseMatchesSearch,
+  getUpdateTypeDistribution,
+  getFeatureTagDistribution,
+  type AppReleaseRecord,
+} from "@/lib/app-release-data";
+import { KpiCard } from "@/components/app-watch/kpi-card";
+import { FilterBar } from "@/components/app-watch/filter-bar";
+import { OverviewCharts } from "@/components/app-watch/overview-charts";
+import { ReleaseTable } from "@/components/app-watch/release-table";
+import { ReleaseDetailDrawer } from "@/components/app-watch/release-detail-drawer";
+import { ModuleSwitcher } from "@/components/app-watch/module-switcher";
+
+type ViewMode = "overview" | "details";
+
+interface FilterState {
+  search: string;
+  timeRange: "30d" | "90d" | "year" | "all";
+  brokerNames: string[];
+  appNames: string[];
+  updateTypes: string[];
+  featureTags: string[];
+}
+
+export default function AppUpdatesPage({ onBack }: { onBack?: () => void }) {
+
+  // Data state
+  const [records, setRecords] = useState<AppReleaseRecord[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [dataOverview, setDataOverview] = useState<DashboardOverview | null>(null);
+  const [dataFilters, setDataFilters] = useState<DashboardFilters | null>(null);
+  const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
+  const [dataMessage, setDataMessage] = useState<string | null>(null);
+  const [dataVersion, setDataVersion] = useState(0);
+
+  // UI state
+  const [viewMode, setViewMode] = useState<ViewMode>("overview");
+  const [selectedRecord, setSelectedRecord] = useState<AppReleaseRecord | null>(null);
+
+  // Filter state
+  const [filters, setFilters] = useState<FilterState>({
+    search: "",
+    timeRange: "90d",
+    brokerNames: [],
+    appNames: [],
+    updateTypes: [],
+    featureTags: [],
+  });
+
+  const refreshData = useCallback(() => {
+    invalidateStaticPackageCache();
+    setDataVersion((v) => v + 1);
+  }, []);
+
+  // Load data
+  useEffect(() => {
+    let cancelled = false;
+    setDataStatus("loading");
+    setDataMessage(null);
+    loadAppReleases()
+      .then(({ records: loaded, updatedAt: at, overview, filters: loadedFilters }) => {
+        if (cancelled) return;
+        setRecords(loaded);
+        setUpdatedAt(at);
+        setDataOverview(overview);
+        setDataFilters(loadedFilters);
+        setDataStatus(loaded.length === 0 ? "empty" : "ready");
+        setDataMessage(loaded.length === 0 ? "尚未生成券商 App 更新数据，请先运行券商 App 更新任务。" : null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setRecords([]);
+        setUpdatedAt(null);
+        setDataOverview(null);
+        setDataFilters(null);
+        if (err instanceof AppReleaseNotGeneratedError || err instanceof DashboardDataError) {
+          setDataStatus("empty");
+          setDataMessage(err.message);
+        } else {
+          setDataStatus("error");
+          setDataMessage(err instanceof Error ? err.message : "数据加载失败");
+        }
+      });
+    return () => { cancelled = true; };
+  }, [dataVersion]);
+
+  const deferredSearch = useDeferredValue(filters.search.trim().toLowerCase());
+  const baseline = useMemo(() => {
+    const packagedDate = dataOverview?.app_updates.period.to ? new Date(`${dataOverview.app_updates.period.to}T00:00:00Z`) : null;
+    if (packagedDate && !Number.isNaN(packagedDate.getTime())) return packagedDate;
+    let latest = 0;
+    for (const record of records) {
+      latest = Math.max(latest, record.publishDate?.getTime() ?? 0);
+    }
+    return latest > 0 ? new Date(latest) : null;
+  }, [dataOverview, records]);
+
+  const selectedBrokerNames = useMemo(() => new Set(filters.brokerNames), [filters.brokerNames]);
+  const selectedAppNames = useMemo(() => new Set(filters.appNames), [filters.appNames]);
+  const selectedUpdateTypes = useMemo(() => new Set(filters.updateTypes), [filters.updateTypes]);
+  const selectedFeatureTags = useMemo(() => new Set(filters.featureTags), [filters.featureTags]);
+
+  // Filtering and all chart/statistical derivation stay in the visitor's
+  // browser; the local server only serves the compact cached dataset.
+  const filteredRecords = useMemo(() => {
+    let cutoff: Date | null = null;
+    if (filters.timeRange !== "all" && baseline) {
+      if (filters.timeRange === "30d") {
+        cutoff = new Date(baseline.getTime() - 30 * 24 * 60 * 60 * 1000);
+      } else if (filters.timeRange === "90d") {
+        cutoff = new Date(baseline.getTime() - 90 * 24 * 60 * 60 * 1000);
+      } else if (filters.timeRange === "year") {
+        cutoff = new Date(baseline.getFullYear(), 0, 1);
+      }
+    }
+
+    return records.filter((record) => {
+      if (deferredSearch && !appReleaseMatchesSearch(record, deferredSearch)) return false;
+      if (cutoff && (!record.publishDate || record.publishDate < cutoff)) return false;
+      if (selectedBrokerNames.size && !selectedBrokerNames.has(record.brokerName)) return false;
+      if (selectedAppNames.size && !selectedAppNames.has(record.appName)) return false;
+      if (selectedUpdateTypes.size && !selectedUpdateTypes.has(record.updateType)) return false;
+      if (
+        selectedFeatureTags.size &&
+        !record.featureTags.some((tag) => selectedFeatureTags.has(tag))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    baseline,
+    deferredSearch,
+    filters.timeRange,
+    records,
+    selectedAppNames,
+    selectedBrokerNames,
+    selectedFeatureTags,
+    selectedUpdateTypes,
+  ]);
+
+  // Statistics and groups
+  const statistics = useMemo(() => getAppReleaseStatistics(filteredRecords), [filteredRecords]);
+  // Options for filters
+  const brokerOptions = useMemo(() => {
+    return dataFilters?.app_updates.brokers ?? [...new Set(records.map((record) => record.brokerName).filter(Boolean))].sort();
+  }, [dataFilters, records]);
+
+  const appOptions = useMemo(() => {
+    return dataFilters?.app_updates.apps ?? [...new Set(records.map((record) => record.appName).filter(Boolean))].sort();
+  }, [dataFilters, records]);
+
+  const updateTypeOptions = useMemo(() => dataFilters?.app_updates.update_types ?? getUpdateTypeDistribution(records).map(i => i.name), [dataFilters, records]);
+  const tagOptions = useMemo(() => dataFilters?.app_updates.feature_tags ?? getFeatureTagDistribution(records).map(i => i.name), [dataFilters, records]);
+
+  // Handle record click
+  const handleRecordClick = (record: AppReleaseRecord) => {
+    setSelectedRecord(record);
+  };
+
+  const isBusy = dataStatus === "loading";
+
+  return (
+    <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
+      {/* Header */}
+      <header
+        className="relative flex min-w-0 flex-col overflow-hidden px-3 py-3 text-white sm:h-[76px] sm:flex-row sm:items-center sm:px-8 sm:py-0 sticky top-0 z-40 border-b border-blue-500/20 shrink-0"
+        style={{ background: "linear-gradient(105deg, #102847 0%, #17385F 58%, #1E4070 100%)" }}
+      >
+        <div className="relative z-10 flex flex-1 items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onBack?.()}
+              className="mr-2 flex items-center gap-1 text-xs text-slate-300 hover:text-white transition-colors"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              返回
+            </button>
+            <Image src={publicAssetPath("/brand/company-icon.png")} alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg sm:size-9" priority />
+            <span className="text-lg font-bold">券商 App 更新看板</span>
+          </div>
+        </div>
+
+        <div className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-300 sm:mt-0 sm:gap-4 sm:text-[12px]">
+          {/* Module Switcher */}
+          <div className="flex shrink-0 items-center gap-1.5 border-r border-white/10 pr-1.5 sm:border-l sm:border-r-0 sm:pr-0 sm:pl-3.5">
+            <ModuleSwitcher activeModule="app-watch" onModuleChange={(module) => module === "procurement" && onBack?.()} />
+          </div>
+
+          {/* Data Status Group */}
+          <div className="flex items-center gap-3.5 border-r border-white/10 pr-3.5 hidden md:flex">
+              <span className="whitespace-nowrap flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                最新数据：
+                <span className="text-white font-medium">
+                  {updatedAt ? updatedAt.slice(0, 10) : "数据未生成"}
+                </span>
+              </span>
+          </div>
+
+          {/* Main Actions Group */}
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none sm:gap-2.5">
+            <button
+              onClick={refreshData}
+              disabled={isBusy}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/15 text-slate-200 hover:text-white hover:bg-white/10 active:scale-[0.98] transition-all whitespace-nowrap disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">刷新数据</span>
+            </button>
+          </div>
+
+          {/* Admin & User Controls Group */}
+          <div className="flex shrink-0 items-center gap-1.5 border-l border-white/10 pl-1.5 sm:gap-3 sm:pl-3.5">
+            <span className="text-slate-300 hidden sm:inline">静态数据包</span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main content */}
+      <main className="mx-auto max-w-[1600px] min-w-0 px-3 py-4 space-y-4 sm:px-8 sm:py-5">
+        {/* Status message */}
+        {(dataStatus === "loading" || dataStatus === "empty" || dataStatus === "error") && (
+          <div
+            className={`rounded-[10px] border px-4 py-3 text-[13px] ${
+              dataStatus === "error"
+                ? "border-red-100 bg-red-50 text-red-600"
+                : "border-amber-100 bg-amber-50 text-amber-700"
+            }`}
+          >
+            {dataStatus === "loading"
+              ? "正在加载券商 App 更新数据..."
+              : dataMessage || "尚未生成券商 App 更新数据。"}
+          </div>
+        )}
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+          <KpiCard label="更新条数" value={statistics.releaseCount} />
+          <KpiCard label="覆盖券商" value={statistics.brokerCount} />
+          <KpiCard label="覆盖 App" value={statistics.appCount} />
+          <KpiCard label="最新更新" value={formatReleaseDate(statistics.latestPublishDate)} isText />
+        </div>
+
+        {/* View toggle & filter bar */}
+        <div className="space-y-3">
+          {/* View toggle */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setViewMode("overview")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
+                viewMode === "overview"
+                  ? "border border-[#D7E5FF] bg-white text-[#2563EB] shadow-[0_1px_3px_rgba(16,40,71,0.08)]"
+                  : "border border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              更新总览
+            </button>
+            <button
+              onClick={() => setViewMode("details")}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
+                viewMode === "details"
+                  ? "border border-[#D7E5FF] bg-white text-[#2563EB] shadow-[0_1px_3px_rgba(16,40,71,0.08)]"
+                  : "border border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
+              }`}
+            >
+              <List className="w-4 h-4" />
+              更新明细 ({filteredRecords.length})
+            </button>
+          </div>
+
+          {/* Filter bar */}
+          <FilterBar
+            filters={filters}
+            setFilters={setFilters}
+            brokerOptions={brokerOptions}
+            appOptions={appOptions}
+            updateTypeOptions={updateTypeOptions}
+            tagOptions={tagOptions}
+          />
+
+          {/* Content area */}
+          {viewMode === "overview" ? (
+            <>
+              {/* Charts */}
+              <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-6 lg:grid-cols-12">
+                <OverviewCharts data={filteredRecords} onSelect={handleRecordClick} />
+              </div>
+            </>
+          ) : (
+            /* Details table */
+            <ReleaseTable
+              releases={filteredRecords}
+              onSelect={handleRecordClick}
+            />
+          )}
+
+          {/* Updated at */}
+          {updatedAt && (
+            <p className="flex items-center gap-1 text-[11px] text-[#98A2B3]">
+              <span className="w-3 h-3">📱</span>
+              数据更新时间：{updatedAt}
+            </p>
+          )}
+        </div>
+      </main>
+
+      {/* Detail drawer */}
+      <ReleaseDetailDrawer
+        record={selectedRecord}
+        onClose={() => setSelectedRecord(null)}
+      />
+    </div>
+  );
+}

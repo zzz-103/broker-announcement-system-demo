@@ -30,6 +30,8 @@ interface DashboardFiltersProps {
   sortedBrokers: string[];
   showAllBrokers: boolean;
   setShowAllBrokers: (v: boolean) => void;
+  domainOptions?: string[];
+  stageOptions?: string[];
 }
 
 const DEFAULT_VISIBLE_BROKER_COUNT = 20;
@@ -72,6 +74,8 @@ export function DashboardFilters({
   sortedBrokers,
   showAllBrokers,
   setShowAllBrokers,
+  domainOptions,
+  stageOptions,
 }: DashboardFiltersProps) {
   const visibleBrokerCount = showAllBrokers
     ? sortedBrokers.length
@@ -127,7 +131,7 @@ export function DashboardFilters({
           onChange={setPrimaryDomain}
           options={[
             { value: "", label: "全部方向" },
-            ...DOMAIN_OPTIONS.map((d) => ({ value: d, label: d })),
+            ...(domainOptions?.length ? domainOptions : DOMAIN_OPTIONS).map((d) => ({ value: d, label: d })),
           ]}
           placeholder="全部方向"
           maxHeight={280}
@@ -140,10 +144,7 @@ export function DashboardFilters({
           onChange={setAnnouncementStage}
           options={[
             { value: "", label: "全部阶段" },
-            { value: "采购招标", label: "采购招标" },
-            { value: "结果公示", label: "结果公示" },
-            { value: "流标废标", label: "流标废标" },
-            { value: "其他", label: "其他" },
+            ...(stageOptions?.length ? stageOptions : ["采购招标", "结果公示", "流标废标", "其他"]).map((stage) => ({ value: stage, label: stage })),
           ]}
           placeholder="全部阶段"
           className="w-full sm:w-auto"

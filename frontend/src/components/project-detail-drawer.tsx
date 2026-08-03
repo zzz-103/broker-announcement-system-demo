@@ -125,27 +125,10 @@ export function ProjectDetailDrawer({
               数据来源
             </h3>
             <div className="space-y-2.5">
-              <Field label="源文件" value={record.markdown_file || "未提供"} />
-              <Field
-                label="文档SHA1"
-                value={record.document_sha1 || "未提供"}
-                mono
-              />
-              <Field
-                label="处理时间"
-                value={record.processed_at || "未提供"}
-              />
-              <Field
-                label="原始路径"
-                value={record.raw_json_path || "未提供"}
-                mono
-              />
-              <Field
-                label="主体文件夹"
-                value={record.broker_folder || "未提供"}
-              />
+              <Field label="数据来源" value={record.sourceName || "公开招采数据"} />
+              <Field label="处理时间" value={record.processed_at || "未提供"} />
               <div className="text-[11px] text-[#98A2B3] mt-2">
-                当前数据未保存可直接访问的公告URL。
+                为保护运行环境，数据包不包含服务器文件路径或原始凭据。
               </div>
             </div>
           </section>

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { AlertCircle, RefreshCw, Sparkles, ChevronDown } from "lucide-react";
 import {
   BackendApiError,
+  fetchDashboardAiAnalysis,
   generateAiAnalysis,
-  getAiAnalysis,
 } from "@/lib/api/backend-client";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -36,12 +36,12 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
   useEffect(() => {
     if (!token) return;
     setIsLoading(true);
-    getAiAnalysis(token)
+    fetchDashboardAiAnalysis(token)
       .then((data) => {
-        const nextContent = data.analysis?.content || data.content || null;
+        const nextContent = data.content || null;
         if (nextContent) {
           setContent(nextContent);
-          setUpdatedAt(data.updatedAt || data.meta?.generated_at || null);
+          setUpdatedAt(data.updated_at || data.meta?.generated_at || null);
           setError(null);
         } else {
           setEmptyMessage("尚未生成 AI 情报分析");

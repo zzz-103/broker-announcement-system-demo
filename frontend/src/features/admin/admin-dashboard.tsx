@@ -8,6 +8,7 @@ import {
   Brain,
   CheckCircle2,
   Database,
+  Download,
   Globe,
   LogOut,
   RefreshCw,
@@ -33,7 +34,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { type JobStatus, type JobType } from "@/lib/api/backend-client";
+import { BackendApiError, buildApiUrl, exportDashboardData, readError, type JobStatus, type JobType } from "@/lib/api/backend-client";
 import { APP_VERSION } from "@/lib/app-version";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
@@ -127,6 +128,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const [logDialogCard, setLogDialogCard] = useState<CardId | null>(null);
   const [crawlerModeDialogOpen, setCrawlerModeDialogOpen] = useState(false);
   const [llmModeDialogOpen, setLlmModeDialogOpen] = useState(false);
+  const [dashboardExporting, setDashboardExporting] = useState(false);
+  const [dashboardExportMessage, setDashboardExportMessage] = useState<string | null>(null);
   const {
     activeOperation,
     cardStates,
@@ -137,6 +140,31 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     cancelActiveJob,
     stopLocalMonitoring,
   } = useJobRunner({ token, clearAuth, onDataRefresh });
+
+  const handleDashboardExport = useCallback(async () => {
+    if (!token || dashboardExporting) return;
+    setDashboardExporting(true);
+    setDashboardExportMessage(null);
+    try {
+      const result = await exportDashboardData(token);
+      const response = await fetch(buildApiUrl(result.download_url), { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new BackendApiError(await readError(response), response.status);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "dashboard-data.zip";
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setDashboardExportMessage(`导出成功：${result.manifest.package_version}，可直接解压后复制整个 dashboard-data 目录。`);
+    } catch (error) {
+      if (error instanceof BackendApiError && error.status === 401) clearAuth("登录已失效，请重新登录");
+      else if (error instanceof BackendApiError && error.status === 409) setDashboardExportMessage(error.message);
+      else setDashboardExportMessage(error instanceof Error ? error.message : "导出失败，请稍后重试");
+    } finally {
+      setDashboardExporting(false);
+    }
+  }, [clearAuth, dashboardExporting, token]);
 
   const runFullRefresh = useCallback(async () => {
     setLlmModeDialogOpen(false);
@@ -412,6 +440,19 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             );
           })}
         </div>
+
+        <section className="mt-5 rounded-2xl border border-[#D7E5FF] bg-white shadow-sm">
+          <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-base font-bold text-[#172033]">纯前端数据包</h2>
+              <p className="mt-1 text-xs leading-relaxed text-[#667085]">将当前已处理的招采、App 更新、筛选项和 AI 分析导出为统一 dashboard-data 目录及 ZIP，复制后无需数据库或后端即可展示。</p>
+              {dashboardExportMessage && <p className="mt-2 text-xs text-[#2563EB]">{dashboardExportMessage}</p>}
+            </div>
+            <Button type="button" onClick={() => void handleDashboardExport()} disabled={Boolean(activeOperation) || dashboardExporting} className="shrink-0 bg-[#162B49] text-xs font-semibold text-white hover:bg-[#1e3a5f]">
+              {dashboardExporting ? <><RefreshCw className="size-3.5 animate-spin" />导出中...</> : <><Download className="size-3.5" />导出纯前端数据</>}
+            </Button>
+          </div>
+        </section>
 
         <AdminTaskProgress
           progress={progressState}

@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { Search, RotateCcw } from "lucide-react";
 import { HoverSelect } from "./hover-select";
 import { MultiHoverSelect } from "./multi-hover-select";
@@ -29,11 +28,13 @@ interface DashboardFiltersProps {
   onMissingBrokerSearch?: (name: string) => void;
   methodOptions: string[];
   sortedBrokers: string[];
-  visibleBrokerCount: number;
   showAllBrokers: boolean;
   setShowAllBrokers: (v: boolean) => void;
-  brokerTagsRef: React.RefObject<HTMLDivElement | null>;
+  domainOptions?: string[];
+  stageOptions?: string[];
 }
+
+const DEFAULT_VISIBLE_BROKER_COUNT = 20;
 
 const DOMAIN_OPTIONS = [
   "AI与智能化",
@@ -71,11 +72,15 @@ export function DashboardFilters({
   onMissingBrokerSearch,
   methodOptions,
   sortedBrokers,
-  visibleBrokerCount,
   showAllBrokers,
   setShowAllBrokers,
-  brokerTagsRef,
+  domainOptions,
+  stageOptions,
 }: DashboardFiltersProps) {
+  const visibleBrokerCount = showAllBrokers
+    ? sortedBrokers.length
+    : Math.min(DEFAULT_VISIBLE_BROKER_COUNT, sortedBrokers.length);
+
   return (
     <div className="bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5">
       <div className="grid grid-cols-2 items-center gap-2.5 sm:flex sm:flex-wrap sm:gap-4">
@@ -126,7 +131,7 @@ export function DashboardFilters({
           onChange={setPrimaryDomain}
           options={[
             { value: "", label: "全部方向" },
-            ...DOMAIN_OPTIONS.map((d) => ({ value: d, label: d })),
+            ...(domainOptions?.length ? domainOptions : DOMAIN_OPTIONS).map((d) => ({ value: d, label: d })),
           ]}
           placeholder="全部方向"
           maxHeight={280}
@@ -139,9 +144,7 @@ export function DashboardFilters({
           onChange={setAnnouncementStage}
           options={[
             { value: "", label: "全部阶段" },
-            { value: "采购招标", label: "采购招标" },
-            { value: "结果公示", label: "结果公示" },
-            { value: "流标废标", label: "流标废标" },
+            ...(stageOptions?.length ? stageOptions : ["采购招标", "结果公示", "流标废标", "其他"]).map((stage) => ({ value: stage, label: stage })),
           ]}
           placeholder="全部阶段"
           className="w-full sm:w-auto"
@@ -195,49 +198,46 @@ export function DashboardFilters({
               清除已选
             </button>
           )}
-          <div
-            ref={brokerTagsRef}
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-hidden sm:pb-0"
-            style={{ maxHeight: showAllBrokers ? "none" : "76px" }}
-          >
-            {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {
-              const isSelected = brokerNames.includes(broker);
-              return (
+          <div className="relative min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-hidden sm:pb-0">
+              {sortedBrokers.slice(0, visibleBrokerCount).map((broker) => {
+                const isSelected = brokerNames.includes(broker);
+                return (
+                  <button
+                    key={broker}
+                    onClick={() => toggleBrokerName(broker)}
+                    className={`
+                      px-2.5 py-1 text-[12px] font-medium rounded-lg transition-all duration-150 whitespace-nowrap border
+                      ${isSelected
+                        ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                        : "bg-[#F8FAFC] border-[#E4EAF2] text-[#475467] hover:border-blue-500/30 hover:bg-blue-50/20 hover:text-[#172033]"
+                      }
+                    `}
+                  >
+                    {broker}
+                  </button>
+                );
+              })}
+              {visibleBrokerCount < sortedBrokers.length && (
                 <button
-                  key={broker}
-                  onClick={() => toggleBrokerName(broker)}
-                  className={`
-                    px-2.5 py-1 text-[12px] font-medium rounded-lg transition-all duration-150 whitespace-nowrap border
-                    ${isSelected
-                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
-                      : "bg-[#F8FAFC] border-[#E4EAF2] text-[#475467] hover:border-blue-500/30 hover:bg-blue-50/20 hover:text-[#172033]"
-                    }
-                  `}
+                  onClick={() => setShowAllBrokers(true)}
+                  className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-blue-600 hover:bg-blue-100/50 hover:text-blue-700 transition-colors whitespace-nowrap"
                 >
-                  {broker}
+                  +{sortedBrokers.length - visibleBrokerCount} 更多
                 </button>
-              );
-            })}
-            {visibleBrokerCount < sortedBrokers.length && (
-              <button
-                onClick={() => setShowAllBrokers(true)}
-                className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-blue-600 hover:bg-blue-100/50 hover:text-blue-700 transition-colors whitespace-nowrap"
-              >
-                +{sortedBrokers.length - visibleBrokerCount} 更多
-              </button>
-            )}
-            {showAllBrokers && visibleBrokerCount >= sortedBrokers.length && (
-              <button
-                onClick={() => setShowAllBrokers(false)}
-                className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-[#667085] hover:bg-gray-200 transition-colors whitespace-nowrap"
-              >
-                收起
-              </button>
-            )}
+              )}
+              {showAllBrokers && visibleBrokerCount >= sortedBrokers.length && (
+                <button
+                  onClick={() => setShowAllBrokers(false)}
+                  className="px-2.5 py-1 text-[12px] font-semibold rounded-lg bg-[#EBF0F7] text-[#667085] hover:bg-gray-200 transition-colors whitespace-nowrap"
+                >
+                  收起
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
-

@@ -24,6 +24,7 @@ import { OverviewCharts } from "@/components/app-watch/overview-charts";
 import { ReleaseTable } from "@/components/app-watch/release-table";
 import { ReleaseDetailDrawer } from "@/components/app-watch/release-detail-drawer";
 import { ModuleSwitcher } from "@/components/app-watch/module-switcher";
+import type { DashboardFilters, DashboardOverview } from "@dashboard-data/contracts";
 
 type ViewMode = "overview" | "details";
 
@@ -44,6 +45,8 @@ export default function AppUpdatesPage() {
   // Data state
   const [records, setRecords] = useState<AppReleaseRecord[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [dataOverview, setDataOverview] = useState<DashboardOverview | null>(null);
+  const [dataFilters, setDataFilters] = useState<DashboardFilters | null>(null);
   const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
   const [dataMessage, setDataMessage] = useState<string | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
@@ -77,9 +80,11 @@ export default function AppUpdatesPage() {
     setDataStatus("loading");
     setDataMessage(null);
     loadAppReleases(token)
-      .then(({ records: loaded, updatedAt: at }) => {
+      .then(({ records: loaded, updatedAt: at, overview, filters: loadedFilters }) => {
         setRecords(loaded);
         setUpdatedAt(at);
+        setDataOverview(overview);
+        setDataFilters(loadedFilters);
         setDataStatus(loaded.length === 0 ? "empty" : "ready");
         setDataMessage(loaded.length === 0 ? "尚未生成券商 App 更新数据，请先运行券商 App 更新任务。" : null);
       })
@@ -90,6 +95,8 @@ export default function AppUpdatesPage() {
         }
         setRecords([]);
         setUpdatedAt(null);
+        setDataOverview(null);
+        setDataFilters(null);
         if (err instanceof AppReleaseNotGeneratedError) {
           setDataStatus("empty");
           setDataMessage(err.message);
@@ -102,12 +109,14 @@ export default function AppUpdatesPage() {
 
   const deferredSearch = useDeferredValue(filters.search.trim().toLowerCase());
   const baseline = useMemo(() => {
+    const packagedDate = dataOverview?.app_updates.period.to ? new Date(`${dataOverview.app_updates.period.to}T00:00:00Z`) : null;
+    if (packagedDate && !Number.isNaN(packagedDate.getTime())) return packagedDate;
     let latest = 0;
     for (const record of records) {
       latest = Math.max(latest, record.publishDate?.getTime() ?? 0);
     }
     return latest > 0 ? new Date(latest) : null;
-  }, [records]);
+  }, [dataOverview, records]);
 
   const selectedBrokerNames = useMemo(() => new Set(filters.brokerNames), [filters.brokerNames]);
   const selectedAppNames = useMemo(() => new Set(filters.appNames), [filters.appNames]);
@@ -157,19 +166,15 @@ export default function AppUpdatesPage() {
   const statistics = useMemo(() => getAppReleaseStatistics(filteredRecords), [filteredRecords]);
   // Options for filters
   const brokerOptions = useMemo(() => {
-    const set = new Set<string>();
-    records.forEach(r => { if (r.brokerName) set.add(r.brokerName); });
-    return Array.from(set).sort();
-  }, [records]);
+    return dataFilters?.app_updates.brokers ?? [...new Set(records.map((record) => record.brokerName).filter(Boolean))].sort();
+  }, [dataFilters, records]);
   
   const appOptions = useMemo(() => {
-    const set = new Set<string>();
-    records.forEach(r => { if (r.appName) set.add(r.appName); });
-    return Array.from(set).sort();
-  }, [records]);
+    return dataFilters?.app_updates.apps ?? [...new Set(records.map((record) => record.appName).filter(Boolean))].sort();
+  }, [dataFilters, records]);
   
-  const updateTypeOptions = useMemo(() => getUpdateTypeDistribution(records).map(i => i.name), [records]);
-  const tagOptions = useMemo(() => getFeatureTagDistribution(records).map(i => i.name), [records]);
+  const updateTypeOptions = useMemo(() => dataFilters?.app_updates.update_types ?? getUpdateTypeDistribution(records).map(i => i.name), [dataFilters, records]);
+  const tagOptions = useMemo(() => dataFilters?.app_updates.feature_tags ?? getFeatureTagDistribution(records).map(i => i.name), [dataFilters, records]);
 
   // Handle record click
   const handleRecordClick = (record: AppReleaseRecord) => {

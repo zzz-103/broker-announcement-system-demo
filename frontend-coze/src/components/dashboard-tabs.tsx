@@ -38,4 +38,3 @@ export function DashboardTabs({ activeTab, setActiveTab, filteredCount, headerHe
     </div>
   );
 }
-

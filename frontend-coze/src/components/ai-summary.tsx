@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AlertCircle, Sparkles, ChevronDown } from "lucide-react";
+import { DashboardDataError, loadStaticDataset } from "@/lib/static-dashboard-data";
 
 interface AiSummaryProps {
   className?: string;
@@ -16,23 +17,19 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
 
   useEffect(() => {
     setIsLoading(true);
-    fetch("/data/ai-analysis.json", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("AI 摘要文件不存在");
-        return response.json() as Promise<{ content?: string; updatedAt?: string; analysis?: { content?: string }; meta?: { generated_at?: string } }>;
-      })
+    loadStaticDataset("ai_analysis")
       .then((data) => {
-        const nextContent = data.analysis?.content || data.content || null;
+        const nextContent = data.content || null;
         if (nextContent) {
           setContent(nextContent);
-          setUpdatedAt(data.updatedAt || data.meta?.generated_at || null);
+          setUpdatedAt(data.updated_at || data.meta?.generated_at || null);
           setError(null);
         } else {
           setEmptyMessage("尚未提供 AI 情报分析");
         }
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "加载分析报告失败");
+        setError(err instanceof DashboardDataError ? err.message : err instanceof Error ? err.message : "加载分析报告失败");
       })
       .finally(() => setIsLoading(false));
   }, []);
@@ -116,7 +113,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
               {isLoading ? "正在加载 AI 情报分析..." : emptyMessage}
             </p>
             <p className="text-[11px] text-[#98A2B3] max-w-xs">
-              管理员可查看基于近 30 天数据的静态情报分析
+              当前页面展示数据包中基于近 30 天数据生成的静态情报分析
             </p>
           </div>
         )}

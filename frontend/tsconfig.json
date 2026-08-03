@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@dashboard-data/*": ["../shared/dashboard-data/*"]
     }
   },
   "include": [

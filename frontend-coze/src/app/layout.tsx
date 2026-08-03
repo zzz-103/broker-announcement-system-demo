@@ -1,16 +1,17 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { basePath } from '@/lib/public-path';
 
 export const metadata: Metadata = {
-  title: '世纪证券招采情报平台',
-  description: '洞察同行建设方向、公开招采动态、供应商及价格信息',
+  title: '世纪证券业务信息平台',
+  description: '公开招采动态与券商 App 更新静态看板',
   other: {
     google: 'notranslate',
   },
   icons: {
-    icon: [{ url: '/brand/company-icon.png', type: 'image/png', sizes: '168x170' }],
-    shortcut: ['/brand/company-icon.png'],
-    apple: [{ url: '/brand/company-icon.png', type: 'image/png', sizes: '168x170' }],
+    icon: [{ url: `${basePath}/brand/company-icon.png`, type: 'image/png', sizes: '168x170' }],
+    shortcut: [`${basePath}/brand/company-icon.png`],
+    apple: [{ url: `${basePath}/brand/company-icon.png`, type: 'image/png', sizes: '168x170' }],
   },
 };
 

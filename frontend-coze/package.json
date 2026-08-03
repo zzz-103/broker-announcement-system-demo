@@ -5,8 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "sync-data": "python3 scripts/sync-local-data.py",
+    "start": "node scripts/start-static.mjs",
+    "install-data": "node scripts/install-dashboard-data.mjs",
+    "data:check": "node scripts/check-dashboard-data.mjs",
     "ts-check": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "preinstall": "only-allow pnpm"

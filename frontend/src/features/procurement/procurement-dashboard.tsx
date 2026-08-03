@@ -26,6 +26,7 @@ import { ExecutiveSummary } from "@/components/executive-summary";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import type { FeedbackCategory } from "@/lib/api/backend-client";
 import type { ActiveModule } from "@/components/app-watch/module-switcher";
+import type { DashboardFilters as DashboardFiltersData, DashboardOverview } from "@dashboard-data/contracts";
 
 const DOMAIN_OPTIONS = [
   "AI 与智能化",
@@ -103,6 +104,8 @@ export default function Dashboard() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
+  const [dataOverview, setDataOverview] = useState<DashboardOverview | null>(null);
+  const [dataFilters, setDataFilters] = useState<DashboardFiltersData | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
@@ -207,9 +210,11 @@ export default function Dashboard() {
     setDataStatus("loading");
     setDataMessage(null);
     loadAndProcessData(token)
-      .then(({ records, updatedAt }) => {
+      .then(({ records, updatedAt, overview, filters }) => {
         setAllData(records);
         setDataUpdatedAt(updatedAt);
+        setDataOverview(overview);
+        setDataFilters(filters);
         setDataStatus(records.length === 0 ? "empty" : "ready");
         setDataMessage(
           records.length === 0
@@ -226,11 +231,15 @@ export default function Dashboard() {
         if (err instanceof DataNotGeneratedError) {
           setAllData([]);
           setDataUpdatedAt(null);
+          setDataOverview(null);
+          setDataFilters(null);
           setDataStatus("empty");
           setDataMessage(err.message);
         } else {
           setAllData([]);
           setDataUpdatedAt(null);
+          setDataOverview(null);
+          setDataFilters(null);
           setDataStatus("error");
           setDataMessage(err instanceof Error ? err.message : "数据加载失败");
         }
@@ -242,13 +251,14 @@ export default function Dashboard() {
   const dashboardStatistics = useMemo(() => getDashboardStatistics(allData), [allData]);
   const deferredSearch = useDeferredValue(search.toLowerCase());
 
-  const methodOptions = useMemo(() => {
+  const derivedMethodOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of allData) {
       if (r.procurement_method) set.add(r.procurement_method);
     }
     return Array.from(set).sort();
   }, [allData]);
+  const methodOptions = dataFilters?.procurement.procurement_methods ?? derivedMethodOptions;
 
   // Apply all filters except broker multi-select so broker options do not disappear
   // because of their own selection.
@@ -296,8 +306,8 @@ export default function Dashboard() {
   }, [dataBeforeBrokerFilter]);
 
   const allBrokerOptions = useMemo(
-    () => [...dashboardStatistics.brokerNames].sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
-    [dashboardStatistics.brokerNames]
+    () => dataFilters?.procurement.brokers ?? [...dashboardStatistics.brokerNames].sort((a, b) => a.localeCompare(b, "zh-Hans-CN")),
+    [dataFilters, dashboardStatistics.brokerNames]
   );
 
   useEffect(() => {
@@ -379,9 +389,9 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
       {/* ─── Top Navigation ─── */}
-      <DashboardHeader
+            <DashboardHeader
         username={username}
-        totalBrokers={dashboardStatistics.brokerCount}
+              totalBrokers={dataOverview?.tender_projects.broker_count ?? dashboardStatistics.brokerCount}
         baseline={baseline}
         filteredData={filteredData}
         isAdmin={isAdmin}
@@ -432,7 +442,9 @@ export default function Dashboard() {
           brokerOptions={brokerOptions}
           allBrokerOptions={allBrokerOptions}
           onMissingBrokerSearch={dataStatus === "ready" && !search.trim() ? (brokerName) => openFeedback("broker_request", brokerName) : undefined}
-          methodOptions={methodOptions}
+              methodOptions={methodOptions}
+              domainOptions={dataFilters?.procurement.domains}
+              stageOptions={dataFilters?.procurement.stages}
           sortedBrokers={sortedBrokers}
           showAllBrokers={showAllBrokers}
           setShowAllBrokers={setShowAllBrokers}

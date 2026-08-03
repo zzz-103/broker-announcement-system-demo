@@ -17,6 +17,8 @@ backend/data/announcement_table-*.backup.csv
 backend/data/announcement_table.jsonl
 backend/data/announcement_table.xlsx
 backend/data/ai-analysis.json
+backend/data/dashboard-data/
+backend/data/dashboard-data.zip
 backend/data/run_summary.json
 backend/data/failed_files.jsonl
 backend/data/staging/*.csv
