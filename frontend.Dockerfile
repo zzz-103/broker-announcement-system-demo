@@ -22,6 +22,10 @@ RUN --mount=type=cache,id=broker-frontend-pnpm,target=/pnpm/store \
 
 COPY frontend/ ./
 
+# The frontend TypeScript path alias resolves shared dashboard contracts from
+# the repository root during the container build.
+COPY shared/dashboard-data/ /shared/dashboard-data/
+
 RUN pnpm build
 
 ARG APP_VERSION
