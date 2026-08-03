@@ -1,16 +1,16 @@
 {
   "schema_version": "1.0.0",
   "minimum_reader_version": "1.0.0",
-  "package_version": "dashboard-a45cc620531858cd53f3",
-  "generated_at": "2026-08-03T05:29:36.656056+00:00",
+  "package_version": "dashboard-9ebf37df62589ae1de1d",
+  "generated_at": "2026-08-03T06:35:40.327450+00:00",
   "source": "世纪证券业务信息平台标准化导出",
   "timezone": "UTC",
   "datasets": {
     "overview": {
       "file": "overview.json",
       "record_count": 1,
-      "bytes": 321,
-      "sha256": "4c8b7cfac54d4da0676d3d3a6199e3e3774c2557117efde83de94355e211e115",
+      "bytes": 322,
+      "sha256": "26c02b059acfac195f829620940cfa54632f9662249142ae3791a563899dfd72",
       "available": true,
       "reason": null,
       "period": null
@@ -18,41 +18,41 @@
     "filters": {
       "file": "filters.json",
       "record_count": 1,
-      "bytes": 2398,
-      "sha256": "80376a3150e5d5e094091903bab21daf0ef42c967e89cfea780c35bf5954c292",
+      "bytes": 3262,
+      "sha256": "0e50c90986067d73b46a4bbbfb2c05b19dc0d9d8a61ada8b4ec6cff1a332878b",
       "available": true,
       "reason": null,
       "period": null
     },
     "tender_projects": {
       "file": "tender_projects.json",
-      "record_count": 11291,
-      "bytes": 11713889,
-      "sha256": "7325e25d2a029163728a033ee1531b82d93aaa1df258893c3389321d13cebce3",
+      "record_count": 11804,
+      "bytes": 12352336,
+      "sha256": "ad28cb7edd867a381814325b694923f3adcf39b9b0d5730ba92ff6089e0e265e",
       "available": true,
       "reason": null,
       "period": {
         "from": "2020-08-19",
-        "to": "2026-07-28"
+        "to": "2026-08-03"
       }
     },
     "app_updates": {
       "file": "app_updates.json",
-      "record_count": 20,
-      "bytes": 32059,
-      "sha256": "73478d433e89ac51ada78ca3a1c5a6cba9982856d516f2a58256ac02081c4b6b",
+      "record_count": 45,
+      "bytes": 84870,
+      "sha256": "b498ce210ea217aab385cfed12fdd97bf24bbf0dc5b172adda2bedba8c71e4a3",
       "available": true,
       "reason": null,
       "period": {
         "from": "2022-06-14",
-        "to": "2026-07-14"
+        "to": "2026-08-01"
       }
     },
     "ai_analysis": {
       "file": "ai_analysis.json",
       "record_count": 1,
-      "bytes": 3262,
-      "sha256": "d4dbae50b534db4713e168a0bebb9d970b8ddaad2cb629a95dfa818c8f1dfd07",
+      "bytes": 3456,
+      "sha256": "8b45aacc6ec91b28c3bcd186ba186a9d0cd874ecc4aa3adae99d7d33be499d0b",
       "available": true,
       "reason": null,
       "period": null

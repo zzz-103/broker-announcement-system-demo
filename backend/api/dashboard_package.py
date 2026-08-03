@@ -81,6 +81,20 @@ DOMAIN_RULES = (
 )
 CAPITAL_MARKET_KEYWORDS = ("投行", "资本市场", "质控", "承销", "保荐")
 SYSTEM_OBJECT_KEYWORDS = ("系统", "平台", "软件", "应用", "数据库", "接口", "引擎", "网关", "终端", "内核", "模块", "助手", "程序化")
+BUSINESS_DOMAIN_RULES = (
+    ("交易、柜台与核心系统", ("交易系统", "交易软件", "交易功能", "交易执行", "交易平台", "交易算法", "交易网关", "连续竞价", "竞价网络", "智能交易", "策略交易", "自营交易", "专业化交易", "快速交易", "交易反演", "条件单", "多资产ETF", "ETF", "连板", "核心交易", "柜台", "柜面", "业务受理", "集中交易", "极速交易", "期权", "两融", "融资融券", "清算", "结算", "估值", "登记结算", "登记过户", "法人清算", "行情交易", "订单管理", "量化交易", "程序化交易", "固定收益", "固收", "衍生品", "回购", "收益互换", "委托交易", "股票质押", "增减持", "资产证券化", "资产负债", "资负", "场外交易", "OTC", "FICC", "账户及场外")),
+    ("网络安全与监管科技", ("信息隔离墙", "合规系统", "合规管理", "合规", "监管报送", "监管系统", "监管政策", "报送系统", "反洗钱", "风险管理", "风险识别", "风险模型", "信用风险", "授信管理", "风控", "异常交易", "身份信息核验", "公安校验", "受益所有人", "安全流量", "CISP", "WAF", "零信任", "上网行为审计", "网页防篡改", "基金风险", "风险加权", "带外管理", "流量分析", "全链路流量", "RiskMetrics", "企业微信", "企微", "会话存档")),
+    ("APP与数字化渠道", ("网厅", "网上开户", "非现场开户", "开户系统", "开户", "移动展业", "移动化", "手机证券", "线上业务办理", "互联网金融", "客户渠道", "客户服务", "客户联络", "小程序", "VTM", "双录", "业务权限", "一站通", "一账通", "视频见证")),
+    ("财富管理与客户经营", ("财富管理", "财富管家", "财富", "投顾", "基金投顾", "基金绩效", "基金系统", "获客", "客户经营", "人群洞察", "产品中台", "LiveBOS", "理财", "资管", "资产管理", "信托", "托管", "经纪", "客户托管", "客户画像", "客户运营", "股权投资", "投资管理", "产品销售", "产品管理", "产品中心", "基金登记", "基金业务", "私募基金", "资产配置", "TA", "QTrade")),
+    ("投研资讯与金融数据", ("投研", "金融数据", "行情数据", "行情系统", "实时行情", "量化数据", "量化分析", "金融量化", "量化", "投资数据", "研究数据", "市场数据", "债券数据", "数据终端", "投研数据", "实时同步平台", "Dataxone")),
+    ("投行与资本市场", ("投行", "资本市场", "质控", "底稿", "承销", "保荐", "企业库", "机构库", "金融文档", "文档智能", "智能刷报", "项目库")),
+    ("AI与智能化", ("智能投研", "智能投顾", "智能审核", "智能风控", "智能解析", "文档解析", "版面解析", "合同智能", "算法交易", "量化算法", "人脸质检")),
+    ("IT运维与技术服务", ("财务账套", "财务附件自动采集", "财务自动化", "运营自动化", "新意系统", "金证系统", "顶点系统", "恒生系统", "RPA", "DevOps", "XC", "公有云", "云服务", "ORACLE")),
+)
+TECH_OBJECT_KEYWORDS = SYSTEM_OBJECT_KEYWORDS + ("功能", "总线", "算法", "模型", "节点", "底座", "数据中心", "防火墙", "负载均衡", "超融合", "服务器", "存储", "云平台", "RPA", "WAF", "FIX", "CSTP", "PB", "O32", "A5", "CISP", "Acadia", "OneLink", "Matrix", "XTS", "QMT", "ESB", "DevOps", "XC", "FICC", "OTC", "TA", "QTrade", "RiskMetrics", "Dataxone", "Bonree", "CTP", "企点", "金证", "新意", "华锐", "会话存档")
+TECH_SERVICE_OBJECT_KEYWORDS = ("技术服务", "系统服务", "软件服务", "平台服务", "接口服务", "数据服务", "维护服务", "运维服务", "实施服务", "开发服务", "授权服务", "许可服务", "系统维保", "软件维保", "平台维保", "会话存档服务")
+NON_FINTECH_CONTEXT_KEYWORDS = ("装修工程", "装修施工", "物业", "保洁", "安保", "空调", "通风", "消防", "办公", "办公家具", "办公电脑", "办公用房", "办公场地", "办公楼", "办公终端", "办公软件", "信创办公", "WPS", "Adobe", "工会消费券", "人力外包", "人力资源", "人事", "招聘", "薪酬", "员工绩效", "绩效考核", "绩效管理", "绩效系统", "部门绩效", "员工活动", "员工福利", "员工信息", "员工管理", "劳动合同", "电子劳动合同", "法务", "法律顾问", "审计服务", "内部审计", "财务审计", "税务管理", "财务总账", "财务共享", "智慧财务", "股权激励", "邮件", "邮箱", "电话录音", "录音系统", "会议系统", "会议", "会务", "培训", "比赛", "推广", "推广代理", "营销代理", "营销推广", "营销活动", "市场推广", "IP孵化", "巨量引擎", "市场投放", "应用市场", "投放", "广告", "广告投放", "内容运营", "企小码", "小红书", "公众号", "固定资产", "固定资产管理", "IT资产管理", "资产处置", "不良债权", "承销服务", "主承销商")
+SOFT_NON_FINTECH_CONTEXT_KEYWORDS = ("投放", "广告", "广告投放")
 NON_FINTECH_KEYWORDS = ("工程装修", "物业", "办公用品", "员工活动", "法律服务", "审计服务", "行政采购", "装修", "保洁", "安保", "餐饮", "车辆", "驾驶", "印刷", "广告制作")
 TAG_RULES = (
     ("信创", ("信创", "国产化", "国产", "自主可控", "适配")),
@@ -206,15 +220,47 @@ def _stage(value: object) -> str:
     return "其他"
 
 
-def _classify(project: str, subcategory: str, category: str, scope_summary: str = "") -> tuple[str, bool]:
+def _classify(project: str, subcategory: str, category: str, scope_summary: str = "", is_broker_project: bool | None = None) -> tuple[str, bool]:
     project_context = f"{project} {scope_summary}"
     text = f"{project_context} {subcategory} {category}"
 
-    def matched_domain(value: str) -> str | None:
-        for domain, keywords in DOMAIN_RULES:
+    def matched_domain(value: str, rules: tuple[tuple[str, tuple[str, ...]], ...] = DOMAIN_RULES) -> str | None:
+        for domain, keywords in rules:
             if any(keyword in value for keyword in keywords):
                 return domain
         return None
+
+    business_domain = matched_domain(project_context, BUSINESS_DOMAIN_RULES)
+    has_tech_object = any(keyword in project_context for keyword in TECH_OBJECT_KEYWORDS + TECH_SERVICE_OBJECT_KEYWORDS)
+    has_title_tech_object = any(keyword in project for keyword in TECH_OBJECT_KEYWORDS + TECH_SERVICE_OBJECT_KEYWORDS)
+    has_soft_nontech_context = any(keyword in project_context for keyword in SOFT_NON_FINTECH_CONTEXT_KEYWORDS)
+    has_hard_nontech_context = any(
+        keyword in project_context and keyword not in SOFT_NON_FINTECH_CONTEXT_KEYWORDS
+        for keyword in NON_FINTECH_CONTEXT_KEYWORDS
+    )
+
+    # Production classifications can lose the original technical category, so
+    # a clear financial business context plus a technical object in the title or
+    # scope is sufficient.  These signals intentionally outrank stale category
+    # values such as "工程建设与装修" and procurement actions are never used
+    # as a negative signal by themselves.
+    if business_domain and has_tech_object and not has_hard_nontech_context:
+        return business_domain, True
+
+    # Result notices and direct-procurement rows often lose the original
+    # technical subcategory.  A broker-scoped technical object is therefore a
+    # positive signal by itself; the explicit non-technology context above
+    # protects office, marketing, legal and facility purchases.
+    if (
+        is_broker_project is True
+        and has_title_tech_object
+        and not has_hard_nontech_context
+        and (not has_soft_nontech_context or business_domain is not None)
+    ):
+        return business_domain or matched_domain(project_context) or "IT运维与技术服务", True
+
+    if has_hard_nontech_context or (has_soft_nontech_context and (business_domain is None or not has_tech_object)):
+        return "非金融科技及其他", False
 
     # The category fields can contain stale or overly broad values (for example,
     # "工程建设与装修") even when the title and scope clearly name a financial
@@ -287,6 +333,8 @@ def _build_tenders(path: Path) -> list[dict[str, Any]]:
     for row in _read_csv(path):
         broker = _normalize_broker(row.get("broker_name")) or "主体待识别"
         project = _text(row.get("project_name"))
+        broker_flag = _text(row.get("is_broker_project")).lower()
+        is_broker_project = None if broker_flag not in {"true", "false"} else broker_flag == "true"
         normalized_project = _normalize_project_name(project)
         project_key = f"{broker}||{normalized_project}"
         publish_date, publish_timestamp = _parse_date(row.get("publish_date"))
@@ -300,13 +348,14 @@ def _build_tenders(path: Path) -> list[dict[str, Any]]:
             _text(row.get("project_subcategory")),
             _text(row.get("procurement_category")),
             _text(row.get("procurement_scope_summary")),
+            is_broker_project,
         )
         stage = _stage(row.get("announcement_stage"))
         source_name = _public_source_name(row.get("source") or row.get("data_source"))
         record = {
             "id": _safe_id(row, project_key),
             "broker_name": broker,
-            "is_broker_project": None if _text(row.get("is_broker_project")).lower() not in {"true", "false"} else _text(row.get("is_broker_project")).lower() == "true",
+            "is_broker_project": is_broker_project,
             "publish_date": publish_date,
             "publish_timestamp": publish_timestamp,
             "announcement_stage": stage,

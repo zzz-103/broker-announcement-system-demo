@@ -63,6 +63,71 @@ class DashboardPackageTests(unittest.TestCase):
             ("非金融科技及其他", False),
         )
 
+    def test_sparse_financial_titles_are_promoted_without_category_metadata(self) -> None:
+        cases = (
+            ("2026年二季度顶点财富管家系统升级改造项目", "财富管理与客户经营"),
+            ("聚安一站通系统（含VTM）开户及业务权限开通流程改造项目", "APP与数字化渠道"),
+            ("国泰海通2026年财务风险识别系统数据采购项目", "网络安全与监管科技"),
+            ("浙商证券股份有限公司全链路流量分析维护服务采购项目", "网络安全与监管科技"),
+            ("深交所交易网关连续竞价网络优化服务询比", "交易、柜台与核心系统"),
+            ("营运管理部财务账套电子附件自动采集RPA需求项目", "IT运维与技术服务"),
+            ("新基金绩效分析系统信创改造项目", "财富管理与客户经营"),
+            ("企业微信会话存档账号采购项目", "网络安全与监管科技"),
+        )
+        for project, expected_domain in cases:
+            self.assertEqual(
+                module._classify(project, "", "工程建设与装修", project, False),
+                (expected_domain, True),
+            )
+
+    def test_expanded_hard_exclusions_remain_non_fintech(self) -> None:
+        cases = (
+            "中信建投证券2026年荣耀应用市场投放项目",
+            "国泰海通证券2026年金融数据港公共区域联动安保服务",
+            "华能长城资管集团公司法务系统服务项目",
+            "关于固定资产管理系统开发的请示",
+            "中信证券2026年量化比赛系统采购",
+            "中信建投证券新一代财务总账系统采购项目",
+            "国泰君安证券2026年投顾IP孵化与巨量引擎推广代理框架协议",
+        )
+        for project in cases:
+            self.assertEqual(
+                module._classify(project, "", "IT软硬件", project, True),
+                ("非金融科技及其他", False),
+            )
+
+    def test_advertising_words_do_not_override_a_customer_platform_context(self) -> None:
+        self.assertEqual(
+            module._classify(
+                "中信证券股份有限公司智能获客管理平台项目",
+                "业务系统与软件",
+                "IT软硬件",
+                "采购智能获客管理平台，实现人群洞察、智能投放与闭环优化",
+                True,
+            ),
+            ("财富管理与客户经营", True),
+        )
+        self.assertEqual(
+            module._classify(
+                "信息流平台流量运营项目",
+                "营销与投研数据",
+                "专业及金融服务",
+                "采购广告平台信息流广告投放服务",
+                True,
+            ),
+            ("非金融科技及其他", False),
+        )
+        self.assertEqual(
+            module._classify(
+                "浙商证券与北京天相财富管理顾问有限公司广告投放采购项目",
+                "",
+                "专业及金融服务",
+                "广告投放采购服务",
+                True,
+            ),
+            ("非金融科技及其他", False),
+        )
+
     def test_public_source_url_rejects_local_paths_but_keeps_web_links(self) -> None:
         self.assertEqual(module._public_source_url("https://example.com/app"), "https://example.com/app")
         self.assertEqual(module._public_source_url("file:///Users/test/private.json"), "")
