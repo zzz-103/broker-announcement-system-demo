@@ -80,7 +80,7 @@ DOMAIN_RULES = (
     ("投研资讯与金融数据", ("Wind", "同花顺", "金融数据", "行情数据", "行情系统", "期货行情", "资讯服务", "研报", "投研数据", "舆情", "数据终端", "资讯终端")),
 )
 CAPITAL_MARKET_KEYWORDS = ("投行", "资本市场", "质控", "承销", "保荐")
-SYSTEM_OBJECT_KEYWORDS = ("系统", "平台", "软件", "应用", "数据库", "接口", "引擎", "网关", "终端", "内核", "模块")
+SYSTEM_OBJECT_KEYWORDS = ("系统", "平台", "软件", "应用", "数据库", "接口", "引擎", "网关", "终端", "内核", "模块", "助手", "程序化")
 NON_FINTECH_KEYWORDS = ("工程装修", "物业", "办公用品", "员工活动", "法律服务", "审计服务", "行政采购", "装修", "保洁", "安保", "餐饮", "车辆", "驾驶", "印刷", "广告制作")
 TAG_RULES = (
     ("信创", ("信创", "国产化", "国产", "自主可控", "适配")),
@@ -207,12 +207,33 @@ def _stage(value: object) -> str:
 
 
 def _classify(project: str, subcategory: str, category: str, scope_summary: str = "") -> tuple[str, bool]:
-    text = f"{project} {subcategory} {category} {scope_summary}"
+    project_context = f"{project} {scope_summary}"
+    text = f"{project_context} {subcategory} {category}"
+
+    def matched_domain(value: str) -> str | None:
+        for domain, keywords in DOMAIN_RULES:
+            if any(keyword in value for keyword in keywords):
+                return domain
+        return None
+
+    # The category fields can contain stale or overly broad values (for example,
+    # "工程建设与装修") even when the title and scope clearly name a financial
+    # business system.  An explicit domain + system object in the title/scope
+    # therefore takes precedence over that noisy metadata.
+    project_domain = matched_domain(project_context)
+    if project_domain and any(keyword in project_context for keyword in SYSTEM_OBJECT_KEYWORDS):
+        return project_domain, True
+    if (
+        any(keyword in project_context for keyword in CAPITAL_MARKET_KEYWORDS)
+        and any(keyword in project_context for keyword in SYSTEM_OBJECT_KEYWORDS)
+    ):
+        return "投行与资本市场", True
+
     if any(keyword in text for keyword in NON_FINTECH_KEYWORDS):
         return "非金融科技及其他", False
-    for domain, keywords in DOMAIN_RULES:
-        if any(keyword in text for keyword in keywords):
-            return domain, True
+    domain = matched_domain(text)
+    if domain:
+        return domain, True
     if any(keyword in text for keyword in CAPITAL_MARKET_KEYWORDS) and any(keyword in text for keyword in SYSTEM_OBJECT_KEYWORDS):
         return "投行与资本市场", True
     if category == "IT软硬件":

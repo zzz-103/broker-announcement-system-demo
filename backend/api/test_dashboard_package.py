@@ -13,6 +13,56 @@ from backend.api import dashboard_package as module
 
 
 class DashboardPackageTests(unittest.TestCase):
+    def test_fintech_system_titles_override_noisy_non_fintech_metadata(self) -> None:
+        cases = (
+            (
+                "中信证券联合风控系统信创及适配升级采购",
+                "工程建设与装修",
+                "其他",
+                "中信证券联合风控系统信创及适配升级采购",
+                "网络安全与监管科技",
+            ),
+            (
+                "中信证券恒生 NanoExpress 期货行情系统软件-26年度续签",
+                "工程建设与装修",
+                "其他",
+                "中信证券恒生 NanoExpress 期货行情系统软件-26年度续签",
+                "投研资讯与金融数据",
+            ),
+            (
+                "世纪证券有限责任公司投行质控内核等改造需求项目采购中选公示",
+                "工程建设与装修",
+                "其他",
+                "世纪证券有限责任公司投行质控内核等改造需求项目采购中选公示",
+                "投行与资本市场",
+            ),
+            (
+                "华西证券股份有限公司智能风控助手建设项目",
+                "工程建设与装修",
+                "其他",
+                "华西证券股份有限公司智能风控助手建设项目采购公告",
+                "网络安全与监管科技",
+            ),
+            (
+                "ARC异常交易事前风控程序化新规改造采购项目",
+                "工程建设与装修",
+                "其他",
+                "ARC异常交易事前风控程序化新规改造采购项目采购结果公告",
+                "网络安全与监管科技",
+            ),
+        )
+        for project, subcategory, category, scope_summary, expected_domain in cases:
+            self.assertEqual(
+                module._classify(project, subcategory, category, scope_summary),
+                (expected_domain, True),
+            )
+
+    def test_non_fintech_project_is_not_promoted_by_generic_object_words(self) -> None:
+        self.assertEqual(
+            module._classify("办公区装修项目", "工程建设与装修", "其他", "办公区装修施工"),
+            ("非金融科技及其他", False),
+        )
+
     def test_public_source_url_rejects_local_paths_but_keeps_web_links(self) -> None:
         self.assertEqual(module._public_source_url("https://example.com/app"), "https://example.com/app")
         self.assertEqual(module._public_source_url("file:///Users/test/private.json"), "")
