@@ -4,11 +4,15 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+from dotenv import load_dotenv
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.broker_app_watch.core.paths import CONFIG_DIR, PROJECT_ROOT
+
+
+load_dotenv(PROJECT_ROOT / ".env")
 
 
 class BrokerSource(BaseModel):
