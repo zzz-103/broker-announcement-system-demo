@@ -196,8 +196,11 @@ try {
         # non-matching line cannot make this validation fail.
         $composeConfig = docker compose config | Out-String
         Assert-LastExitCode 'Read Docker Compose mounts'
-        if ($composeConfig -notmatch 'app-watch-data') {
-            throw 'Production Compose must mount runtime/app-watch-data into backend-api.'
+        if (
+            $composeConfig -notmatch 'app-watch-data' -or
+            $composeConfig -notmatch '/app/backend/data/broker_app_watch'
+        ) {
+            throw 'Production Compose must mount runtime/app-watch-data at /app/backend/data/broker_app_watch.'
         }
     }
     finally { Pop-Location }
@@ -205,8 +208,8 @@ try {
     Write-Host "Building $BackendImage from $GitSha"
     docker build --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
     Assert-LastExitCode 'Build backend image'
-    docker run --rm --entrypoint /app/broker-app-watch/.venv/bin/python $BackendImage -c "import broker_app_watch; print('broker-app-watch import ok')"
-    Assert-LastExitCode 'Validate broker-app-watch image import'
+    docker run --rm --entrypoint python $BackendImage -c "import backend.broker_app_watch.cli; print('broker app watch import ok')"
+    Assert-LastExitCode 'Validate broker app watch image import'
     Write-Host "Building $FrontendImage from $GitSha"
     docker build --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
     Assert-LastExitCode 'Build frontend image'

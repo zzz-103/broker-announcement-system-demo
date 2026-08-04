@@ -11,7 +11,18 @@ requests>=2.31,<3
 urllib3>=2,<3
 beautifulsoup4>=4.12,<5
 
+# Broker App Watch
+certifi>=2024.2.2
+httpx>=0.27,<1
+markdownify>=0.13,<1
+PyYAML>=6.0,<7
+rapidocr-onnxruntime>=1.3,<2
+pydantic-settings>=2.5,<3
+
 # LLM structured extraction
 openai>=1.40,<2
 pandas>=2.2,<3
 openpyxl>=3.1,<4
+
+# Fast offline backend checks
+pytest>=8.3,<9

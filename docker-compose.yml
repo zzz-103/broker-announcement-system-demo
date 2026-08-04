@@ -12,7 +12,7 @@ services:
     volumes:
       - ./runtime/data:/app/backend/data
       - ./runtime/scraper-output:/app/backend/python-http-www-cfcpn-com-jcw/output
-      - ./runtime/app-watch-data:/app/broker-app-watch/data
+      - ./runtime/app-watch-data:/app/backend/data/broker_app_watch
       - ./runtime/config/llm_api_config.json:/app/backend/config/llm_api_config.json:ro
       - ./runtime/config/user_qualification.csv:/app/backend/config/user_qualification.csv:ro
     healthcheck:

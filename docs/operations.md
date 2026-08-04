@@ -26,14 +26,16 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 
 检查 `http://127.0.0.1:8000/api/health`，页面访问 `http://localhost:3000`。后端重启后内存 Token 会失效，需要重新登录。
 
-App Watch 需要额外安装其包；仅检查配置和任务计划时：
+App Watch 复用后端环境；仅检查配置和任务计划时，从仓库根目录执行：
 
 ```bash
-cd broker-app-watch
-../.venv/bin/python -m pip install -e ".[dev]"
-../.venv/bin/python -m broker_app_watch.cli check-config
-../.venv/bin/python -m broker_app_watch.cli dry-run
+.venv/bin/python -m backend.broker_app_watch.cli check-config
+.venv/bin/python -m backend.broker_app_watch.cli dry-run
 ```
+
+Windows 使用 `.venv\Scripts\python.exe -m backend.broker_app_watch.cli ...`。配置位于 `backend/config/broker_app_watch/`，运行数据位于 `backend/data/broker_app_watch/`。
+
+App Watch 的可选定时刷新复用 `python -m backend.api.scheduler`，通过根 `.env` 的 `APP_WATCH_SCHEDULER_ENABLED` 和 `APP_WATCH_SCHEDULER_CRON` 控制；默认关闭。
 
 ## 纯前端静态部署
 

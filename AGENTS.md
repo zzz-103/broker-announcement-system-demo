@@ -89,7 +89,7 @@ D:\broker-announcement-system-demo
 
 ### 独立调度器进程负责
 
-- 定时触发：基于轻量级 APScheduler 进程，读取 CRON 表达式定时触发流水线
+- 定时触发：基于轻量级 APScheduler 进程，读取 CRON 表达式触发流水线，并可选触发 App Watch
 - 重试机制：支持网络瞬断等异常时的重试策略
 - 认证鉴权：持有并发送 `X-Scheduler-Token` 请求后端
 
@@ -140,12 +140,15 @@ backend/
 │   ├── ai_analysis.py        # AI 智能情报分析处理逻辑
 │   ├── user_store.py         # 用户账号存储及 SQLite 数据库接口
 │   └── requirements.txt      # 后端 Python 依赖清单
+├── broker_app_watch/         # 券商 App 更新采集、解析、LLM、存储与 CLI
 ├── config/
+│   ├── broker_app_watch/     # App 来源与分类配置
 │   ├── llm_api_config.json   # 外部 LLM API 密钥与配置 (不提交)
 │   └── llm_api_config.example.json # LLM 配置模板
 ├── data/
 │   ├── announcement_table.csv  # 正式结构化招采数据 CSV (原子替换)
 │   ├── ai-analysis.json        # AI 情报分析结果缓存 JSON (原子替换)
+│   ├── broker_app_watch/       # App raw/processed/exports 运行数据
 │   ├── users.db                # 用户账号 SQLite 数据库
 │   └── staging/
 │       └── announcement_table.csv # LLM 结构化提取候选临时数据
@@ -223,6 +226,7 @@ POST /api/jobs/scraper
 POST /api/jobs/llm
 POST /api/jobs/pipeline
 POST /api/internal/scheduled-pipeline
+POST /api/internal/scheduled-app-watch
 GET  /api/jobs/{job_id}
 POST /api/jobs/{job_id}/cancel
 GET  /api/jobs/{job_id}/events
@@ -578,6 +582,8 @@ SCHEDULER_TIMEZONE=Asia/Shanghai
 SCHEDULER_CRON=0 12 * * sun
 SCHEDULER_API_URL=http://127.0.0.1:5000
 SCHEDULER_TOKEN=change-me
+APP_WATCH_SCHEDULER_ENABLED=false
+APP_WATCH_SCHEDULER_CRON=30 12 * * sun
 ```
 
 规则：
@@ -833,6 +839,7 @@ Codex 必须遵守：
 - 公告与 App Watch 筛选统计由访问端单次扫描完成，重复数据请求使用浏览器 ETag/304 协商
 - 账号、审批、反馈和审计路由已迁入领域路由，`main.py` 仅保留应用装配
 - 管理员任务执行、SSE、轮询恢复、取消及资源清理统一由 `useJobRunner` 管理
+- 顶层 `broker-app-watch` 已整合为 `backend/broker_app_watch`，复用后端依赖、配置、数据挂载和单一 FastAPI
 
 - 券商官网直连采集已完成 Windows TLS 兼容验收；中信、华西均可两页完整采集，来源选择与 LLM 双重复核统一读取 `output/selected`
 - LLM 增量处理兼容旧版扁平 `notices` 与新版券商子目录，避免目录迁移触发历史公告重复调用

@@ -5,7 +5,7 @@
 - `frontend/` 是正式静态前端；页面路由只装配 `src/features/` 中的业务模块。
 - `frontend-coze/` 是独立静态交付物，不参与正式前端构建或 FastAPI 托管；它与正式前端共享 `shared/dashboard-data/contracts.ts` 和标准化数据包。
 - `backend/api/` 是唯一业务 HTTP 入口，负责认证、任务状态、SSE、数据读取和静态资源托管。
-- 爬虫、LLM、匹配器和 `broker-app-watch` 通过 FastAPI 启动短生命周期子进程，不作为常驻服务运行。
+- 爬虫、LLM、匹配器和 `backend.broker_app_watch` 通过 FastAPI 启动短生命周期子进程，不作为常驻服务运行。
 - `scripts/deploy-release.ps1` 与部署目录的 Compose 是 Windows 正式发布入口。
 
 ## 代码边界
@@ -18,6 +18,7 @@
 - `backend/api/dashboard_package.py`：将正式 CSV/JSON 一次转换为公开 `dashboard-data` 数据包，负责字段归一化、统计、Manifest、校验和 ZIP 导出。
 - `backend/api/routes/dashboard_data.py`：正式前端读取标准化数据包的 API，以及管理员导出入口。
 - `backend/api/job_commands.py`：可信子进程命令；`job_manager.py` 负责生命周期、互斥、取消和事件。
+- `backend/broker_app_watch/`：券商 App 更新的采集、解析、LLM、存储和 CLI；配置与数据分别归入 `backend/config/broker_app_watch/` 和 `backend/data/broker_app_watch/`。
 - `frontend/src/lib/api/`：共享 HTTP/SSE 内核、契约和领域客户端。
 - `shared/dashboard-data/contracts.ts`：正式前端与 `frontend-coze` 共用的数据包 Schema 类型。
 - `frontend/src/features/`：采购看板、App Watch 和管理员控制台的稳定入口。
@@ -29,7 +30,7 @@
 
 ## 新看板或数据源接入
 
-1. 在独立 Python 包中完成采集和原子数据输出，不增加常驻服务。
+1. 在独立的后端 Python 模块中完成采集和原子数据输出，不增加常驻服务。
 2. 在 `JobCommandFactory` 中注册固定命令，不接受浏览器传入脚本或任意参数。
 3. 在集中配置中声明数据路径；API 路由只通过数据服务读取。
 4. 在 `frontend/src/features/<name>/` 增加页面入口，并在领域 API 模块声明契约。

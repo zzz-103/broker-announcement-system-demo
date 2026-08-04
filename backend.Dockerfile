@@ -31,19 +31,13 @@ RUN --mount=type=cache,id=broker-backend-pip,target=/root/.cache/pip \
 # Copy backend codebase
 COPY backend /app/backend
 
-# Install broker-app-watch into an isolated venv (dependency isolation per design).
-# The OCR extra is required by the Huatai and CITICS Tencent App Store parsers.
-COPY broker-app-watch /app/broker-app-watch
-RUN --mount=type=cache,id=broker-app-watch-pip,target=/root/.cache/pip \
-    python -m venv /app/broker-app-watch/.venv \
-    && /app/broker-app-watch/.venv/bin/pip install --upgrade pip \
-    && /app/broker-app-watch/.venv/bin/pip install -e "/app/broker-app-watch[ocr]" \
-    && /app/broker-app-watch/.venv/bin/python -c "import yaml, openai, rapidocr_onnxruntime; print('broker-app-watch dependencies ok')"
+# App Watch shares the backend runtime; OCR supports the configured image parsers.
+RUN python -c "import backend.broker_app_watch.cli, yaml, openai, rapidocr_onnxruntime; print('broker app watch dependencies ok')"
 
-# broker-app-watch subprocess configuration (consumed by backend JobManager)
-ENV APP_WATCH_PYTHON_EXECUTABLE=/app/broker-app-watch/.venv/bin/python
-ENV APP_WATCH_WORKING_DIR=/app/broker-app-watch
-ENV APP_RELEASES_CSV_PATH=/app/broker-app-watch/data/exports/app_releases.csv
+# App Watch subprocess configuration (consumed by backend JobManager)
+ENV APP_WATCH_PYTHON_EXECUTABLE=/usr/local/bin/python
+ENV APP_WATCH_WORKING_DIR=/app
+ENV APP_RELEASES_CSV_PATH=/app/backend/data/broker_app_watch/exports/app_releases.csv
 ENV APP_WATCH_LLM_CONFIG_PATH=/app/backend/config/llm_api_config.json
 ENV BAW_DISABLED_BROKERS=pazq
 

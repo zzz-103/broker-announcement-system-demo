@@ -27,6 +27,15 @@ backend/data/supplemental/*
 !backend/data/supplemental/.gitkeep
 backend/data/supplemental-test/*
 !backend/data/supplemental-test/.gitkeep
+backend/data/broker_app_watch/raw/*
+!backend/data/broker_app_watch/raw/.gitkeep
+backend/data/broker_app_watch/processed/releases/*
+!backend/data/broker_app_watch/processed/releases/.gitkeep
+backend/data/broker_app_watch/processed/llm/*
+!backend/data/broker_app_watch/processed/llm/.gitkeep
+backend/data/broker_app_watch/exports/*
+!backend/data/broker_app_watch/exports/.gitkeep
+backend/config/broker_app_watch/settings.yaml
 runtime/
 backend/data-save/
 # Python virtual environment and cache

@@ -65,6 +65,8 @@ class RouteOwnershipTests(unittest.TestCase):
             ("POST", "/api/jobs/llm"),
             ("POST", "/api/jobs/pipeline"),
             ("POST", "/api/jobs/app-watch"),
+            ("POST", "/api/internal/scheduled-pipeline"),
+            ("POST", "/api/internal/scheduled-app-watch"),
             ("GET", "/api/app-releases"),
             ("GET", "/api/dashboard-data/manifest"),
             ("GET", "/api/dashboard-data/files/{dataset}"),

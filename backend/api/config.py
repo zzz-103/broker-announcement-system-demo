@@ -60,7 +60,12 @@ class Settings:
     def app_releases_csv_path(self) -> Path:
         return resolve_project_path(
             os.getenv("APP_RELEASES_CSV_PATH"),
-            PROJECT_ROOT / "broker-app-watch" / "data" / "exports" / "app_releases.csv",
+            PROJECT_ROOT
+            / "backend"
+            / "data"
+            / "broker_app_watch"
+            / "exports"
+            / "app_releases.csv",
         )
 
     @property
@@ -115,6 +120,14 @@ class Settings:
     @property
     def scheduler_cron(self) -> str:
         return os.getenv("SCHEDULER_CRON", "0 12 * * sun").strip()
+
+    @property
+    def app_watch_scheduler_enabled(self) -> str:
+        return os.getenv("APP_WATCH_SCHEDULER_ENABLED", "false").strip().lower()
+
+    @property
+    def app_watch_scheduler_cron(self) -> str:
+        return os.getenv("APP_WATCH_SCHEDULER_CRON", "30 12 * * sun").strip()
 
     @property
     def scheduler_api_url(self) -> str:

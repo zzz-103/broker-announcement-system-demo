@@ -1,0 +1,56 @@
+# Broker App Watch 协作约定
+
+## 项目目标
+
+- 采集并分析中国券商官网公开的手机端 App 更新记录。
+- 当前优先建设清晰、可运行、易扩展的 Python 项目骨架。
+
+## 当前阶段边界
+
+- 仅提供配置、采集/解析接口、流水线、存储接口、LLM Schema 和 CLI；HTTP 接口统一由主 FastAPI 提供。
+- 不实现大规模真实爬虫、反爬绕过、验证码、高并发、完整数据库业务或复杂 LLM Agent。
+- 不引入微服务、任务队列、缓存、复杂依赖注入和重量级 ORM。
+
+## 目录职责
+
+- `backend/broker_app_watch/`：应用代码与关键路径测试。
+- `backend/config/broker_app_watch/`：券商来源、分类和非敏感配置示例。
+- `backend/data/broker_app_watch/raw/`：原始响应和页面快照。
+- `backend/data/broker_app_watch/processed/releases/`：标准化版本记录。
+- `backend/data/broker_app_watch/processed/llm/`：符合固定 Schema 的 LLM 结果。
+- `backend/data/broker_app_watch/exports/`：CSV、JSON、Markdown 等导出物。
+- 运行日志写入主后端任务 stdout/stderr，不建立独立日志目录。
+
+## 路径与编码
+
+- 仅使用 `pathlib.Path` 和项目根目录派生路径。
+- 业务代码不得依赖启动时的当前工作目录。
+- 不提交或记录开发者绝对路径；兼容 macOS 和 Windows 路径。
+- 文本文件默认使用 UTF-8，显式读写中文内容时指定 `encoding="utf-8"`。
+
+## 配置与数据
+
+- 券商、App 和采集来源统一维护在 `backend/config/broker_app_watch/brokers.yaml`。
+- 敏感配置只放在根目录未提交的 `.env` 中；仓库仅保留根 `.env.example`。
+- 运行数据、日志和本地数据库不得提交到 Git，只保留 `.gitkeep`。
+- 日志中不得输出密钥、令牌、完整数据库凭据或本机绝对路径。
+
+## 扩展方式
+
+- 新增券商时，优先增加 `brokers.yaml` 条目。
+- 通用页面使用通用解析器；确有差异时在 `parsers/broker_specific/` 增加专用解析器。
+- 解析器名称必须能由后续注册机制明确映射，避免在流水线中堆叠网站判断。
+- 动态页面才考虑 Browser Collector，且默认不启用。
+
+## 质量要求
+
+- 保持接口小而明确，使用必要的类型标注和简短说明。
+- 禁止为未来假设提前制造无意义抽象层或大量样板代码。
+- 测试只覆盖导入、路径、配置、健康检查等关键路径。
+- 新功能应同步更新必要的中文 README 和示例配置。
+
+## 爬虫约束
+
+- 爬虫层不得摘要、分类或改写正文，原始文字完整性优先。
+- 新增券商优先通过 `brokers.yaml` 和小型专用解析器扩展。
+- 不得为了通用性引入复杂爬虫框架。

@@ -32,6 +32,15 @@ def _start(start_job) -> dict[str, str]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
+def _require_scheduler_token(value: str | None) -> None:
+    expected_token = settings.scheduler_token
+    provided = (value or "").strip()
+    if not expected_token:
+        raise HTTPException(status_code=401, detail="scheduler token not configured")
+    if not provided or not secrets.compare_digest(provided, expected_token):
+        raise HTTPException(status_code=401, detail="invalid scheduler token")
+
+
 @router.post("/api/jobs/scraper", dependencies=[Depends(require_admin_token)])
 def start_scraper() -> dict[str, str]:
     return _start(job_manager.start_scraper)
@@ -72,13 +81,19 @@ def start_app_watch() -> dict[str, str]:
 def scheduled_pipeline(
     x_scheduler_token: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
-    expected_token = settings.scheduler_token
-    provided = (x_scheduler_token or "").strip()
-    if not expected_token:
-        raise HTTPException(status_code=401, detail="scheduler token not configured")
-    if not provided or not secrets.compare_digest(provided, expected_token):
-        raise HTTPException(status_code=401, detail="invalid scheduler token")
+    _require_scheduler_token(x_scheduler_token)
     return _start(job_manager.start_pipeline)
+
+
+@router.post("/api/internal/scheduled-app-watch")
+def scheduled_app_watch(
+    x_scheduler_token: Annotated[str | None, Header()] = None,
+) -> dict[str, str]:
+    _require_scheduler_token(x_scheduler_token)
+    try:
+        return _start(job_manager.start_app_watch)
+    except JobStartError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from exc
 
 
 @router.get("/api/jobs/{job_id}", dependencies=[Depends(require_admin_token)])

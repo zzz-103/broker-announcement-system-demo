@@ -64,11 +64,10 @@ class JobCommandFactory:
 
     @staticmethod
     def _validate_app_watch_dependencies(python_executable: Path) -> None:
-        """Fail early when the App Watch venv was not installed from pyproject.toml."""
+        """Fail early when the shared backend environment lacks App Watch dependencies."""
 
         required_modules = {
             "certifi": "certifi",
-            "fastapi": "fastapi",
             "httpx": "httpx",
             "openai": "openai",
             "beautifulsoup4": "bs4",
@@ -76,7 +75,7 @@ class JobCommandFactory:
             "pydantic": "pydantic",
             "pydantic-settings": "pydantic_settings",
             "PyYAML": "yaml",
-            "uvicorn": "uvicorn",
+            "rapidocr-onnxruntime": "rapidocr_onnxruntime",
         }
         check_script = (
             "import importlib.util; "
@@ -104,7 +103,7 @@ class JobCommandFactory:
         details = ", ".join(missing) if missing else "required packages"
         raise JobStartError(
             "App-watch Python environment is missing "
-            f"{details}; run `python -m pip install -e .` in broker-app-watch"
+            f"{details}; install the repository root requirements"
         )
 
     @staticmethod
@@ -176,16 +175,10 @@ class JobCommandFactory:
         )
 
     def _build_app_watch_command(self) -> CommandSpec:
-        working_default = PROJECT_ROOT / "broker-app-watch"
-        venv_python = (
-            working_default
-            / ".venv"
-            / ("Scripts" if os.name == "nt" else "bin")
-            / ("python.exe" if os.name == "nt" else "python")
-        )
+        working_default = PROJECT_ROOT
         python_executable = self._resolve_python_executable(
             os.getenv("APP_WATCH_PYTHON_EXECUTABLE"),
-            venv_python,
+            Path(sys.executable),
         )
         working_dir = resolve_project_path(
             os.getenv("APP_WATCH_WORKING_DIR"),
@@ -197,7 +190,12 @@ class JobCommandFactory:
         )
         export_path = resolve_project_path(
             os.getenv("APP_RELEASES_CSV_PATH"),
-            working_default / "data" / "exports" / "app_releases.csv",
+            PROJECT_ROOT
+            / "backend"
+            / "data"
+            / "broker_app_watch"
+            / "exports"
+            / "app_releases.csv",
         )
         if not python_executable.exists():
             raise JobStartError("App-watch python executable not found")
@@ -211,7 +209,6 @@ class JobCommandFactory:
         env["PYTHONPATH"] = os.pathsep.join(
             part
             for part in (
-                str(working_dir / "src"),
                 str(PROJECT_ROOT),
                 env.get("PYTHONPATH", ""),
             )
@@ -221,7 +218,7 @@ class JobCommandFactory:
             str(python_executable),
             "-u",
             "-m",
-            "broker_app_watch.cli",
+            "backend.broker_app_watch.cli",
             "refresh",
             "--all",
             "--llm-config",

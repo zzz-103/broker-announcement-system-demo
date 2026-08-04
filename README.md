@@ -24,6 +24,12 @@ cd frontend
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
+需要运行定时任务时，在第三个终端从仓库根目录启动现有调度器：
+
+```bash
+.venv/bin/python -m backend.api.scheduler
+```
+
 打开 `http://localhost:3000`。真实爬虫、LLM 和 App Watch 任务需要相应私密配置；只看页面时可使用已有样例数据。
 
 ### 纯前端看板
@@ -55,14 +61,25 @@ python scripts/export_dashboard_data.py --zip
 backend/api/                 FastAPI、认证、任务、数据包导出
 backend/data/                正式 CSV/JSON 和导出的 dashboard-data
 backend/broker_sources/      券商官网来源选择与采集
+backend/broker_app_watch/    券商 App 更新采集与结构化
+backend/config/broker_app_watch/  App 来源与分类配置
+backend/data/broker_app_watch/    App raw/processed/exports 运行数据
 backend/python-*/            金采网公告爬虫
-broker-app-watch/            券商 App 更新采集与结构化
 frontend/src/features/       完整前端业务模块
 frontend-coze/src/           纯前端静态看板
 shared/dashboard-data/       两个前端共用的 Schema
 ```
 
 复杂清洗、去重、归一化、分类、统计和排序字段在后端导出层完成；前端只做筛选、简单排序、分页和展示。
+
+App 更新模块从仓库根目录手动检查或 dry-run：
+
+```bash
+.venv/bin/python -m backend.broker_app_watch.cli check-config
+.venv/bin/python -m backend.broker_app_watch.cli dry-run
+```
+
+Windows 使用 `.venv\Scripts\python.exe` 替换解释器路径。正式刷新仍由主 FastAPI 任务入口调用；可选定时入口复用 `python -m backend.api.scheduler`。
 
 ## 常用验证
 
@@ -87,6 +104,6 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 - [纯前端](frontend-coze/README.md)：数据包复制、校验和静态部署。
 - [官网来源采集](backend/broker_sources/README.md)：券商官网与金采网的来源选择。
 - [金采网爬虫](backend/python-http-www-cfcpn-com-jcw/README.md)：公告抓取命令和输出目录。
-- [App Watch](broker-app-watch/README.md)：券商 App 更新采集与刷新。
+- [App Watch](backend/broker_app_watch/README.md)：券商 App 更新采集与刷新。
 
 `AGENTS.md` 及各目录下的 `AGENTS.md` 是开发约束，不是运行手册；修改代码前请先阅读对应文件。
