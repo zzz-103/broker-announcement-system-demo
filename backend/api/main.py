@@ -9,12 +9,14 @@ from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import settings
+from .custom_intelligence_service import initialize_service as initialize_custom_intelligence
 from .dashboard_data import prune_old_announcement_backups
 from .routes.accounts import router as accounts_router
 from .routes.ai import router as ai_router
 from .routes.dashboard_data import router as dashboard_data_router
 from .routes.datasets import router as datasets_router
 from .routes.jobs import router as jobs_router
+from .routes.custom_intelligence import router as custom_intelligence_router
 from .runtime import announcement_response_cache, job_manager, session_tokens
 
 
@@ -22,6 +24,7 @@ if not settings.admin_password:
     print("Warning: ADMIN_PASSWORD is not set in the environment.")
 
 app = FastAPI(title="Broker Announcement API")
+initialize_custom_intelligence()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.frontend_origins,
@@ -33,7 +36,14 @@ app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=3)
 
 # The pinned FastAPI/Starlette pair does not dispatch its deferred include
 # wrapper. The domain routers already contain complete APIRoute instances.
-for domain_router in (accounts_router, datasets_router, jobs_router, ai_router, dashboard_data_router):
+for domain_router in (
+    accounts_router,
+    datasets_router,
+    jobs_router,
+    ai_router,
+    dashboard_data_router,
+    custom_intelligence_router,
+):
     app.router.routes.extend(domain_router.routes)
 
 

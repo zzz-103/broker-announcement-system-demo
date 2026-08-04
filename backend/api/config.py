@@ -137,5 +137,56 @@ class Settings:
     def scheduler_token(self) -> str:
         return os.getenv("SCHEDULER_TOKEN", "")
 
+    @property
+    def custom_intelligence_db_path(self) -> Path:
+        """Database used by the custom intelligence module.
+
+        The feature intentionally shares the existing user database unless a
+        deployment explicitly supplies an override.  Importing the resolver
+        lazily avoids a config -> user_store import cycle.
+        """
+        configured = os.getenv("CUSTOM_INTELLIGENCE_DB_PATH")
+        if configured:
+            return resolve_project_path(configured, PROJECT_ROOT / "backend" / "data" / "users.db")
+        from .user_store import resolve_user_db_path
+
+        return resolve_user_db_path()
+
+    @property
+    def baidu_qianfan_api_key(self) -> str:
+        return os.getenv("BAIDU_QIANFAN_API_KEY", "").strip()
+
+    @property
+    def baidu_qianfan_model(self) -> str:
+        return os.getenv("BAIDU_QIANFAN_MODEL", "").strip()
+
+    @property
+    def baidu_qianfan_endpoint(self) -> str:
+        return os.getenv(
+            "BAIDU_QIANFAN_ENDPOINT",
+            "https://qianfan.baidubce.com/v2/ai_search/chat/completions",
+        ).strip().rstrip("/")
+
+    @property
+    def baidu_qianfan_auth_header(self) -> str:
+        value = os.getenv("BAIDU_QIANFAN_AUTH_HEADER", "Authorization").strip()
+        supported = {
+            "authorization": "Authorization",
+            "x-appbuilder-authorization": "X-Appbuilder-Authorization",
+        }
+        return supported.get(value.casefold(), "Authorization")
+
+    @property
+    def baidu_qianfan_timeout_seconds(self) -> float:
+        try:
+            value = float(os.getenv("BAIDU_QIANFAN_TIMEOUT_SECONDS", "120"))
+        except (TypeError, ValueError):
+            return 120.0
+        return value if 1 <= value <= 600 else 120.0
+
+    @property
+    def custom_intelligence_max_workers(self) -> int:
+        return bounded_int("CUSTOM_INTELLIGENCE_MAX_WORKERS", 2, 1, 8)
+
 
 settings = Settings()

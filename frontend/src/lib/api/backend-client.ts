@@ -8,3 +8,4 @@ export * from "./auth";
 export * from "./datasets";
 export * from "./jobs";
 export * from "./admin";
+export * from "./custom-intelligence";

@@ -37,6 +37,25 @@ Windows 使用 `.venv\Scripts\python.exe -m backend.broker_app_watch.cli ...`。
 
 App Watch 的可选定时刷新复用 `python -m backend.api.scheduler`，通过根 `.env` 的 `APP_WATCH_SCHEDULER_ENABLED` 和 `APP_WATCH_SCHEDULER_CRON` 控制；默认关闭。
 
+## AI 自定义情报中心
+
+在根 `.env` 配置百度千帆智能搜索，密钥只由 FastAPI 读取：
+
+```env
+BAIDU_QIANFAN_API_KEY=<server-side-api-key>
+BAIDU_QIANFAN_MODEL=<enabled-model-name>
+BAIDU_QIANFAN_ENDPOINT=https://qianfan.baidubce.com/v2/ai_search/chat/completions
+BAIDU_QIANFAN_AUTH_HEADER=Authorization
+BAIDU_QIANFAN_TIMEOUT_SECONDS=120
+CUSTOM_INTELLIGENCE_MAX_WORKERS=2
+```
+
+官方文档的请求模板与 curl 示例对鉴权头存在差异；当前默认使用 `Authorization: Bearer ...`。上线前应使用目标账号在安全环境探测鉴权，如实际通过的是 `X-Appbuilder-Authorization`，只覆盖 `BAIDU_QIANFAN_AUTH_HEADER` 并重启后端，不修改业务代码。
+
+主题与执行记录默认幂等创建在 `USER_DB_PATH` 指向的现有数据库中。只有部署明确需要隔离时才设置 `CUSTOM_INTELLIGENCE_DB_PATH`；未配置不会生成第二个默认数据库。生产继续使用单 worker，执行状态由数据库保存，页面每 2 秒轮询恢复。
+
+登录后访问 `http://localhost:3000/custom-intelligence`。建议先执行一条“简洁”即时搜索，再检查执行记录中的 request ID、来源和报告；所有分析深度均关闭百度深搜索。
+
 ## 纯前端静态部署
 
 ```bash
@@ -124,5 +143,7 @@ cd ../frontend-coze && pnpm data:check && pnpm ts-check && pnpm lint && pnpm bui
 - 页面无法调用 API：确认 FastAPI 已启动，且 `FRONTEND_ORIGIN` 包含当前前端地址。
 - 401：后端重启使旧 Token 失效，重新登录即可。
 - 409：已有互斥任务或导出操作运行中。
+- 自定义情报 409：同一用户已有 pending/running 执行，等待完成后再提交。
+- 自定义情报 503：后端未配置百度 API Key 或模型；504 表示上游超时。
 - 纯前端数据错误：先执行 `pnpm data:check`，确认整个 `dashboard-data` 目录完整复制。
 - 修改 `.env` 或前端环境变量后：重启对应服务；修改正式前端后重新生成 `out/`。

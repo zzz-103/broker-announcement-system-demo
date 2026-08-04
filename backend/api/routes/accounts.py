@@ -127,7 +127,10 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
             "name": expected_username,
             "role": "admin",
             "is_admin": True,
-            "user_id": None,
+            # Reserved stable owner ID for the administrator.  Roles remain
+            # authorization metadata; custom intelligence ownership is always
+            # keyed by this integer ID.
+            "user_id": 0,
             "dashboard_view_recorded": False,
         }
         visitor_id, source = normalize_audit_context(payload.visitor_id, payload.source)

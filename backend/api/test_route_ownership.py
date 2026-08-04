@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import csv
+import threading
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -22,6 +24,8 @@ from backend.api import main  # noqa: E402
 from backend.api.routes import accounts  # noqa: E402
 from backend.api.routes import ai  # noqa: E402
 from backend.api.routes import datasets  # noqa: E402
+from backend.api import custom_intelligence_service as custom_intelligence_service  # noqa: E402
+from backend.api.qianfan_search import QianfanReference, QianfanSearchResult  # noqa: E402
 
 
 class RouteOwnershipTests(unittest.TestCase):
@@ -76,6 +80,18 @@ class RouteOwnershipTests(unittest.TestCase):
             ("GET", "/api/jobs/{job_id}"),
             ("POST", "/api/jobs/{job_id}/cancel"),
             ("GET", "/api/jobs/{job_id}/events"),
+            ("GET", "/api/custom-intelligence/options"),
+            ("POST", "/api/custom-intelligence/keyword-suggestions"),
+            ("GET", "/api/custom-intelligence/topics"),
+            ("POST", "/api/custom-intelligence/topics"),
+            ("GET", "/api/custom-intelligence/topics/{topic_id}"),
+            ("POST", "/api/custom-intelligence/topics/{topic_id}"),
+            ("POST", "/api/custom-intelligence/topics/{topic_id}/enabled"),
+            ("POST", "/api/custom-intelligence/topics/{topic_id}/execute"),
+            ("GET", "/api/custom-intelligence/executions"),
+            ("POST", "/api/custom-intelligence/executions"),
+            ("GET", "/api/custom-intelligence/executions/{execution_id}"),
+            ("POST", "/api/custom-intelligence/executions/{execution_id}/rerun"),
         }
         self.assertTrue(expected.issubset(registered), expected - registered)
 
@@ -89,9 +105,97 @@ class RouteOwnershipTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertNotIn("/api/auth/login", client_source)
 
+    def test_custom_intelligence_requires_authentication(self) -> None:
+        for method, path in (
+            ("get", "/api/custom-intelligence/options"),
+            ("get", "/api/custom-intelligence/topics"),
+            ("get", "/api/custom-intelligence/executions"),
+        ):
+            response = getattr(self.client, method)(path)
+            self.assertEqual(response.status_code, 401)
+
+    def test_custom_intelligence_background_route_and_owner_isolation(self) -> None:
+        main.session_tokens["custom-user-7"] = {
+            "username": "user-7",
+            "name": "User 7",
+            "role": "user",
+            "is_admin": False,
+            "user_id": 7,
+        }
+        main.session_tokens["custom-user-8"] = {
+            "username": "user-8",
+            "name": "User 8",
+            "role": "user",
+            "is_admin": False,
+            "user_id": 8,
+        }
+        headers_7 = {"Authorization": "Bearer custom-user-7"}
+        headers_8 = {"Authorization": "Bearer custom-user-8"}
+        started = threading.Event()
+        release = threading.Event()
+
+        def fake_search(_payload):
+            started.set()
+            release.wait(timeout=2)
+            return QianfanSearchResult(
+                answer="综合结论",
+                references=[QianfanReference("ref-1", "来源", "https://example.com")],
+                request_id="request-route-1",
+            )
+
+        request_payload = {
+            "question": "近期证券行业变化",
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "report_type": "industry_trends",
+            "analysis_depth": "concise",
+        }
+        with (
+            patch.dict(os.environ, {"BAIDU_QIANFAN_API_KEY": "test-only", "BAIDU_QIANFAN_MODEL": "test-model"}),
+            patch.object(custom_intelligence_service.client, "search", side_effect=fake_search),
+        ):
+            created = self.client.post(
+                "/api/custom-intelligence/executions",
+                headers=headers_7,
+                json=request_payload,
+            )
+            self.assertEqual(created.status_code, 202)
+            execution_id = int(created.json()["execution"]["id"])
+            self.assertTrue(started.wait(timeout=1))
+            duplicate = self.client.post(
+                "/api/custom-intelligence/executions",
+                headers=headers_7,
+                json=request_payload,
+            )
+            self.assertEqual(duplicate.status_code, 409)
+            self.assertEqual(
+                self.client.get(
+                    f"/api/custom-intelligence/executions/{execution_id}",
+                    headers=headers_8,
+                ).status_code,
+                404,
+            )
+            release.set()
+            completed = None
+            for _ in range(100):
+                completed = self.client.get(
+                    f"/api/custom-intelligence/executions/{execution_id}",
+                    headers=headers_7,
+                )
+                if completed.json()["execution"]["status"] == "succeeded":
+                    break
+                time.sleep(0.01)
+        assert completed is not None
+        self.assertEqual(completed.json()["execution"]["status"], "succeeded")
+        self.assertEqual(completed.json()["execution"]["request_id"], "request-route-1")
+        self.assertEqual(len(completed.json()["execution"]["sources"]), 1)
+
     def test_admin_and_approved_user_login_are_fastapi_features(self) -> None:
         admin_headers = self._admin_headers()
         self.assertTrue(admin_headers["Authorization"].startswith("Bearer "))
+        admin_token = admin_headers["Authorization"].removeprefix("Bearer ")
+        self.assertEqual(main.session_tokens[admin_token]["user_id"], 0)
 
         fake_user = SimpleNamespace(id=7, username="approved.user", name="Approved User")
         with (

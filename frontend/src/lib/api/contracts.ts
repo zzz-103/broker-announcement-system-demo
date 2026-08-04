@@ -115,3 +115,152 @@ export interface FeedbackCreateInput {
 }
 export interface FeedbackResponse { feedback: FeedbackRecord; }
 export interface AdminFeedbackResponse { feedback: FeedbackRecord[]; }
+
+export type IntelligencePerspective =
+  | "management"
+  | "product_business"
+  | "technology"
+  | "compliance_risk"
+  | "industry_research";
+export type IntelligenceTimeRange = "week" | "month" | "semiyear" | "year";
+export type IntelligenceReportType =
+  | "management_brief"
+  | "competitive_analysis"
+  | "industry_trends"
+  | "risk_monitoring";
+export type IntelligenceAnalysisDepth = "concise" | "standard" | "deep";
+export type IntelligenceSourcePreference = "authoritative" | "balanced" | "news" | "research";
+
+export interface CustomIntelligenceOption<T extends string = string> {
+  value: T;
+  label: string;
+}
+
+export interface CustomIntelligencePresetQuestion {
+  id: string;
+  title: string;
+  question: string;
+  analysis_perspective: IntelligencePerspective;
+  report_type: IntelligenceReportType;
+}
+
+export interface CustomIntelligenceOptionsResponse {
+  perspectives: CustomIntelligenceOption<IntelligencePerspective>[];
+  time_ranges: CustomIntelligenceOption<IntelligenceTimeRange>[];
+  report_types: CustomIntelligenceOption<IntelligenceReportType>[];
+  analysis_depths: CustomIntelligenceOption<IntelligenceAnalysisDepth>[];
+  source_preferences: CustomIntelligenceOption<IntelligenceSourcePreference>[];
+  preset_questions: CustomIntelligencePresetQuestion[];
+  service_configured: boolean;
+  deep_search_enabled: boolean;
+}
+
+export interface CustomIntelligenceConfig {
+  description: string;
+  keywords: string[];
+  focus_objects: string[];
+  analysis_perspective: IntelligencePerspective;
+  time_range: IntelligenceTimeRange;
+  source_preference: IntelligenceSourcePreference;
+  specified_sites: string[];
+  report_type: IntelligenceReportType;
+  analysis_depth: IntelligenceAnalysisDepth;
+  extra_requirements: string;
+}
+
+export interface InstantSearchRequest extends CustomIntelligenceConfig {
+  question: string;
+}
+
+export interface IntelligenceTopic extends CustomIntelligenceConfig {
+  id: number;
+  name: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KeywordSuggestionRequest {
+  description: string;
+  keywords: string[];
+  focus_objects: string[];
+  analysis_perspective: IntelligencePerspective;
+  max_suggestions?: number;
+}
+
+export interface KeywordSuggestionsResponse {
+  suggestions: string[];
+}
+
+export interface IntelligenceSource {
+  id: string;
+  provider_reference_ids?: string[];
+  title: string;
+  url: string;
+  site_name?: string;
+  date?: string;
+  snippet?: string;
+}
+
+export interface IntelligenceDynamic {
+  title: string;
+  institutions: string[];
+  information_time: string;
+  summary: string;
+  impact_analysis: string;
+  event_tags: string[];
+  source_ids: string[];
+}
+
+export interface IntelligenceFocusSection {
+  title: string;
+  items: string[];
+}
+
+export interface IntelligenceReport {
+  title: string;
+  question: string;
+  executed_at: string;
+  time_range: string;
+  valid_source_count: number;
+  core_conclusion: string;
+  key_dynamics: IntelligenceDynamic[];
+  impact_analysis: string;
+  opportunities: string[];
+  risks: string[];
+  watch_items: string[];
+  recommended_followups: string[];
+  focus_sections: IntelligenceFocusSection[];
+  reference_warnings?: string[];
+}
+
+export type CustomIntelligenceExecutionStatus = "pending" | "running" | "succeeded" | "empty" | "failed";
+export type CustomIntelligenceTrigger = "instant" | "topic" | "rerun" | string;
+
+export interface CustomIntelligenceExecution {
+  id: number;
+  topic_id: number | null;
+  topic_name: string;
+  trigger_type: CustomIntelligenceTrigger;
+  snapshot: Partial<InstantSearchRequest>;
+  original_query: string;
+  final_query: string;
+  request_payload?: Record<string, unknown>;
+  report: Partial<IntelligenceReport> | null;
+  sources: IntelligenceSource[];
+  reference_aliases?: Record<string, string>;
+  status: CustomIntelligenceExecutionStatus;
+  error_message: string | null;
+  request_id?: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface CustomIntelligenceTopicsResponse { topics: IntelligenceTopic[]; }
+export interface CustomIntelligenceTopicResponse { topic: IntelligenceTopic; }
+export interface CustomIntelligenceExecutionResponse { execution: CustomIntelligenceExecution; }
+export interface CustomIntelligenceExecutionsResponse {
+  executions: CustomIntelligenceExecution[];
+  meta: { page: number; page_size: number; total: number; total_pages: number };
+}
