@@ -50,17 +50,46 @@ pnpm build
 `frontend-coze/public/dashboard-data/`，再执行 `pnpm data:check` 和 `pnpm build`。
 页面使用 Hash 路由，部署在子路径时设置 `NEXT_PUBLIC_BASE_PATH=/your-path`。
 
+## Windows 本地验证
+
+Windows 使用与锁文件一致的 Corepack pnpm 9：
+
+```powershell
+cd <源码目录>\frontend
+corepack pnpm@9.0.0 install --frozen-lockfile
+.\node_modules\.bin\tsc.cmd -p tsconfig.json
+.\node_modules\.bin\next.cmd build
+
+cd ..\frontend-coze
+corepack pnpm@9.0.0 install --frozen-lockfile
+corepack pnpm@9.0.0 data:check
+.\node_modules\.bin\tsc.cmd -p tsconfig.json
+.\node_modules\.bin\next.cmd build
+```
+
 ## Windows 内网发布
 
 源码仓库和生产运行目录分开。生产发布入口是部署目录中的 `deploy-release.ps1`，不要用仓库根目录的开发 Compose 代替正式发布。
 
-```powershell
-cd <源码目录>
-git pull --ff-only
+### 拉取后最快部署
 
-cd <生产部署目录>
-.\deploy-release.ps1 -Version 1.4.9
+以后发布新版本，直接在开发目录执行以下命令；把 `1.5.0` 替换成目标版本号即可：
+
+```powershell
+cd D:\broker-announcement-system-demo
+git pull --ff-only
+.\scripts\deploy-release.ps1 -Version 1.5.0 -DeployDir D:\broker-system
 ```
+
+也可以使用生产目录中的转发脚本：
+
+```powershell
+cd D:\broker-system
+.\deploy-release.ps1 -Version 1.5.0
+```
+
+发布脚本会校验源码已同步到 `origin/master`、构建两个镜像、更新生产 `.env` 的
+`BROKER_VERSION`、重建四个服务，并检查网关健康状态和 `version.json`。因此不要在生产目录执行 `git pull`，也不要跳过脚本直接重启容器。
 
 生产前确认：
 

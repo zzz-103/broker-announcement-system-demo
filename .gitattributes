@@ -1,0 +1,2 @@
+# Integrity-checked dashboard package files must keep identical bytes on every OS.
+frontend-coze/public/dashboard-data/*.json text eol=lf
