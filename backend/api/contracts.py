@@ -13,6 +13,10 @@ class LoginRequest(BaseModel):
     source: str | None = None
 
 
+class VerifyPasswordRequest(BaseModel):
+    password: str
+
+
 class LoginResponse(BaseModel):
     token: str
     username: str

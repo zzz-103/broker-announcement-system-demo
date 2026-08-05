@@ -24,6 +24,7 @@ from ..contracts import (
     LoginResponse,
     QrVisitRequest,
     UserApplyRequest,
+    VerifyPasswordRequest,
 )
 from ..runtime import session_tokens
 from ..user_store import (
@@ -188,6 +189,18 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
         role="user",
         is_admin=False,
     )
+
+
+@router.post("/api/admin/verify-password", dependencies=[Depends(require_admin_token)])
+def verify_admin_password(payload: VerifyPasswordRequest) -> dict[str, bool]:
+    """重新验证管理员密码，不创建会话、不产生登录审计事件。
+
+    用于全量重建等影响范围较大的操作前的二次身份确认。
+    """
+    expected_password = settings.admin_password
+    if expected_password and secrets.compare_digest(payload.password, expected_password):
+        return {"verified": True}
+    raise HTTPException(status_code=401, detail="管理员密码不正确")
 
 
 @router.post("/api/users/apply")

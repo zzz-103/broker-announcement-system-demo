@@ -1,22 +1,22 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
   Brain,
-  CheckCircle2,
   Database,
   Download,
+  FileText,
   Globe,
+  Info,
+  Lock,
   LogOut,
+  MoreHorizontal,
   RefreshCw,
   Smartphone,
-  TerminalSquare,
   Upload,
   Workflow,
-  LayoutGrid,
 } from "lucide-react";
 
 import { AdminTaskLogDialog } from "@/components/admin-task-log-dialog";
@@ -32,8 +32,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { BackendApiError, buildApiUrl, exportDashboardData, readError, type JobStatus, type JobType } from "@/lib/api/backend-client";
+import { BackendApiError, buildApiUrl, exportDashboardData, readError, verifyAdminPassword, type JobStatus, type JobType } from "@/lib/api/backend-client";
 import { APP_VERSION } from "@/lib/app-version";
+import { formatDateTime } from "@/lib/display";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 import { type CardId } from "./job-runner-model";
@@ -52,49 +53,139 @@ function statusTone(status: JobStatus) {
 }
 
 function statusText(status: JobStatus) {
-  if (status === "running") return "运行中";
+  if (status === "running") return "执行中";
   if (status === "succeeded") return "已完成";
   if (status === "failed") return "失败";
   if (status === "cancelled") return "已停止";
   return "待执行";
 }
 
-function iconForStatus(status: JobStatus) {
-  if (status === "running") return <RefreshCw className="size-3.5 animate-spin" />;
-  if (status === "succeeded") return <CheckCircle2 className="size-3.5" />;
-  if (status === "failed" || status === "cancelled") return <AlertCircle className="size-3.5" />;
-  return <TerminalSquare className="size-3.5" />;
-}
-
-function GlowButton({
+function PrimaryActionButton({
   children,
   onClick,
+  running,
   disabled,
-  className,
 }: {
   children: React.ReactNode;
   onClick: () => void;
-  disabled?: boolean;
-  className?: string;
+  running: boolean;
+  disabled: boolean;
 }) {
   return (
     <Button
       type="button"
       onClick={onClick}
-      disabled={disabled}
-      className={className}
+      disabled={disabled || running}
+      className="h-10 w-full bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
     >
-      {children}
+      {running ? (
+        <>
+          <RefreshCw className="size-3.5 animate-spin" />
+          执行中...
+        </>
+      ) : (
+        children
+      )}
     </Button>
   );
 }
 
+function TaskMoreMenu({
+  disabled,
+  publishRunning,
+  onPublish,
+  onFullRefresh,
+}: {
+  disabled: boolean;
+  publishRunning: boolean;
+  onPublish: () => void;
+  onFullRefresh: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="更多操作"
+        aria-expanded={open}
+        onClick={() => setOpen((previous) => !previous)}
+        className="size-7 rounded-md text-[#667085] hover:bg-slate-200/60 hover:text-[#344054]"
+      >
+        <MoreHorizontal className="size-4" />
+      </Button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            role="menu"
+            aria-label="更多操作"
+            className="absolute right-0 top-full z-50 mt-1 w-44 rounded-lg border border-[#D9E2EC] bg-white p-1.5 shadow-[var(--workspace-shadow)]"
+          >
+            <p className="px-2.5 pb-1 pt-0.5 text-[10px] font-semibold text-[#98A2B3]">更多操作</p>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => {
+                setOpen(false);
+                onPublish();
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-[#344054] hover:bg-[#F2F6FC] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {publishRunning ? (
+                <>
+                  <RefreshCw className="size-3.5 animate-spin" />
+                  更新中...
+                </>
+              ) : (
+                <>
+                  <Upload className="size-3.5" />
+                  更新看板
+                </>
+              )}
+            </button>
+            <div className="my-1 border-t border-[#EEF2F6]" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => {
+                setOpen(false);
+                onFullRefresh();
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <RefreshCw className="size-3.5" />
+              全量重建
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
-  const router = useRouter();
   const { username, token, logout, clearAuth } = useAuthStore();
   const [logDialogCard, setLogDialogCard] = useState<CardId | null>(null);
   const [crawlerModeDialogOpen, setCrawlerModeDialogOpen] = useState(false);
   const [llmModeDialogOpen, setLlmModeDialogOpen] = useState(false);
+  const [fullRefreshDialogOpen, setFullRefreshDialogOpen] = useState(false);
+  const [fullRefreshPassword, setFullRefreshPassword] = useState("");
+  const [fullRefreshVerifying, setFullRefreshVerifying] = useState(false);
+  const [fullRefreshError, setFullRefreshError] = useState<string | null>(null);
   const [dashboardExporting, setDashboardExporting] = useState(false);
   const [dashboardExportMessage, setDashboardExportMessage] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<"tasks" | "users" | "records">("tasks");
@@ -108,6 +199,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     cancelActiveJob,
     stopLocalMonitoring,
   } = useJobRunner({ token, clearAuth, onDataRefresh });
+
+  const isBusy = Boolean(activeOperation);
 
   const handleDashboardExport = useCallback(async () => {
     if (!token || dashboardExporting) return;
@@ -134,14 +227,46 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     }
   }, [clearAuth, dashboardExporting, token]);
 
-  const runFullRefresh = useCallback(async () => {
-    setLlmModeDialogOpen(false);
-    const confirmed = window.confirm(
-      "确认执行全量重建？该操作会重新处理全部公告，并覆盖已有处理结果。增量处理不受影响。",
-    );
-    if (!confirmed) return;
+  const openFullRefreshDialog = useCallback(() => {
+    setFullRefreshPassword("");
+    setFullRefreshError(null);
+    setFullRefreshDialogOpen(true);
+  }, []);
+
+  const closeFullRefreshDialog = useCallback((open: boolean) => {
+    setFullRefreshDialogOpen(open);
+    if (!open) {
+      setFullRefreshPassword("");
+      setFullRefreshError(null);
+    }
+  }, []);
+
+  const confirmFullRefresh = useCallback(async () => {
+    if (!token || fullRefreshVerifying || !fullRefreshPassword) return;
+    setFullRefreshVerifying(true);
+    setFullRefreshError(null);
+    try {
+      await verifyAdminPassword(fullRefreshPassword, token);
+    } catch (error) {
+      setFullRefreshPassword("");
+      setFullRefreshVerifying(false);
+      if (error instanceof BackendApiError && error.status === 0) {
+        setFullRefreshError("无法连接后端 API，请稍后重试。");
+      } else if (error instanceof BackendApiError && error.status === 401 && error.message === "管理员密码不正确") {
+        setFullRefreshError("管理员密码不正确，请重新输入。");
+      } else if (error instanceof BackendApiError && error.status === 401) {
+        clearAuth("登录已失效，请重新登录。");
+      } else {
+        setFullRefreshError("密码验证失败，请稍后重试。");
+      }
+      return;
+    }
+    setFullRefreshPassword("");
+    setFullRefreshError(null);
+    setFullRefreshVerifying(false);
+    setFullRefreshDialogOpen(false);
     await runJob("llm", { mode: "full_refresh", overwrite: true });
-  }, [runJob]);
+  }, [fullRefreshPassword, fullRefreshVerifying, clearAuth, runJob, token]);
 
   const chooseLlmJob = useCallback(
     async (jobType: Extract<JobType, "llm" | "llm-external">) => {
@@ -162,9 +287,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const handleLogout = useCallback(() => {
     setCrawlerModeDialogOpen(false);
     setLlmModeDialogOpen(false);
+    closeFullRefreshDialog(false);
     stopLocalMonitoring();
     logout();
-  }, [logout, stopLocalMonitoring]);
+  }, [closeFullRefreshDialog, logout, stopLocalMonitoring]);
 
   const cards = useMemo(
     () => [
@@ -172,25 +298,25 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         id: "crawler" as const,
         icon: Globe,
         title: "公告采集",
-        description: "采集采购公告与结果公告，可继续运行完整流程。",
+        description: "采集采购公告与结果公告。",
       },
       {
         id: "llm" as const,
         icon: Database,
         title: "公告数据处理",
-        description: "结构化处理公告，完成项目匹配与结果汇总。",
+        description: "整理公告数据，完成项目匹配与结果汇总。",
       },
       {
         id: "ai" as const,
         icon: Brain,
         title: "招采分析",
-        description: "基于当前数据生成招采分析。",
+        description: "基于当前数据更新招采分析。",
       },
       {
         id: "app-watch" as const,
         icon: Smartphone,
         title: "App 更新采集",
-        description: "采集并整理券商 App 更新，更新明细看板。",
+        description: "采集并整理券商 App 更新。",
       },
     ],
     [],
@@ -251,146 +377,88 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => {
             const state = cardStates[card.id];
-            const isBusy = Boolean(activeOperation);
+            const running = (() => {
+              switch (card.id) {
+                case "crawler":
+                  return activeOperation?.id === "scraper" || activeOperation?.id === "pipeline";
+                case "llm":
+                  return activeOperation?.id === "llm" || activeOperation?.id === "llm-external";
+                case "app-watch":
+                  return activeOperation?.id === "app-watch";
+                default:
+                  return activeOperation?.id === "ai_analysis";
+              }
+            })();
 
             return (
               <section
                 key={card.id}
-                className="flex h-full flex-col rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]"
+                className="flex h-full min-w-0 flex-col rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]"
               >
-                <div className="flex h-full flex-col p-6">
-                  <div className="flex items-start justify-between">
-                    <div
-                      className="flex size-9 items-center justify-center rounded-md bg-[#EAF2FF]"
-                    >
+                <div className="flex h-full flex-col p-5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[#EAF2FF]">
                       <card.icon className="size-4.5 text-[#1F5BB5]" />
                     </div>
-                    <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold", statusTone(state.status))}>{statusText(state.status)}</span>
-                  </div>
-
-                  <div className="mt-4 flex-grow flex flex-col justify-start">
-                    <h3 className="text-base font-bold text-[#172033]">{card.title}</h3>
-                    <p className="mt-1.5 text-xs leading-relaxed text-[#667085] min-h-[36px]">{card.description}</p>
-                  </div>
-
-                  <div className="mt-4 min-h-[104px] border-t border-[#E4E9F0] pt-4 flex flex-col justify-between">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[#98A2B3] font-medium">{state.lastOperationLabel}</span>
-                      </div>
-
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        disabled={state.logs.length === 0}
-                        onClick={() => setLogDialogCard(card.id)}
-                        title="查看详细日志"
-                        className="size-7 hover:bg-slate-200/50 text-[#667085] disabled:opacity-30 rounded-lg flex items-center justify-center"
-                      >
-                        <TerminalSquare className="size-4" />
-                      </Button>
-                    </div>
-                    
-                    <div className="mt-3 flex items-start gap-2 flex-grow">
-                      <span className="mt-0.5 shrink-0 text-[#98A2B3]">{iconForStatus(state.status)}</span>
-                      <span className="min-h-[40px] whitespace-pre-wrap break-words text-xs text-[#35537A] leading-relaxed line-clamp-3">
-                        {state.summary}
-                      </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold", statusTone(state.status))}>{statusText(state.status)}</span>
+                      {card.id === "llm" && (
+                        <TaskMoreMenu
+                          disabled={isBusy}
+                          publishRunning={activeOperation?.id === "publish"}
+                          onPublish={() => void runPublish()}
+                          onFullRefresh={openFullRefreshDialog}
+                        />
+                      )}
                     </div>
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-[#F0F2F5] mt-auto">
-                    {card.id === "llm" ? (
-                      <div className="flex items-center gap-2 w-full">
-                        <GlowButton
-                          onClick={() => setLlmModeDialogOpen(true)}
-                          disabled={isBusy}
-                          className="h-10 flex-[7] bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
-                        >
-                          {activeOperation?.id === "llm" || activeOperation?.id === "llm-external" ? (
-                            <>
-                              <RefreshCw className="size-3.5 animate-spin" />
-                              执行中...
-                            </>
-                          ) : (
-                            "运行处理"
-                          )}
-                        </GlowButton>
-                        <Button
-                          type="button"
-                          onClick={() => void runFullRefresh()}
-                          disabled={isBusy}
-                          variant="outline"
-                          className="h-10 text-xs font-semibold border-amber-200 text-amber-700 hover:bg-amber-50 flex-[3] flex items-center justify-center gap-1"
-                        >
-                          全量重建
-                        </Button>
-                        <Button
-                          type="button"
-                          onClick={() => void runPublish()}
-                          disabled={isBusy}
-                          variant="outline"
-                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex-[3] flex items-center justify-center gap-1"
-                        >
-                          {activeOperation?.id === "publish" ? (
-                            <>
-                              <RefreshCw className="size-3.5 animate-spin" />
-                              更新中
-                            </>
-                          ) : (
-                            <>
-                              <Upload className="size-3.5" />
-                              更新看板
-                            </>
-                          )}
-                        </Button>
-                      </div>
-                    ) : card.id === "crawler" ? (
-                      <GlowButton
-                        onClick={() => setCrawlerModeDialogOpen(true)}
-                        disabled={isBusy}
-                        className="h-10 w-full bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
-                      >
-                        {activeOperation?.id === "scraper" || activeOperation?.id === "pipeline" ? (
-                          <><RefreshCw className="size-3.5 animate-spin" />执行中...</>
-                        ) : "选择采集范围"}
-                      </GlowButton>
-                    ) : card.id === "app-watch" ? (
-                      <div className="flex flex-col gap-2 w-full">
-                        <GlowButton
-                          onClick={() => void runJob("app-watch")}
-                          disabled={isBusy}
-                          className="h-10 bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
-                        >
-                          {activeOperation?.id === "app-watch" ? (
-                            <><RefreshCw className="size-3.5 animate-spin" />执行中...</>
-                          ) : "采集 App 更新"}
-                        </GlowButton>
-                        <Button
-                          onClick={() => router.push("/app-updates")}
-                          disabled={isBusy}
-                          variant="outline"
-                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex items-center justify-center gap-1 transition-colors"
-                        >
-                          <LayoutGrid className="size-3.5" />
-                          查看 App 更新
-                        </Button>
-                      </div>
-                    ) : (
-                      <GlowButton
-                        onClick={() => void runAiAnalysis()}
-                        disabled={isBusy}
-                        className="h-10 w-full bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
-                      >
-                        {activeOperation?.cardId === card.id ? (
-                          <>
-                            <RefreshCw className="size-3.5 animate-spin" />
-                            执行中...
-                          </>
-                        ) : "更新分析"}
-                      </GlowButton>
+                  <h3 className="mt-4 text-base font-bold leading-6 text-[#172033]">{card.title}</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-[#667085]">{card.description}</p>
+                  {card.id === "llm" &&
+                    state.status === "succeeded" &&
+                    (state.lastOperationLabel === "数据处理" || state.lastOperationLabel === "外来公告处理") && (
+                      <p className="mt-2 flex items-start gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-700">
+                        <Info className="mt-0.5 size-3.5 shrink-0" />
+                        处理已完成：请点右上角「更多操作」→「更新看板」发布结果。
+                      </p>
                     )}
+
+                  <div className="mt-auto pt-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate text-[11px] text-[#98A2B3]">
+                        最近执行：{formatDateTime(state.lastExecutedAt) || "暂无"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setLogDialogCard(card.id)}
+                        disabled={state.logs.length === 0}
+                        title="查看详细日志"
+                        aria-label="查看详细日志"
+                        className="flex size-6 shrink-0 items-center justify-center rounded-md text-[#98A2B3] transition-colors hover:bg-slate-100 hover:text-[#667085] disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <FileText className="size-3.5" />
+                      </button>
+                    </div>
+                    <div className="mt-3 border-t border-[#E4E9F0] pt-3">
+                      {card.id === "llm" ? (
+                        <PrimaryActionButton onClick={() => setLlmModeDialogOpen(true)} running={running} disabled={isBusy}>
+                          运行处理
+                        </PrimaryActionButton>
+                      ) : card.id === "crawler" ? (
+                        <PrimaryActionButton onClick={() => setCrawlerModeDialogOpen(true)} running={running} disabled={isBusy}>
+                          选择采集范围
+                        </PrimaryActionButton>
+                      ) : card.id === "app-watch" ? (
+                        <PrimaryActionButton onClick={() => void runJob("app-watch")} running={running} disabled={isBusy}>
+                          采集 App 更新
+                        </PrimaryActionButton>
+                      ) : (
+                        <PrimaryActionButton onClick={() => void runAiAnalysis()} running={running} disabled={isBusy}>
+                          更新分析
+                        </PrimaryActionButton>
+                      )}
+                    </div>
                   </div>
                 </div>
               </section>
@@ -494,6 +562,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               常规公告会完成结构化处理、匹配与汇总；外来公告仅生成候选数据。
             </DialogDescription>
           </DialogHeader>
+          <div className="flex items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <span>处理完成后，请点击本卡片右上角「更多操作」菜单，选择「更新看板」发布结果。</span>
+          </div>
           <div className="grid gap-3 pt-2">
             <Button
               type="button"
@@ -512,6 +584,66 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               <Upload className="size-4" />
               处理外来公告
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={fullRefreshDialogOpen} onOpenChange={closeFullRefreshDialog}>
+        <DialogContent className="max-w-md border-[#D9E2EC]">
+          <DialogHeader>
+            <DialogTitle className="text-base text-[#172033]">确认全量重建</DialogTitle>
+            <DialogDescription className="text-[#667085]">
+              该操作会重新处理全部公告，并覆盖已有处理结果；增量处理不受影响。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-700">
+              影响范围较大，请输入管理员密码确认身份后执行。
+            </div>
+            <div className="relative">
+              <Lock className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#98A2B3]" />
+              <input
+                type="password"
+                value={fullRefreshPassword}
+                onChange={(event) => setFullRefreshPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void confirmFullRefresh();
+                }}
+                placeholder="请输入管理员密码"
+                autoComplete="current-password"
+                disabled={fullRefreshVerifying}
+                className={cn(
+                  "h-11 w-full rounded-lg border bg-white pl-10 pr-3 text-sm text-[#172033] outline-none transition-colors placeholder:text-[#98A2B3]",
+                  fullRefreshError ? "border-rose-300 focus:border-rose-400" : "border-[#D9E2EC] focus:border-[#2563EB]",
+                )}
+              />
+            </div>
+            {fullRefreshError && <p className="text-xs text-rose-600">{fullRefreshError}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => closeFullRefreshDialog(false)}
+                disabled={fullRefreshVerifying}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void confirmFullRefresh()}
+                disabled={isBusy || fullRefreshVerifying || !fullRefreshPassword}
+                className="bg-amber-600 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                {fullRefreshVerifying ? (
+                  <>
+                    <RefreshCw className="size-3.5 animate-spin" />
+                    验证中...
+                  </>
+                ) : (
+                  "确认全量重建"
+                )}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

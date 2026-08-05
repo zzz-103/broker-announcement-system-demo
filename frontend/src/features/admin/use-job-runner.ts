@@ -171,10 +171,17 @@ export function useJobRunner({
       operationId: OperationId,
       resultStatus: Exclude<JobStatus, "idle" | "running">,
       summary: string,
+      finishedAt?: string | null,
     ) => {
       const active = activeOperationRef.current;
       if (!active || active.id !== operationId) return;
       setCardSummary(active.cardId, resultStatus, summary, active.label);
+      if (finishedAt) {
+        updateCardState(active.cardId, (previous) => ({
+          ...previous,
+          lastExecutedAt: finishedAt,
+        }));
+      }
       setProgressState({
         status: resultStatus,
         taskName: active.label,
@@ -190,7 +197,7 @@ export function useJobRunner({
         if (mountedRef.current) setProgressState(IDLE_PROGRESS);
       }, PROGRESS_RESET_DELAY_MS);
     },
-    [clearProgressResetTimer, setActiveOperation, setCardSummary],
+    [clearProgressResetTimer, setActiveOperation, setCardSummary, updateCardState],
   );
 
   const handleUnauthorized = useCallback(() => {
@@ -245,7 +252,7 @@ export function useJobRunner({
         "system",
         `${label}${event.status === "succeeded" ? "完成" : event.status === "cancelled" ? "已手动停止" : "失败"}，exit_code=${event.exit_code ?? "unknown"}${event.error ? `，${event.error}` : ""}`,
       );
-      finalizeTask(jobType, terminalUiStatus(event.status), summary);
+      finalizeTask(jobType, terminalUiStatus(event.status), summary, event.timestamp);
     },
     [appendLog, finalizeTask, setCardSummary],
   );
@@ -289,7 +296,12 @@ export function useJobRunner({
                   "system",
                   `轮询检测到任务已结束，状态：${job.status}，日志事件数：${job.log_count ?? "unknown"}`,
                 );
-                finalizeTask(jobType, terminalUiStatus(job.status), summary);
+                finalizeTask(
+                  jobType,
+                  terminalUiStatus(job.status),
+                  summary,
+                  job.finished_at ?? job.last_event_at ?? undefined,
+                );
               }
               return;
             }
@@ -515,7 +527,7 @@ export function useJobRunner({
       const backupText = result.meta.backup_file ? `，备份：${result.meta.backup_file}` : "";
       const detail = `看板已更新：发布 ${publishedCount} 条；候选 ${result.meta.staging_count ?? result.meta.source_count ?? "unknown"} 条，非券商项目 ${result.meta.false_count ?? 0} 条，空值 ${result.meta.empty_count ?? 0} 条${backupText}。`;
       appendLog("llm", "system", detail);
-      finalizeTask("publish", "succeeded", `看板已更新，发布 ${publishedCount} 条。`);
+      finalizeTask("publish", "succeeded", `看板已更新，发布 ${publishedCount} 条。`, result.meta.published_at);
       onDataRefresh?.();
     } catch (error) {
       if (controller.signal.aborted || !mountedRef.current) return;
@@ -557,7 +569,7 @@ export function useJobRunner({
       if (controller.signal.aborted || !mountedRef.current) return;
       const summary = `招采分析已生成，样本数 ${result.meta?.source_count ?? 0}。`;
       appendLog("ai", "system", summary);
-      finalizeTask("ai_analysis", "succeeded", summary);
+      finalizeTask("ai_analysis", "succeeded", summary, result.meta?.generated_at);
     } catch (error) {
       if (controller.signal.aborted || !mountedRef.current) return;
       if (error instanceof BackendApiError && error.status === 401) {

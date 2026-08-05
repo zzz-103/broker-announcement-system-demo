@@ -19,6 +19,17 @@ export function loginAdmin(
   });
 }
 
+export function verifyAdminPassword(
+  password: string,
+  token: string,
+): Promise<{ verified: boolean }> {
+  return requestJson<{ verified: boolean }>(
+    "/api/admin/verify-password",
+    { method: "POST", body: JSON.stringify({ password }) },
+    token,
+  );
+}
+
 export function applyForUser(input: ApplyUserInput & AuditContextInput): Promise<ApplyUserResponse> {
   return requestJson<ApplyUserResponse>("/api/users/apply", {
     method: "POST",

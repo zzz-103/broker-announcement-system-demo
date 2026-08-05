@@ -22,6 +22,7 @@ export interface TaskCardState {
   summary: string;
   logs: AdminTaskLogLine[];
   lastOperationLabel: string;
+  lastExecutedAt: string | null;
 }
 
 export interface ActiveOperation {
@@ -41,24 +42,28 @@ export const INITIAL_CARD_STATE: Record<CardId, TaskCardState> = {
     summary: "可选择仅采集公告，或运行完整流程。",
     logs: [],
     lastOperationLabel: "公告采集",
+    lastExecutedAt: null,
   },
   llm: {
     status: "idle",
     summary: "完成公告数据处理、匹配与汇总，再由管理员更新看板。",
     logs: [],
     lastOperationLabel: "数据处理",
+    lastExecutedAt: null,
   },
   ai: {
     status: "idle",
     summary: "基于当前数据生成招采分析。",
     logs: [],
     lastOperationLabel: "招采分析",
+    lastExecutedAt: null,
   },
   "app-watch": {
     status: "idle",
     summary: "采集并整理券商 App 更新，写入 App 更新看板。",
     logs: [],
     lastOperationLabel: "App 更新采集",
+    lastExecutedAt: null,
   },
 };
 
