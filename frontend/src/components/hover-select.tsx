@@ -106,7 +106,7 @@ export function HoverSelect({
           ${
             isOpen
               ? "border-[#2563EB]/40 bg-white ring-1 ring-[#2563EB]/20"
-              : "border-[#E4E9F0] bg-[#F8FAFC]"
+              : "border-[#E4EAF2] bg-[#F8FAFC]"
           }
           ${value ? "text-[#172033]" : "text-[#667085]"}
         `}

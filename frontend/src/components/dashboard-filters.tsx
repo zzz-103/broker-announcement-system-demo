@@ -156,7 +156,7 @@ export function DashboardFilters({
   );
 
   return (
-    <div className="rounded-xl border border-[#E4EAF2] bg-white p-3.5 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-4">
+    <div className="surface-panel p-3.5 sm:p-4">
       <div className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap sm:gap-2.5">
         {/* Search */}
         <div className="group relative col-span-2 w-full sm:w-[31%] sm:min-w-[240px] sm:flex-1 lg:max-w-[420px]">
@@ -221,7 +221,7 @@ export function DashboardFilters({
         >
           <SlidersHorizontal className="size-3.5" />
           更多筛选
-          {advancedFilterCount > 0 && <span className="rounded-full bg-[#315EA8] px-1.5 py-0.5 text-[10px] text-white">{advancedFilterCount}</span>}
+          {advancedFilterCount > 0 && <span className="rounded bg-[#315EA8] px-1.5 py-0.5 text-[10px] text-white">{advancedFilterCount}</span>}
           <ChevronDown className={`size-3.5 transition-transform motion-reduce:transition-none ${moreOpen ? "rotate-180" : ""}`} />
         </button>
 

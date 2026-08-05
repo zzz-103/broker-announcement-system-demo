@@ -149,6 +149,32 @@ body {
   }
 }
 
+/*
+ * 页面表面层级（三个业务模块共用）
+ *
+ * - surface-panel: 页面级内容容器。白底 + 中性边框 + 8px 圆角，默认无阴影。
+ *   指标区域、图表组合、表格、搜索表单、报告正文、重点项目外层等均使用它。
+ * - surface-metrics: 带细分隔线的指标/栅格区域。容器底色即分隔线颜色，
+ *   内部子项使用 gap-px 排布，不再为每项单独加卡片。
+ *
+ * 浮层（弹窗、菜单、抽屉、Tooltip、下拉面板）继续使用较大圆角与轻阴影，
+ * 不属于上述普通内容规则。
+ */
+@layer components {
+  .surface-panel {
+    border-radius: 8px;
+    border: 1px solid #e4eaf2;
+    background-color: #ffffff;
+  }
+
+  .surface-metrics {
+    overflow: hidden;
+    border-radius: 8px;
+    border: 1px solid #e4eaf2;
+    background-color: #e4eaf2;
+  }
+}
+
 body {
   @apply font-sans;
 }

@@ -58,7 +58,7 @@ export function MetricCards({ data, baseline }: MetricCardsProps) {
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 sm:gap-4" aria-label="核心指标">
       {metrics.map((metric) => (
-        <div key={metric.label} className="flex min-h-[96px] flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] md:min-h-[104px]">
+        <div key={metric.label} className="surface-panel flex min-h-[96px] flex-col justify-between p-4 md:min-h-[104px]">
           <div className="text-[12px] font-semibold text-[#667085]">{metric.label}</div>
           <div className="mt-1 text-[27px] font-bold leading-none tabular-nums text-[#172033]">{metric.value}</div>
           <div className="mt-2 truncate text-[11px] text-[#7A8699]" title={metric.hint}>{metric.hint}</div>

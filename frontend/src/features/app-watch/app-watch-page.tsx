@@ -239,7 +239,7 @@ export default function AppUpdatesPage() {
             type="button"
             onClick={refreshData}
             disabled={isBusy}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCw className={`size-3.5 ${isBusy ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden="true" />
             刷新数据
@@ -250,7 +250,7 @@ export default function AppUpdatesPage() {
           <div
             role={dataStatus === "error" ? "alert" : "status"}
             aria-live={dataStatus === "error" ? "assertive" : "polite"}
-            className={`rounded-[10px] border px-4 py-3 text-[13px] ${
+            className={`rounded-lg border px-4 py-3 text-[13px] ${
               dataStatus === "error"
                 ? "border-red-100 bg-red-50 text-red-600"
                 : "border-amber-100 bg-amber-50 text-amber-700"
@@ -263,7 +263,7 @@ export default function AppUpdatesPage() {
         )}
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 gap-px overflow-hidden border-y border-[#DCE4EE] bg-[#DCE4EE] sm:grid-cols-4">
+        <div className="surface-metrics grid grid-cols-2 gap-px sm:grid-cols-4">
           <KpiCard label="更新条数" value={statistics.releaseCount} />
           <KpiCard label="覆盖券商" value={statistics.brokerCount} />
           <KpiCard label="覆盖 App" value={statistics.appCount} />
@@ -273,7 +273,7 @@ export default function AppUpdatesPage() {
         {/* View toggle & filter bar */}
         <div className="space-y-3">
           {/* View toggle */}
-          <div className="flex items-center gap-1 border-b border-[#DCE4EE]" role="tablist" aria-label="App 更新内容">
+          <div className="flex items-center gap-1 border-b border-[#E4EAF2]" role="tablist" aria-label="App 更新内容">
             <button
               type="button"
               role="tab"
@@ -336,7 +336,7 @@ export default function AppUpdatesPage() {
           {viewMode === "overview" ? (
             <>
               {/* Charts */}
-              <div id="app-updates-overview-panel" role="tabpanel" aria-labelledby="app-updates-tab-overview" className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-6 lg:grid-cols-12">
+              <div id="app-updates-overview-panel" role="tabpanel" aria-labelledby="app-updates-tab-overview" className="surface-metrics grid grid-cols-1 gap-px md:grid-cols-6 lg:grid-cols-12">
                 <OverviewCharts data={filteredRecords} onSelect={handleRecordClick} />
               </div>
             </>

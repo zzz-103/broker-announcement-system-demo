@@ -65,10 +65,10 @@ function FilterOptionGroup({
               type="button"
               aria-pressed={isSelected}
               onClick={() => onToggle(option)}
-              className={`whitespace-nowrap rounded-lg border px-2.5 py-1 text-[12px] font-medium transition-[border-color,background-color,color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:scale-[0.97] ${
+              className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-[12px] font-medium transition-[border-color,background-color,color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:scale-[0.97] ${
                 isSelected
-                  ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                  : "border-[#E4EAF2] bg-[#F8FAFC] text-[#475467] hover:border-blue-300 hover:bg-blue-50/50 hover:text-[#1D4ED8] hover:shadow-[0_2px_7px_rgba(37,99,235,0.10)]"
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-[#E4EAF2] bg-[#F8FAFC] text-[#475467] hover:border-blue-300 hover:bg-blue-50/50 hover:text-[#1D4ED8]"
               }`}
             >
               {option}
@@ -80,7 +80,7 @@ function FilterOptionGroup({
             type="button"
             aria-expanded={false}
             onClick={() => onExpandedChange(true)}
-            className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#2563EB] transition-colors hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#2563EB] transition-colors hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
           >
             +{hiddenCount} 更多
             <ChevronDown className="size-3" />
@@ -91,7 +91,7 @@ function FilterOptionGroup({
             type="button"
             aria-expanded={true}
             onClick={() => onExpandedChange(false)}
-            className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#667085] transition-colors hover:bg-slate-200 hover:text-[#344054] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#667085] transition-colors hover:bg-slate-200 hover:text-[#344054] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
           >
             收起
             <ChevronUp className="size-3" />
@@ -155,7 +155,7 @@ export function FilterBar({
   };
 
   return (
-    <div className="space-y-3 border-y border-[#E4EAF2] bg-white px-3 py-3 sm:px-4" aria-label="App 更新筛选">
+    <div className="surface-panel space-y-3 px-3 py-3 sm:px-4" aria-label="App 更新筛选">
       <div className="relative group">
         <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#98A2B3] transition-colors group-focus-within:text-[#2563EB]" />
         <input

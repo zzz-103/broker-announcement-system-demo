@@ -231,7 +231,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
   const currentPage = table.getState().pagination.pageIndex + 1;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-[#E4EAF2] bg-white shadow-[0_1px_2px_rgba(16,40,71,0.03)]" aria-label="项目明细">
+    <section className="surface-panel overflow-hidden" aria-label="项目明细">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-5 py-4 border-b border-[#E4EAF2] gap-3">
         <div>
           <h3 className="text-[15px] font-bold text-[#172033]">
@@ -242,14 +242,14 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="inline-flex items-center rounded-xl border border-[#E4EAF2] bg-[#F8FAFC] p-1 shadow-[0_1px_2px_rgba(16,40,71,0.03)]">
+          <div className="inline-flex items-center rounded-lg border border-[#E4EAF2] bg-[#F8FAFC] p-1">
               <button
                 type="button"
                 onClick={() => setSortMode("date")}
                 aria-pressed={sortMode === "date"}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-semibold whitespace-nowrap transition-colors ${
                 sortMode === "date"
-                  ? "bg-white text-[#172033] shadow-[0_1px_3px_rgba(16,40,71,0.12)]"
+                  ? "bg-white text-[#172033]"
                   : "text-[#667085] hover:text-[#172033]"
               }`}
             >
@@ -260,9 +260,9 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                 type="button"
                 onClick={() => setSortMode("amount")}
                 aria-pressed={sortMode === "amount"}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-semibold whitespace-nowrap transition-colors ${
                 sortMode === "amount"
-                  ? "bg-white text-[#172033] shadow-[0_1px_3px_rgba(16,40,71,0.12)]"
+                  ? "bg-white text-[#172033]"
                   : "text-[#667085] hover:text-[#172033]"
               }`}
             >
@@ -270,7 +270,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               有金额优先
             </button>
           </div>
-          <label className="relative flex h-10 items-center gap-1.5 rounded-xl border border-[#E4EAF2] bg-white pl-3 pr-8 text-[12px] text-[#667085] shadow-[0_1px_2px_rgba(16,40,71,0.03)] transition-colors focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/10">
+          <label className="relative flex h-10 items-center gap-1.5 rounded-lg border border-[#E4EAF2] bg-white pl-3 pr-8 text-[12px] text-[#667085] transition-colors focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/10">
             <Rows3 className="h-3.5 w-3.5 text-[#98A2B3]" />
             <span className="font-medium">每页</span>
             <select
@@ -298,7 +298,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           const record = row.original;
           const stage = record.announcement_stage || "其他";
           return (
-            <article key={row.id} className="rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-sm">
+            <article key={row.id} className="surface-panel p-4">
               <div className="flex items-start justify-between gap-3">
                 <h4 className="min-w-0 text-sm font-bold leading-relaxed text-[#172033]">{record.normalizedProjectName}</h4>
                 <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-bold ${STAGE_STYLES[stage] || STAGE_STYLES["其他"]}`}>{stage}</span>
@@ -437,7 +437,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                 aria-current={pageIndex === currentPage - 1 ? "page" : undefined}
                 className={`min-w-[28px] h-7 rounded-lg text-[12px] font-bold transition-all ${
                   pageIndex === currentPage - 1
-                    ? "bg-[#102847] text-white shadow-sm"
+                    ? "bg-[#102847] text-white"
                     : "text-[#667085] hover:bg-blue-50 hover:text-blue-600"
                 }`}
               >

@@ -62,7 +62,7 @@ export function KeyProjectRadar({
   };
 
   return (
-    <section className="rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5">
+    <section className="surface-panel p-4 sm:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-[15px] font-bold text-[#172033]">
         重点项目雷达

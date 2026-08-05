@@ -17,7 +17,7 @@ interface OverviewChartsProps {
 }
 
 const CARD_CLASS =
-  "min-w-0 border-b border-[#DCE4EE] bg-white p-3 sm:p-4";
+  "min-w-0 bg-white p-3 sm:p-4";
 
 export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
   const trendData = getReleaseTrend(data).slice(-12);
@@ -77,7 +77,7 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
                 key={`${record.contentSha256 || "release"}-${record.brokerCode}-${record.appName}-${index}`}
                 type="button"
                 onClick={() => onSelect(record)}
-                className="group grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-blue-100 hover:bg-white hover:shadow-[0_6px_16px_rgba(16,40,71,0.10)] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transform-none"
+                className="group grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color] duration-150 hover:border-blue-100 hover:bg-white focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
               >
                 <span className="min-w-0">
                   <span className="flex min-w-0 items-center gap-2">
@@ -191,7 +191,7 @@ function DistributionBar({ data }: { data: { name: string; count: number }[] }) 
           <span
             key={item.name}
             title={`${item.name}：${item.count} 次`}
-            className="first:rounded-l-full last:rounded-r-full cursor-default transition-[transform,filter,box-shadow] duration-150 hover:z-10 hover:scale-y-150 hover:brightness-110 hover:shadow-[0_2px_6px_rgba(16,40,71,0.20)]"
+            className="first:rounded-l-full last:rounded-r-full cursor-default transition-[transform,filter] duration-150 hover:z-10 hover:scale-y-150 hover:brightness-110"
             style={{
               width: `${(item.count / total) * 100}%`,
               backgroundColor: UPDATE_TYPE_COLORS[item.name] || "#98A2B3",
@@ -226,12 +226,12 @@ function RankingList({ data }: { data: { name: string; count: number }[] }) {
         <div
           key={item.name}
           title={`${item.name}：${item.count} 次更新`}
-          className="group grid cursor-default grid-cols-[20px_92px_minmax(0,1fr)_28px] items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-[background-color,box-shadow] duration-150 hover:bg-blue-50/70 hover:shadow-[0_3px_10px_rgba(37,99,235,0.08)]"
+          className="group grid cursor-default grid-cols-[20px_92px_minmax(0,1fr)_28px] items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition-colors duration-150 hover:bg-blue-50/70"
         >
           <span className={`font-bold ${index < 3 ? "text-[#2563EB]" : "text-[#98A2B3]"}`}>{index + 1}</span>
           <span className="truncate font-medium text-[#475467] transition-colors group-hover:text-[#172033]" title={item.name}>{item.name}</span>
           <span className="h-2 overflow-hidden rounded-full bg-[#F0F2F5]">
-            <i className="block h-full rounded-full bg-gradient-to-r from-[#2563EB] to-[#60A5FA] transition-[filter,box-shadow] duration-150 group-hover:brightness-110 group-hover:shadow-[0_0_7px_rgba(37,99,235,0.45)]" style={{ width: `${(item.count / max) * 100}%` }} />
+            <i className="block h-full rounded-full bg-gradient-to-r from-[#2563EB] to-[#60A5FA] transition-[filter] duration-150 group-hover:brightness-110" style={{ width: `${(item.count / max) * 100}%` }} />
           </span>
           <strong className="text-right tabular-nums text-[#172033] transition-colors group-hover:text-[#2563EB]">{item.count}</strong>
         </div>

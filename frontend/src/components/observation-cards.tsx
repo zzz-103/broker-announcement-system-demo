@@ -74,7 +74,7 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
   }, [brokers]);
 
   return (
-    <section className="col-span-1 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 md:col-span-6 lg:col-span-5">
+    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-6 lg:col-span-5">
       <div>
         <div className="mb-3 flex items-center gap-1.5">
           <h3 className="text-[14px] font-bold text-[#172033]">
@@ -174,7 +174,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
   }, [suppliers]);
 
   return (
-    <section className="col-span-1 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 md:col-span-3 lg:col-span-4">
+    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-4">
       <div>
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           结果公告供应商观察
@@ -238,7 +238,7 @@ export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
   }, [data]);
 
   return (
-    <section className="col-span-1 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 md:col-span-3 lg:col-span-3">
+    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-3">
       <div>
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           公开金额案例

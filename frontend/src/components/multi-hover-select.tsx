@@ -126,7 +126,7 @@ export function MultiHoverSelect({
           ${
             values.length > 0
               ? "border-[#2563EB]/30 bg-[#2563EB]/5 text-[#2563EB]"
-              : "border-[#E4E9F0] bg-white text-[#667085] hover:border-[#D0D5DD]"
+              : "border-[#E4EAF2] bg-white text-[#667085] hover:border-[#D0D5DD]"
           }
         `}
       >
@@ -156,7 +156,7 @@ export function MultiHoverSelect({
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder={searchPlaceholder}
-                className="h-8 w-full rounded-md border border-[#E4E9F0] bg-[#F8FAFC] px-2.5 text-[12px] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/10"
+                className="h-8 w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] px-2.5 text-[12px] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/10"
               />
             </div>
           )}

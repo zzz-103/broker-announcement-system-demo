@@ -105,9 +105,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
   };
 
   return (
-    <section className={`relative overflow-hidden rounded-xl border border-[#E4EAF2] bg-white ${className}`}>
-      <div className="h-0.5 bg-[#315EA8]" />
-
+    <section className={`surface-panel relative overflow-hidden ${className}`}>
       <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#F0F2F5]">
         <div className="flex items-center gap-2.5">
           <div className="flex size-7 items-center justify-center rounded-md bg-[#EEF4FF] text-[#315EA8]">
@@ -128,7 +126,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[#102847] px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-1.5 rounded-md bg-[#102847] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? "animate-spin" : ""}`} />
               {isGenerating ? "生成中" : content ? "重新生成" : "生成分析"}
@@ -139,7 +137,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
 
       <div className="px-5 py-5">
         {error && (
-          <div className="flex items-start gap-2 p-3 mb-4 bg-[#FEF2F2] border border-[#FECACA] rounded-xl">
+          <div className="flex items-start gap-2 p-3 mb-4 bg-[#FEF2F2] border border-[#FECACA] rounded-lg">
             <AlertCircle className="w-4 h-4 text-[#D64545] mt-0.5 shrink-0" />
             <p className="text-[13px] text-[#991B1B]">{error}</p>
           </div>

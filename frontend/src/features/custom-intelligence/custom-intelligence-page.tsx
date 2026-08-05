@@ -113,7 +113,7 @@ const FALLBACK_OPTIONS: CustomIntelligenceOptionsResponse = {
   deep_search_enabled: false,
 };
 
-const FIELD_INPUT_CLASS = "w-full rounded-lg border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm text-[#172033] shadow-sm outline-none transition placeholder:text-[#98A2B3] focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15";
+const FIELD_INPUT_CLASS = "w-full rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98A2B3] focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15";
 const REPORT_HEADING_CLASS = "mb-2 text-sm font-bold text-[#243B61]";
 
 function isActiveExecution(status: CustomIntelligenceExecutionStatus): boolean {
@@ -206,7 +206,7 @@ function TagEditor({
   return (
     <div>
       <FieldLabel hint={hint}>{label}</FieldLabel>
-      <div className="min-h-10 rounded-lg border border-[#D0D5DD] bg-white px-2 py-1.5 shadow-sm focus-within:border-[#4F7CFF] focus-within:ring-2 focus-within:ring-[#4F7CFF]/10">
+      <div className="min-h-10 rounded-md border border-[#D0D5DD] bg-white px-2 py-1.5 focus-within:border-[#4F7CFF] focus-within:ring-2 focus-within:ring-[#4F7CFF]/10">
         <div className="flex flex-wrap gap-1.5">
           {values.map((value) => (
             <span key={value} className="inline-flex max-w-full items-center gap-1 rounded-md bg-[#EEF4FF] px-2 py-1 text-[11px] font-medium text-[#315EA8]">
@@ -267,7 +267,7 @@ function ConfigFields({
             rows={3}
             maxLength={1000}
             placeholder="例如：近期券商财富管理业务的竞争变化和潜在机会有哪些？"
-            className="w-full resize-y rounded-lg border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm leading-6 text-[#172033] shadow-sm outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15"
+            className="w-full resize-y rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15"
           />
           <div className="mt-1 text-right text-[10px] text-[#98A2B3]">{value.question.length}/1000</div>
           <div className="mt-3">
@@ -286,7 +286,7 @@ function ConfigFields({
                       question: preset.question,
                       report_type: preset.report_type,
                     })}
-                    className="max-w-full rounded-lg border border-[#E4E9F0] bg-[#F8FAFC] px-3 py-2 text-left text-[11px] leading-5 text-[#475467] transition hover:border-[#9FB9E8] hover:bg-[#EEF4FF] hover:text-[#315EA8]"
+                    className="max-w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] px-3 py-2 text-left text-[11px] leading-5 text-[#475467] transition hover:border-[#9FB9E8] hover:bg-[#EEF4FF] hover:text-[#315EA8]"
                     title={preset.question}
                   >
                     <span className="font-semibold text-[#315EA8]">{preset.title}</span>
@@ -323,13 +323,13 @@ function ConfigFields({
       <details
         open={advancedOpen}
         onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-        className="group rounded-xl border border-[#E4E9F0] bg-[#F8FAFD] px-3.5 py-3"
+        className="group rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] px-3.5 py-3"
       >
         <summary className="flex cursor-pointer list-none items-center justify-between text-xs font-semibold text-[#344054]">
           <span className="inline-flex items-center gap-1.5"><ChevronDown className="size-4 transition group-open:rotate-180" />高级搜索设置</span>
           <span className="text-[10px] font-normal text-[#98A2B3]">报告、来源、关键词等</span>
         </summary>
-        <div className="mt-3 space-y-4 border-t border-[#E4E9F0] pt-3">
+        <div className="mt-3 space-y-4 border-t border-[#E4EAF2] pt-3">
           <div className="grid gap-4 md:grid-cols-3">
             <div>
               <FieldLabel>报告类型</FieldLabel>
@@ -370,7 +370,7 @@ function ConfigFields({
           <TagEditor label="指定站点" values={value.specified_sites} onChange={(next) => update("specified_sites", next)} placeholder="例如：csrc.gov.cn" hint="仅填写域名；服务端会再次校验" />
           <div>
             <FieldLabel hint="可选">额外分析要求</FieldLabel>
-            <textarea value={value.extra_requirements} onChange={(event) => update("extra_requirements", event.target.value)} rows={3} maxLength={2000} placeholder="例如：结论要区分已发生事实与推测，并给出可执行的跟进建议。" className="w-full resize-y rounded-lg border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm leading-6 text-[#172033] shadow-sm outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15" />
+            <textarea value={value.extra_requirements} onChange={(event) => update("extra_requirements", event.target.value)} rows={3} maxLength={2000} placeholder="例如：结论要区分已发生事实与推测，并给出可执行的跟进建议。" className="w-full resize-y rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15" />
           </div>
         </div>
       </details>
@@ -387,7 +387,7 @@ function TextList({ items, empty = "暂无" }: { items: string[] | undefined; em
 function SourceLink({ source }: { source: IntelligenceSource }) {
   const url = safeHttpUrl(source.url);
   return (
-    <div className="rounded-lg border border-[#E4E9F0] bg-white p-3">
+    <div className="rounded-lg border border-[#E4EAF2] bg-white p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="break-words text-sm font-semibold leading-5 text-[#243B61]">{source.title || "未命名来源"}</p>
@@ -419,7 +419,7 @@ function ReportDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-[1120px] flex-col gap-0 overflow-hidden border-[#D9E2EC] bg-white p-0">
-        <DialogHeader className="shrink-0 border-b border-[#E4E9F0] bg-[#F8FAFD] px-6 py-5 pr-12">
+        <DialogHeader className="shrink-0 border-b border-[#E4EAF2] bg-[#F8FAFD] px-6 py-5 pr-12">
           <DialogTitle className="text-lg text-[#172033]">{report?.title || execution?.topic_name || "情报报告"}</DialogTitle>
           <DialogDescription className="text-[#667085]">{execution ? `${formatDate(execution.completed_at || execution.created_at)} · ${execution.sources.length} 条有效来源` : "正在加载完整报告…"}</DialogDescription>
         </DialogHeader>
@@ -428,7 +428,7 @@ function ReportDialog({
           {!execution ? <p className="text-sm text-[#667085]">暂无报告内容。</p> : (
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
               <div className="min-w-0 space-y-6">
-                <section className="grid gap-3 rounded-xl border border-[#E4E9F0] bg-[#F8FAFD] p-3 sm:grid-cols-3">
+                <section className="grid gap-3 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-3 sm:grid-cols-3">
                   <div><p className="text-[10px] font-semibold text-[#98A2B3]">执行时间</p><p className="mt-1 text-xs text-[#344054]">{report?.executed_at || formatDate(execution.completed_at || execution.created_at)}</p></div>
                   <div><p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs text-[#344054]">{report?.time_range || "—"}</p></div>
                   <div><p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p><p className="mt-1 text-xs text-[#344054]">{report?.valid_source_count ?? sources.length}</p></div>
@@ -446,7 +446,7 @@ function ReportDialog({
                   <h3 className={REPORT_HEADING_CLASS}>重点动态</h3>
                   <div className="space-y-3">
                     {(report?.key_dynamics ?? []).length ? (report?.key_dynamics ?? []).map((dynamic, index) => (
-                      <article key={`${dynamic.title}-${index}`} className="rounded-xl border border-[#E4E9F0] bg-[#FBFCFE] p-4">
+                      <article key={`${dynamic.title}-${index}`} className="rounded-lg border border-[#E4EAF2] bg-[#FBFCFE] p-4">
                         <div className="flex flex-wrap items-start justify-between gap-2"><h4 className="text-sm font-bold text-[#243B61]">{dynamic.title || `动态 ${index + 1}`}</h4>{dynamic.information_time && <span className="text-[11px] text-[#98A2B3]">{dynamic.information_time}</span>}</div>
                         {dynamic.institutions?.length ? <p className="mt-1 text-xs text-[#667085]">涉及主体：{dynamic.institutions.join("、")}</p> : null}
                         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[#344054]">{dynamic.summary || "暂无摘要。"}</p>
@@ -886,34 +886,34 @@ export default function CustomIntelligencePage() {
         <CustomIntelligenceTabs activeTab={activeTab} executionCount={executionsTotal} onChange={setActiveTab} />
 
         {activeTab === "instant" && (
-          <section id="custom-intelligence-panel-instant" role="tabpanel" aria-label="即时搜索" aria-busy={optionsLoading} className="border-y border-[#E4E9F0] bg-white px-3 py-4 sm:px-4">
+          <section id="custom-intelligence-panel-instant" role="tabpanel" aria-label="即时搜索" aria-busy={optionsLoading} className="surface-panel px-3 py-4 sm:px-4">
             <div className="mb-5">
               <h3 className="text-base font-semibold text-[#172033]">即时搜索</h3>
               <p className="mt-1 text-xs leading-5 text-[#667085]">填写核心问题、分析视角和时间范围。</p>
             </div>
             <div className="mb-5"><ConfigFields value={form} onChange={setForm} options={visibleOptions} /></div>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E4E9F0] pt-4">
-              <button onClick={requestKeywordSuggestions} disabled={suggesting || activeExecutionId !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-[#C8D7F0] bg-[#F8FAFD] px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E4EAF2] pt-4">
+              <button onClick={requestKeywordSuggestions} disabled={suggesting || activeExecutionId !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-[#F8FAFD] px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
                 <Sparkles className="size-3.5" />{suggesting ? "正在生成建议…" : "关键词建议"}
               </button>
-              <button onClick={submitInstant} disabled={activeExecutionId !== null || !form.question.trim() || optionsLoading} className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_3px_10px_rgba(37,99,235,0.25)] transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={submitInstant} disabled={activeExecutionId !== null || !form.question.trim() || optionsLoading} className="inline-flex items-center gap-2 rounded-md bg-[#2563EB] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
                 <Play className="size-4" />开始搜索
               </button>
             </div>
             {keywordSuggestions.length > 0 && (
-              <div className="mt-4 rounded-xl border border-[#C8D7F0] bg-[#F8FAFD] p-4">
+              <div className="mt-4 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div><h4 className="text-sm font-bold text-[#243B61]">关键词建议</h4><p className="mt-1 text-[11px] text-[#667085]">勾选需要的词，确认后加入当前配置。</p></div>
                   <div className="flex gap-2"><button onClick={() => setSelectedSuggestions(selectedSuggestions.length === keywordSuggestions.length ? [] : keywordSuggestions)} className="rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] text-[#475467]">{selectedSuggestions.length === keywordSuggestions.length ? "取消全选" : "全选"}</button><button onClick={mergeKeywordSuggestions} disabled={!selectedSuggestions.length} className="rounded-md bg-[#315EA8] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">确认合并</button></div>
                 </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{keywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4E9F0] bg-white px-3 py-2 text-xs text-[#344054] hover:border-[#9FB9E8]"><input type="checkbox" checked={selectedSuggestions.includes(suggestion)} onChange={(event) => setSelectedSuggestions((current) => event.target.checked ? [...current, suggestion] : current.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{keywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4EAF2] bg-white px-3 py-2 text-xs text-[#344054] hover:border-[#9FB9E8]"><input type="checkbox" checked={selectedSuggestions.includes(suggestion)} onChange={(event) => setSelectedSuggestions((current) => event.target.checked ? [...current, suggestion] : current.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
               </div>
             )}
           </section>
         )}
 
         {activeTab === "topics" && (
-          <section id="custom-intelligence-panel-topics" role="tabpanel" aria-label="情报主题" className="border-y border-[#E4E9F0] bg-white px-3 py-4 sm:px-4">
+          <section id="custom-intelligence-panel-topics" role="tabpanel" aria-label="情报主题" className="surface-panel px-3 py-4 sm:px-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-[#172033]">情报主题</h3>
@@ -926,7 +926,7 @@ export default function CustomIntelligencePage() {
         )}
 
         {activeTab === "executions" && (
-          <section id="custom-intelligence-panel-executions" role="tabpanel" aria-label="执行记录" className="border-y border-[#E4E9F0] bg-white px-3 py-4 sm:px-4">
+          <section id="custom-intelligence-panel-executions" role="tabpanel" aria-label="执行记录" className="surface-panel px-3 py-4 sm:px-4">
             <ExecutionList executions={executions} loading={loadingExecutions} onRefresh={() => void loadExecutions()} onStartSearch={() => setActiveTab("instant")} onSaveTopic={openCreateTopicFromExecution} onOpenReport={(execution) => void openReport(execution)} onRerun={(execution) => void rerun(execution)} activeExecutionId={activeExecutionId} />
           </section>
         )}
@@ -934,7 +934,7 @@ export default function CustomIntelligencePage() {
 
       <Dialog open={topicDialogOpen} onOpenChange={(open) => !topicSaving && setTopicDialogOpen(open)}>
         <DialogContent className="flex w-[calc(100%-1rem)] max-h-[calc(100dvh-1rem)] max-w-[900px] flex-col gap-0 overflow-hidden border-[#D9E2EC] bg-white p-0 sm:w-[calc(100%-2rem)] sm:max-h-[calc(100dvh-2rem)] sm:!max-w-[900px]">
-          <DialogHeader className="shrink-0 border-b border-[#E4E9F0] bg-[#F8FAFD] px-4 py-4 pr-12 sm:px-6 sm:py-5">
+          <DialogHeader className="shrink-0 border-b border-[#E4EAF2] bg-[#F8FAFD] px-4 py-4 pr-12 sm:px-6 sm:py-5">
             <DialogTitle className="text-base text-[#172033]">{topicEditorId === null ? "保存为情报主题" : "编辑情报主题"}</DialogTitle>
             <DialogDescription className="text-[#667085]">主题保存后可在列表中启停和手动执行。</DialogDescription>
           </DialogHeader>
@@ -944,7 +944,7 @@ export default function CustomIntelligencePage() {
               <input value={topicName} onChange={(event) => setTopicName(event.target.value)} maxLength={120} placeholder="例如：券商财富管理竞争监测" className={FIELD_INPUT_CLASS} />
             </div>
             <ConfigFields value={topicDraft} onChange={setTopicDraft} options={visibleOptions} showQuestion={false} />
-            <div className="mt-4 rounded-xl border border-[#C8D7F0] bg-[#F8FAFD] p-4">
+            <div className="mt-4 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="text-sm font-bold text-[#243B61]">主题关键词建议</h4>
@@ -953,14 +953,14 @@ export default function CustomIntelligencePage() {
                 <button type="button" onClick={() => void requestTopicKeywordSuggestions()} disabled={topicSuggesting || activeExecutionId !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] disabled:opacity-50"><Sparkles className="size-3" />{topicSuggesting ? "生成中…" : "补充关键词"}</button>
               </div>
               {topicKeywordSuggestions.length > 0 && <>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{topicKeywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4E9F0] bg-white px-3 py-2 text-xs text-[#344054]"><input type="checkbox" checked={selectedTopicSuggestions.includes(suggestion)} onChange={(event) => setSelectedTopicSuggestions((current) => event.target.checked ? [...current, suggestion] : current.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{topicKeywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4EAF2] bg-white px-3 py-2 text-xs text-[#344054]"><input type="checkbox" checked={selectedTopicSuggestions.includes(suggestion)} onChange={(event) => setSelectedTopicSuggestions((current) => event.target.checked ? [...current, suggestion] : current.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
                 <div className="mt-3 flex justify-end"><button type="button" onClick={mergeTopicKeywordSuggestions} disabled={!selectedTopicSuggestions.length} className="rounded-md bg-[#315EA8] px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">确认合并</button></div>
               </>}
             </div>
           </div>
-          <DialogFooter className="relative z-10 shrink-0 border-t border-[#E4E9F0] bg-[#FBFCFE] px-4 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
-            <button type="button" onClick={() => setTopicDialogOpen(false)} disabled={topicSaving} className="rounded-lg border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-white">取消</button>
-            <button type="button" onClick={() => void saveTopic()} disabled={topicSaving || !topicName.trim()} className="inline-flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50">{topicSaving && <Loader2 className="size-4 animate-spin" />}保存主题</button>
+          <DialogFooter className="relative z-10 shrink-0 border-t border-[#E4EAF2] bg-[#FBFCFE] px-4 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
+            <button type="button" onClick={() => setTopicDialogOpen(false)} disabled={topicSaving} className="rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-white">取消</button>
+            <button type="button" onClick={() => void saveTopic()} disabled={topicSaving || !topicName.trim()} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50">{topicSaving && <Loader2 className="size-4 animate-spin" />}保存主题</button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

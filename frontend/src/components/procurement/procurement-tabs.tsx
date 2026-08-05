@@ -17,7 +17,7 @@ export function ProcurementTabs({
   const tabClass = (tab: ProcurementTabsProps["activeTab"]) =>
     `inline-flex h-9 shrink-0 items-center rounded-md px-3.5 text-[13px] font-semibold whitespace-nowrap transition-colors motion-reduce:transition-none ${
       activeTab === tab
-        ? "border border-[#D7E5FF] bg-white text-[#2563EB] shadow-[0_1px_2px_rgba(16,40,71,0.08)]"
+        ? "border border-[#D7E5FF] bg-white text-[#2563EB]"
         : "border border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
     }`;
 

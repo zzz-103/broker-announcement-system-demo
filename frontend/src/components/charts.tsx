@@ -43,7 +43,7 @@ function useReducedMotion(): boolean {
   return reduced;
 }
 
-const CHART_CARD_CLASS = "min-w-0 rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)]";
+const CHART_CARD_CLASS = "surface-panel min-w-0 p-4";
 
 function EmptyChartState() {
   return (

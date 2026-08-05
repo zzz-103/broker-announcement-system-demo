@@ -35,19 +35,19 @@ const AdminDashboard = dynamic(
 );
 const AiSummary = dynamic(
   () => import("@/components/ai-summary").then((m) => m.AiSummary),
-  { ssr: false, loading: () => <div className="h-48 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
+  { ssr: false, loading: () => <div className="surface-panel h-48 motion-reduce:animate-none" /> }
 );
 const ProcurementTrendChart = dynamic(
   () => import("@/components/charts").then((m) => m.ProcurementTrendChart),
-  { ssr: false, loading: () => <div className="h-64 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
+  { ssr: false, loading: () => <div className="surface-panel h-64 motion-reduce:animate-none" /> }
 );
 const DomainDistributionChart = dynamic(
   () => import("@/components/charts").then((m) => m.DomainDistributionChart),
-  { ssr: false, loading: () => <div className="h-64 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
+  { ssr: false, loading: () => <div className="surface-panel h-64 motion-reduce:animate-none" /> }
 );
 const StageDistributionChart = dynamic(
   () => import("@/components/charts").then((m) => m.StageDistributionChart),
-  { ssr: false, loading: () => <div className="h-64 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
+  { ssr: false, loading: () => <div className="surface-panel h-64 motion-reduce:animate-none" /> }
 );
 const BrokerActivityCard = dynamic(
   () => import("@/components/observation-cards").then((m) => m.BrokerActivityCard),
@@ -367,7 +367,7 @@ export default function Dashboard() {
               type="button"
               onClick={refreshData}
               disabled={isLoading}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
               刷新数据
@@ -375,7 +375,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => setShowModal(true)}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD]"
             >
               <HelpCircle className="size-3.5" />
               数据口径
@@ -383,7 +383,7 @@ export default function Dashboard() {
             <button
               type="button"
               onClick={() => openFeedback()}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#C8D7F0] bg-[#F8FAFD] px-3 text-xs font-semibold text-[#315EA8] transition-colors hover:bg-[#EEF4FF]"
+              className="inline-flex h-9 items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-[#F8FAFD] px-3 text-xs font-semibold text-[#315EA8] transition-colors hover:bg-[#EEF4FF]"
               title="补充券商、反馈数据问题或提出产品建议"
             >
               <MessageSquarePlus className="size-3.5" />
@@ -393,7 +393,7 @@ export default function Dashboard() {
         </div>
         {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
           <div
-            className={`rounded-[10px] border px-4 py-3 text-[13px] ${
+            className={`rounded-lg border px-4 py-3 text-[13px] ${
               dataStatus === "error"
                 ? "border-red-100 bg-red-50 text-red-600"
                 : "border-amber-100 bg-amber-50 text-amber-700"

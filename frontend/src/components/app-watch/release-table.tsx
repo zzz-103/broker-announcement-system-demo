@@ -45,7 +45,7 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
 
   if (releases.length === 0) {
     return (
-      <div className="border-y border-[#E4E9F0] bg-white p-10 text-center" role="status">
+      <div className="surface-panel p-10 text-center" role="status">
         <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-slate-50">
           <svg className="size-7 text-[#98A2B3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -58,7 +58,7 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
   }
 
   return (
-    <div className="border-y border-[#E4E9F0] bg-white">
+    <div className="surface-panel overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1040px] table-fixed" aria-label="券商 App 更新明细">
           <colgroup>
@@ -70,7 +70,7 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
             <col className="w-[300px]" />
             <col className="w-[116px]" />
           </colgroup>
-          <thead className="border-b border-[#E4E9F0] bg-[#F8FAFC]">
+          <thead className="border-b border-[#E4EAF2] bg-[#F8FAFC]">
             <tr>
               <Th label="更新时间" sortKey="publishDate" currentSort={sortConfig} onSort={handleSort} />
               <Th label="券商" sortKey="brokerName" currentSort={sortConfig} onSort={handleSort} />
@@ -94,7 +94,7 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
       </div>
 
       {sortedReleases.length > displayLimit && (
-        <div className="border-t border-[#E4E9F0] p-3 text-center">
+        <div className="border-t border-[#E4EAF2] p-3 text-center">
           <button
             type="button"
             onClick={() => setDisplayLimit((count) => count + 50)}
@@ -163,14 +163,14 @@ function ReleaseRow({ record, onClick }: { record: AppReleaseRecord; onClick: ()
       aria-label={`查看 ${broker} ${app} 的更新详情`}
       onClick={onClick}
       onKeyDown={handleKeyDown}
-      className="cursor-pointer border-b border-[#E4E9F0] transition-colors hover:bg-blue-50/30 focus-visible:bg-blue-50/40 focus-visible:outline-none"
+      className="cursor-pointer border-b border-[#E4EAF2] transition-colors hover:bg-blue-50/30 focus-visible:bg-blue-50/40 focus-visible:outline-none"
     >
       <td className="whitespace-nowrap px-3 py-2.5 text-xs text-[#667085]" title={date}>{date}</td>
       <td className="max-w-0 px-3 py-2.5 text-xs font-medium text-[#172033]" title={broker}><span className="block truncate">{broker}</span></td>
       <td className="max-w-0 px-3 py-2.5 text-xs text-[#172033]" title={app}><span className="block truncate">{app}</span></td>
       <td className="whitespace-nowrap px-3 py-2.5 text-xs text-[#667085]" title={version}>{version}</td>
       <td className="px-3 py-2.5 text-xs" title={record.updateType || "其他"}>
-        <span className="inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: `${updateTypeColor}15`, color: updateTypeColor, borderColor: `${updateTypeColor}30` }}>
+        <span className="inline-flex max-w-full items-center rounded border px-2 py-0.5 text-[10px] font-medium" style={{ backgroundColor: `${updateTypeColor}15`, color: updateTypeColor, borderColor: `${updateTypeColor}30` }}>
           <span className="truncate">{record.updateType || "其他"}</span>
         </span>
       </td>

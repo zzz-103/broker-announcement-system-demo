@@ -39,7 +39,7 @@ export function CustomIntelligenceTabs({
   ] as const;
 
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-[#DDE5F0]" role="tablist" aria-label="自定义情报内容">
+    <div className="flex gap-1 overflow-x-auto border-b border-[#E4EAF2]" role="tablist" aria-label="自定义情报内容">
       {tabs.map(([tab, label, Icon]) => {
         const selected = activeTab === tab;
         const panelId = `custom-intelligence-panel-${tab}`;
@@ -68,7 +68,7 @@ export function CustomIntelligenceTabs({
             <Icon className="size-4" aria-hidden="true" />
             {label}
             {tab === "executions" && executionCount > 0 && (
-              <span className="rounded-full bg-[#EEF4FF] px-1.5 text-[10px] text-[#315EA8]" aria-label={`${executionCount} 条记录`}>
+              <span className="rounded bg-[#EEF4FF] px-1.5 text-[10px] text-[#315EA8]" aria-label={`${executionCount} 条记录`}>
                 {executionCount}
               </span>
             )}
@@ -132,13 +132,13 @@ export function TopicList({
   }
 
   return (
-    <div className="divide-y divide-[#E4E9F0] rounded-lg border border-[#E4E9F0] bg-white" aria-busy={loading}>
+    <div className="divide-y divide-[#E4EAF2]" aria-busy={loading}>
       {topics.map((topic) => (
         <article key={topic.id} className={`grid gap-3 px-3 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${topic.enabled ? "bg-white" : "bg-[#FAFBFC]"}`}>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <h4 className="min-w-0 truncate text-sm font-semibold text-[#243B61]" title={topic.name}>{topic.name}</h4>
-              <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${topic.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+              <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold ${topic.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                 {topic.enabled ? "已启用" : "已停用"}
               </span>
             </div>
@@ -186,7 +186,7 @@ function StatusPill({ status }: { status: CustomIntelligenceExecutionStatus }) {
         : "bg-amber-50 text-amber-700 border-amber-100";
   const label = status === "succeeded" ? "已完成" : status === "failed" ? "失败" : status === "empty" ? "无结果" : status === "running" ? "执行中" : "排队中";
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${style}`}>
+    <span className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] font-semibold ${style}`}>
       {isActiveExecution(status) && <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
       {label}
     </span>
@@ -245,7 +245,7 @@ export function ExecutionList({
           </button>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-[#E4E9F0]" aria-busy={loading}>
+        <div className="overflow-x-auto" aria-busy={loading}>
           <table className="w-full min-w-[920px] table-fixed text-left" aria-label="自定义情报执行记录">
             <colgroup>
               <col className="w-[37%]" />
@@ -254,7 +254,7 @@ export function ExecutionList({
               <col className="w-[20%]" />
               <col className="w-[14%]" />
             </colgroup>
-            <thead className="border-b border-[#E4E9F0] bg-[#F8FAFC] text-[11px] font-semibold text-[#667085]">
+            <thead className="border-b border-[#E4EAF2] bg-[#F8FAFC] text-[11px] font-semibold text-[#667085]">
               <tr>
                 <th className="px-3 py-2.5">问题 / 主题</th>
                 <th className="px-3 py-2.5">状态</th>

@@ -10,7 +10,7 @@ export function KpiCard({
   isText?: boolean;
 }) {
   return (
-    <div className="min-w-0 border-b border-[#DCE4EE] bg-white px-3 py-3 sm:px-4">
+    <div className="min-w-0 bg-white px-3 py-3 sm:px-4">
       <div className="truncate text-[11px] font-medium text-[#667085]" title={label}>{label}</div>
       <div
         className={`mt-1 truncate font-semibold tabular-nums text-[#172033] ${
