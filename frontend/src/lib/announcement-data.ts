@@ -180,7 +180,7 @@ export function formatAmountInWan(value: number | null): string {
 export function displayAmountLabel(record: ProcessedRecord): string { return record.display_amount_kind === "winning" ? "成交金额" : "项目预算"; }
 
 export function exportCsv(records: ProcessedRecord[]): void {
-  const headers = ["主体", "项目名称", "金融科技方向", "主题标签", "公告阶段", "采购方式", "结果披露供应商", "公开金额类型", "公开金额", "公告日期"];
+  const headers = ["券商", "项目名称", "项目方向", "项目标签", "公告阶段", "采购方式", "供应商", "公开金额类型", "公开金额", "公告日期"];
   const rows = records.map((record) => [record.validBrokerName, record.normalizedProjectName, record.primaryDomain, record.topicTags.join("/"), record.announcement_stage || "其他", record.procurement_method || "方式未识别", record.normalizedSupplier || "未披露", record.display_amount_yuan !== null ? displayAmountLabel(record) : "未披露", record.display_amount_yuan !== null ? String(record.display_amount_yuan) : "未披露", formatDate(record.validPublishDate)]);
   const content = [headers, ...rows].map((row) => row.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
   const url = URL.createObjectURL(new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8" }));

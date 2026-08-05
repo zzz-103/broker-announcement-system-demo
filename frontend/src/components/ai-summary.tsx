@@ -8,6 +8,7 @@ import {
   generateAiAnalysis,
 } from "@/lib/api/backend-client";
 import { useAuthStore } from "@/store/auth-store";
+import { formatDateTime } from "@/lib/display";
 
 interface AiSummaryProps {
   className?: string;
@@ -69,7 +70,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
       }
       setError(
         err instanceof BackendApiError && err.status === 403
-          ? "仅管理员可以重新生成招采分析"
+          ? "仅管理员可以更新招采分析"
           : err instanceof BackendApiError && err.status === 409
             ? "招采分析任务正在运行"
             : err instanceof Error
@@ -81,10 +82,12 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
     }
   };
 
-  const formatUpdatedAt = (dateStr: string | null) => {
-    if (!dateStr) return null;
-    const date = new Date(dateStr);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  const getReportTitle = (fullContent: string) => {
+    for (const line of fullContent.split("\n")) {
+      if (line.startsWith("# ")) return line.slice(2).trim();
+      if (line.trim() !== "") break;
+    }
+    return null;
   };
 
   const getCoreConclusion = (fullContent: string) => {
@@ -93,6 +96,10 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
     for (const line of lines) {
       if (line.startsWith("## ")) {
         break;
+      }
+      // 报告主标题单独展示，核心结论中不再重复。
+      if (line.startsWith("# ")) {
+        continue;
       }
       if (line.trim() !== "") {
         introLines.push(line);
@@ -119,7 +126,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
         <div className="flex items-center gap-3">
           {updatedAt && (
             <span className="text-[11px] text-[#98A2B3]">
-              更新于 {formatUpdatedAt(updatedAt)}
+              更新于 {formatDateTime(updatedAt)}
             </span>
           )}
           {isAdmin && (
@@ -129,7 +136,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
               className="inline-flex items-center gap-1.5 rounded-md bg-[#102847] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? "animate-spin" : ""}`} />
-              {isGenerating ? "生成中" : content ? "重新生成" : "生成分析"}
+              {isGenerating ? "更新中" : content ? "更新分析" : "生成分析"}
             </button>
           )}
         </div>
@@ -144,6 +151,12 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
         )}
         {content ? (
           <div className="max-w-none text-[13px] text-[#374151] leading-relaxed">
+            {/* 报告主标题（来自模型输出的 H1） */}
+            {getReportTitle(content) && (
+              <h3 className="mb-4 text-[17px] font-bold leading-snug text-[#102847]">
+                {getReportTitle(content)}
+              </h3>
+            )}
             {/* 1. Core Summary Panel */}
             <div className="mb-5 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-4">
               <h4 className="mb-2 flex items-center gap-1 text-[11px] font-bold tracking-wide text-[#315EA8]">
@@ -166,7 +179,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
               {isLoading ? "正在加载招采分析..." : emptyMessage}
             </p>
             <p className="text-[11px] text-[#98A2B3] max-w-xs">
-              管理员可生成最新分析，普通用户可查看已发布结果
+              管理员可更新分析，普通用户可查看已发布结果
             </p>
           </div>
         )}
@@ -175,7 +188,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
       {content && (
         <div className="border-t border-[#F0F2F5] bg-[#F8FAFC] px-5 py-3">
           <p className="text-[11px] text-[#7A8699]">
-            自动生成，仅供参考；结论基于公开招采数据，不代表行业整体趋势
+            基于公开数据自动生成，请结合原始项目核验。
           </p>
         </div>
       )}

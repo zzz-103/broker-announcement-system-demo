@@ -168,7 +168,7 @@ export function DashboardHeader({
   activeModule,
   statusText,
   statusTone = "ready",
-  statusLabel = "最新数据",
+  statusLabel = "数据至",
   statusDescription,
   exportOptions,
   onOpenAdmin,

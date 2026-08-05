@@ -166,7 +166,7 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       {/* Panel header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[15px] font-bold text-[#172033]">本期概览</h3>
-        <span className="text-[11px] text-[#7A8699]">按去重项目线索统计</span>
+        <span className="text-[11px] text-[#7A8699]">按项目线索统计</span>
       </div>
 
       <div className="grid grid-cols-1 items-start lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)]">
@@ -183,18 +183,18 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
             </div>
           ) : (
             <div>
-              {/* 核心方向结论 */}
+              {/* 重点方向结论 */}
               {summary.topDomains.length > 0 && (
                 <div className="border-l-2 border-[#2563EB] bg-[#F8FAFD] px-3.5 py-3 text-[13px] font-semibold leading-relaxed text-[#243B61]">
-                  核心方向：公开项目线索主要集中于 <span className="font-bold text-[#2563EB]">{summary.topDomains.join("、")}</span>。
+                  重点方向：公开项目线索主要集中于 <span className="font-bold text-[#2563EB]">{summary.topDomains.join("、")}</span>。
                 </div>
               )}
 
               {/* 辅助概览信息 */}
               <div className="mt-3 border-t border-[#EEF2F6] pt-1">
-                <OverviewRow label="活跃主体" value={summary.topBrokers.join("、") || "暂无"} />
+                <OverviewRow label="活跃券商" value={summary.topBrokers.join("、") || "暂无"} />
                 <OverviewRow label="活跃供应商" value={summary.topSuppliers.slice(0, 2).join("、") || "暂无"} />
-                <OverviewRow label="方向热点" value={summary.topDomains.slice(0, 2).join("、") || "暂无"} />
+                <OverviewRow label="关注方向" value={summary.topDomains.slice(0, 2).join("、") || "暂无"} />
               </div>
             </div>
           )}
@@ -205,17 +205,17 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
           {/* 基础信息 */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-2">
             <div><p className="text-[10px] text-[#7A8699]">数据最新日期</p><p className="mt-0.5 text-[12px] font-semibold text-[#172033]">{coverage.latestDate}</p></div>
-            <div><p className="text-[10px] text-[#7A8699]">已接入数据源</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.sourceCount}</p></div>
-            <div><p className="text-[10px] text-[#7A8699]">当前覆盖主体</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.activeBrokers}</p></div>
-            <div><p className="text-[10px] text-[#7A8699]">披露供应商项目</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.supplierProjects}</p></div>
-            <div><p className="text-[10px] text-[#7A8699]">公开金额样本</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.amountSamples}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">数据源</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.sourceCount}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">覆盖券商</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.activeBrokers}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">已披露供应商项目</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.supplierProjects}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">已披露金额项目</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.amountSamples}</p></div>
           </div>
 
           {/* 质量指标 */}
           <div className="mt-4 space-y-3 border-t border-[#EEF2F6] pt-3">
-            <CoverageBar label="有效日期覆盖率" value={parseFloat(coverage.dateRate)} />
-            <CoverageBar label="供应商字段完整率" value={parseFloat(coverage.supplierRate)} />
-            <CoverageBar label="金额字段完整率" value={parseFloat(coverage.amountRate)} />
+            <CoverageBar label="日期完整率" value={parseFloat(coverage.dateRate)} />
+            <CoverageBar label="供应商完整率" value={parseFloat(coverage.supplierRate)} />
+            <CoverageBar label="金额完整率" value={parseFloat(coverage.amountRate)} />
           </div>
 
           {/* 异常提示 */}

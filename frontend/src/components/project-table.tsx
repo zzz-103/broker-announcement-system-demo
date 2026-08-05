@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { displayAmountLabel, formatDate, formatAmount } from "@/lib/announcement-data";
+import { formatCount } from "@/lib/display";
 
 interface ProjectTableProps {
   data: ProcessedRecord[];
@@ -79,7 +80,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
     () => [
       {
         accessorKey: "validBrokerName",
-        header: "主体",
+        header: "券商",
         size: 100,
         cell: ({ getValue }) => (
           <span className="text-[13px] text-[#172033] font-semibold">
@@ -102,7 +103,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       },
       {
         accessorKey: "primaryDomain",
-        header: "金融科技方向",
+        header: "项目方向",
         size: 130,
         meta: { hideOnMobile: true },
         cell: ({ getValue }) => (
@@ -111,7 +112,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       },
       {
         id: "topicTags",
-        header: "主题标签",
+        header: "项目标签",
         size: 140,
         meta: { hideOnMobile: true },
         accessorFn: (r) => r.topicTags.join(", "),
@@ -157,7 +158,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       },
       {
         accessorKey: "normalizedSupplier",
-        header: "结果披露供应商",
+        header: "供应商",
         size: 140,
         cell: ({ getValue }) => {
           const v = getValue<string>();
@@ -238,7 +239,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
             项目明细
           </h3>
           <p className="text-[11px] text-[#98A2B3] mt-0.5 font-medium">
-            共 {sortedData.length} 条符合当前筛选条件
+            共 {formatCount(sortedData.length)} 条
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -307,7 +308,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                 <p><span className="text-[#98A2B3]">券商：</span>{record.validBrokerName}</p>
                 <p><span className="text-[#98A2B3]">日期：</span>{formatDate(record.validPublishDate)}</p>
                 <p className="col-span-2"><span className="text-[#98A2B3]">采购方式：</span>{record.procurement_method || "方式未识别"}</p>
-                <p className="col-span-2"><span className="text-[#98A2B3]">中标信息：</span>{record.normalizedSupplier || "未披露"}</p>
+                <p className="col-span-2"><span className="text-[#98A2B3]">供应商：</span>{record.normalizedSupplier || "未披露"}</p>
                 <p className="col-span-2"><span className="text-[#98A2B3]">公开金额：</span>{record.display_amount_yuan !== null ? <span className={record.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}>{displayAmountLabel(record)} · {formatAmount(record.display_amount_yuan)}</span> : "未披露"}</p>
               </div>
               <details className="mt-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
@@ -409,7 +410,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       {/* Pagination */}
       <div className="flex items-center justify-between gap-2 px-4 py-4 sm:px-5 border-t border-[#F0F2F5] bg-white">
         <span className="min-w-0 truncate text-[12px] text-[#98A2B3] font-semibold">
-          共 {sortedData.length} 条，第 {currentPage}/{pageCount} 页
+          共 {formatCount(sortedData.length)} 条，第 {currentPage}/{pageCount} 页
         </span>
         <div className="flex items-center gap-1.5">
             <button

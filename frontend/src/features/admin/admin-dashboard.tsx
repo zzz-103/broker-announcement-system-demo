@@ -137,7 +137,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const runFullRefresh = useCallback(async () => {
     setLlmModeDialogOpen(false);
     const confirmed = window.confirm(
-      "确认执行 LLM 全量重建？该操作会重新请求全部 Markdown，并覆盖已有 raw_json 缓存。普通增量任务不受影响。",
+      "确认执行全量重建？该操作会重新处理全部公告，并覆盖已有处理结果。增量处理不受影响。",
     );
     if (!confirmed) return;
     await runJob("llm", { mode: "full_refresh", overwrite: true });
@@ -172,7 +172,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         id: "crawler" as const,
         icon: Globe,
         title: "公告采集",
-        description: "采集采购公告与结果公告，可继续执行完整处理流程。",
+        description: "采集采购公告与结果公告，可继续运行完整流程。",
       },
       {
         id: "llm" as const,
@@ -184,13 +184,13 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         id: "ai" as const,
         icon: Brain,
         title: "招采分析",
-        description: "基于正式看板数据更新近 30 天分析报告。",
+        description: "基于当前数据生成招采分析。",
       },
       {
         id: "app-watch" as const,
         icon: Smartphone,
-        title: "券商 App 更新",
-        description: "采集并处理券商 App 更新公告，更新明细看板。",
+        title: "App 更新采集",
+        description: "采集并整理券商 App 更新，更新明细看板。",
       },
     ],
     [],
@@ -233,12 +233,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E4E9F0] pb-5">
           <div>
             <h1 className="text-2xl font-bold text-[#172033]">管理控制台</h1>
-            <p className="mt-1 text-xs text-[#667085]">运行数据任务，管理用户与查看业务记录</p>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-[#667085]">
-            <span className="border border-[#D9E2EC] bg-white px-2.5 py-1 rounded-md">
-              当前管理员: <span className="font-semibold text-[#172033]">{username}</span>
-            </span>
+            <p className="mt-1 text-xs text-[#667085]">运行数据任务，管理用户并查看业务记录。</p>
           </div>
         </div>
 
@@ -316,10 +311,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           {activeOperation?.id === "llm" || activeOperation?.id === "llm-external" ? (
                             <>
                               <RefreshCw className="size-3.5 animate-spin" />
-                              运行中...
+                              执行中...
                             </>
                           ) : (
-                            "运行 LLM"
+                            "运行处理"
                           )}
                         </GlowButton>
                         <Button
@@ -341,12 +336,12 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           {activeOperation?.id === "publish" ? (
                             <>
                               <RefreshCw className="size-3.5 animate-spin" />
-                              推送中
+                              更新中
                             </>
                           ) : (
                             <>
                               <Upload className="size-3.5" />
-                              推送
+                              更新看板
                             </>
                           )}
                         </Button>
@@ -358,8 +353,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         className="h-10 w-full bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
                       >
                         {activeOperation?.id === "scraper" || activeOperation?.id === "pipeline" ? (
-                          <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
-                        ) : "选择采集方式"}
+                          <><RefreshCw className="size-3.5 animate-spin" />执行中...</>
+                        ) : "选择采集范围"}
                       </GlowButton>
                     ) : card.id === "app-watch" ? (
                       <div className="flex flex-col gap-2 w-full">
@@ -369,8 +364,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           className="h-10 bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
                         >
                           {activeOperation?.id === "app-watch" ? (
-                            <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
-                          ) : "运行更新采集"}
+                            <><RefreshCw className="size-3.5 animate-spin" />执行中...</>
+                          ) : "采集 App 更新"}
                         </GlowButton>
                         <Button
                           onClick={() => router.push("/app-updates")}
@@ -379,7 +374,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex items-center justify-center gap-1 transition-colors"
                         >
                           <LayoutGrid className="size-3.5" />
-                          前往 App 更新看板
+                          查看 App 更新
                         </Button>
                       </div>
                     ) : (
@@ -391,9 +386,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         {activeOperation?.cardId === card.id ? (
                           <>
                             <RefreshCw className="size-3.5 animate-spin" />
-                            运行中...
+                            执行中...
                           </>
-                        ) : "生成分析"}
+                        ) : "更新分析"}
                       </GlowButton>
                     )}
                   </div>
@@ -406,12 +401,12 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         <section className="mt-5 rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]">
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-base font-bold text-[#172033]">纯前端数据包</h2>
-              <p className="mt-1 text-xs leading-relaxed text-[#667085]">导出当前招采、App 更新、筛选项与分析结果，供纯前端看板使用。</p>
+              <h2 className="text-base font-bold text-[#172033]">前端数据包</h2>
+              <p className="mt-1 text-xs leading-relaxed text-[#667085]">导出当前招采、App 更新与分析结果，供前端看板使用。</p>
               {dashboardExportMessage && <p className="mt-2 text-xs text-[#2563EB]">{dashboardExportMessage}</p>}
             </div>
             <Button type="button" onClick={() => void handleDashboardExport()} disabled={Boolean(activeOperation) || dashboardExporting} className="shrink-0 bg-[#162B49] text-xs font-semibold text-white hover:bg-[#1e3a5f]">
-              {dashboardExporting ? <><RefreshCw className="size-3.5 animate-spin" />导出中...</> : <><Download className="size-3.5" />导出纯前端数据</>}
+              {dashboardExporting ? <><RefreshCw className="size-3.5 animate-spin" />导出中...</> : <><Download className="size-3.5" />导出前端数据</>}
             </Button>
           </div>
         </section>
@@ -432,16 +427,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
           <div className="flex items-center gap-3">
             <AlertCircle className="size-4 shrink-0 text-blue-600" />
-            <div className="text-xs text-blue-800 flex flex-wrap gap-x-6 gap-y-1 leading-relaxed">
-              <p>
-                <span className="font-semibold text-blue-900">操作说明：</span>
-                仅采集会顺序抓取采购公告和结果公告；之后运行 LLM 会自动完成匹配与汇总，且不会自动推送正式看板。
-              </p>
-              <p>
-                <span className="font-semibold text-blue-900">注意事项：</span>
-                推送成功后才会刷新看板数据；关闭日志弹窗不会中止后端任务。
-              </p>
-            </div>
+            <p className="text-xs leading-relaxed text-blue-800">
+              <span className="font-semibold text-blue-900">操作说明：</span>
+              任务按当前选择范围运行。更新看板后，前端数据才会同步刷新。
+            </p>
           </div>
         </div>
 
@@ -464,9 +453,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       <Dialog open={crawlerModeDialogOpen} onOpenChange={setCrawlerModeDialogOpen}>
         <DialogContent className="max-w-md border-[#D9E2EC]">
           <DialogHeader>
-            <DialogTitle className="text-base text-[#172033]">选择采集方式</DialogTitle>
+            <DialogTitle className="text-base text-[#172033]">选择采集范围</DialogTitle>
             <DialogDescription className="text-[#667085]">
-              两种方式都会依次抓取采购公告和结果公告；完整 Pipeline 不会自动推送正式看板。
+              两种方式都会依次采集采购公告和结果公告；完整流程不会自动更新看板。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 pt-2">
@@ -478,8 +467,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             >
               <Globe className="size-4 shrink-0" />
               <span>
-                <span className="block text-sm font-semibold">仅爬取双公告</span>
-                <span className="mt-0.5 block text-xs font-normal text-[#667085]">只下载 Markdown，不运行 LLM、匹配或汇总。</span>
+                <span className="block text-sm font-semibold">仅采集公告</span>
+                <span className="mt-0.5 block text-xs font-normal text-[#667085]">只下载公告原文，不执行后续处理。</span>
               </span>
             </Button>
             <Button
@@ -489,8 +478,8 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             >
               <Workflow className="size-4 shrink-0" />
               <span>
-                <span className="block text-sm font-semibold">运行完整 Pipeline</span>
-                <span className="mt-0.5 block text-xs font-normal text-white/70">继续运行双 LLM、匹配与 merger，完成后人工推送。</span>
+                <span className="block text-sm font-semibold">运行完整流程</span>
+                <span className="mt-0.5 block text-xs font-normal text-white/70">继续运行数据处理、匹配与汇总，完成后由人工更新看板。</span>
               </span>
             </Button>
           </div>
@@ -500,9 +489,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       <Dialog open={llmModeDialogOpen} onOpenChange={setLlmModeDialogOpen}>
         <DialogContent className="max-w-md border-[#D9E2EC]">
           <DialogHeader>
-            <DialogTitle className="text-base text-[#172033]">选择 LLM 处理来源</DialogTitle>
+            <DialogTitle className="text-base text-[#172033]">选择处理范围</DialogTitle>
             <DialogDescription className="text-[#667085]">
-              正常公告会处理双公告并自动匹配、汇总；外来 Markdown 仅生成候选 CSV。
+              常规公告会完成结构化处理、匹配与汇总；外来公告仅生成候选数据。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 pt-2">
@@ -512,7 +501,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               className="h-11 justify-start bg-[#162B49] text-sm font-semibold text-white hover:bg-[#1e3a5f]"
             >
               <Database className="size-4" />
-              处理双公告并匹配
+              处理常规公告
             </Button>
             <Button
               type="button"

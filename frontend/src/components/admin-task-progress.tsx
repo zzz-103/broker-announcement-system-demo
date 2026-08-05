@@ -41,7 +41,7 @@ function progressLabel(progress: AdminTaskProgressState): string {
   if (progress.status === "failed") {
     return "执行失败";
   }
-  return "暂无活动任务";
+  return "当前无运行任务";
 }
 
 function getStageLabel(stage?: string): string {
@@ -49,9 +49,9 @@ function getStageLabel(stage?: string): string {
   const STAGE_MAP: Record<string, string> = {
     scanning: "阶段一：扫描列表获取待更新公告",
     crawling: "阶段二：下载并保存公告详情",
-    preparing: "阶段一：准备 LLM 候选提取数据",
-    processing: "阶段二：调用 LLM 进行结构化提取",
-    writing: "阶段三：写入结构化数据至候选 CSV",
+    preparing: "阶段一：准备候选数据",
+    processing: "阶段二：结构化处理",
+    writing: "阶段三：生成候选数据",
     completed: "任务已顺利完成",
     failed: "任务执行失败",
   };
@@ -97,10 +97,10 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
           </div>
           <div className="space-y-1">
             <div className="text-sm font-semibold text-[#172033]">
-              {progress.taskName || "统一任务进度"}
+              {progress.taskName || "任务进度"}
             </div>
             <div className="text-sm text-[#667085]">
-              {progress.message || "当前没有运行中的任务"}
+              {progress.message || "当前无运行任务"}
             </div>
           </div>
         </div>
@@ -151,7 +151,7 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
         </div>
         <div className="mt-2 text-xs text-[#667085]">
           {progress.status === "idle" ? (
-            "等待管理员启动任务"
+            "选择任务后开始运行"
           ) : progress.status === "running" ? (
             getStageLabel(progress.stage) || "任务正在运行中，请稍候..."
           ) : progress.status === "succeeded" ? (

@@ -10,10 +10,10 @@ import {
   getDashboardStatistics,
   getValidBrokerName,
   recordMatchesSearch,
-  formatDate,
   exportCsv,
   type ProcessedRecord,
 } from "@/lib/announcement-data";
+import { formatCount, formatDateTime, formatMonthDay } from "@/lib/display";
 import { useFilterStore } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
 import { BackendApiError, recordDashboardView } from "@/lib/api/backend-client";
@@ -162,7 +162,7 @@ export default function Dashboard() {
         setDataStatus(records.length === 0 ? "empty" : "ready");
         setDataMessage(
           records.length === 0
-            ? "尚未生成看板数据，请先运行爬虫和 LLM。"
+            ? "尚未生成看板数据，请先运行公告采集与数据处理。"
             : null
         );
         setIsLoading(false);
@@ -326,7 +326,7 @@ export default function Dashboard() {
         activeModule="procurement"
         statusText={
           dataStatus === "ready"
-            ? formatDate(baseline)
+            ? formatMonthDay(baseline)
             : dataStatus === "loading"
               ? "加载中"
               : dataStatus === "empty"
@@ -334,19 +334,19 @@ export default function Dashboard() {
                 : "不可用"
         }
         statusTone={dataStatus === "ready" ? "ready" : dataStatus === "loading" ? "loading" : dataStatus === "empty" ? "stale" : "unavailable"}
-        statusDescription={dataUpdatedAt ? `标准化数据更新时间：${dataUpdatedAt}` : dataMessage || undefined}
+        statusDescription={dataUpdatedAt ? `标准化数据更新时间：${formatDateTime(dataUpdatedAt)}` : dataMessage || undefined}
         exportOptions={[
           {
             id: "filtered-csv",
-            label: "当前筛选 · CSV",
-            description: `${filteredData.length} 条记录`,
+            label: "当前筛选结果",
+            description: `${formatCount(filteredData.length)} 条记录`,
             disabled: filteredData.length === 0,
             onSelect: () => exportCsv(filteredData),
           },
           {
             id: "all-csv",
-            label: "全部数据 · CSV",
-            description: `${allData.length} 条记录`,
+            label: "全部数据",
+            description: `${formatCount(allData.length)} 条记录`,
             disabled: allData.length === 0,
             onSelect: () => exportCsv(allData),
           },
@@ -401,7 +401,7 @@ export default function Dashboard() {
           >
             {isLoading
               ? "正在加载看板数据..."
-              : dataMessage || "尚未生成看板数据，请先运行爬虫和 LLM。"}
+              : dataMessage || "尚未生成看板数据，请先运行公告采集与数据处理。"}
           </div>
         )}
 

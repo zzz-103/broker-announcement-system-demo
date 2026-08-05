@@ -177,7 +177,7 @@ export function AdminTaskLogDialog({
             <div className="space-y-1 text-left">
               <DialogTitle className="text-base text-[#172033]">{title}</DialogTitle>
               <DialogDescription className="text-[#667085]">
-                当前状态：{statusText(status)}
+                当前状态：{statusText(status)}；关闭本弹窗不会终止后端任务。
               </DialogDescription>
             </div>
             <Button

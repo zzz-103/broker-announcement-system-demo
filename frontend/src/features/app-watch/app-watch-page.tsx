@@ -17,6 +17,7 @@ import {
   exportAppReleaseCsv,
   type AppReleaseRecord,
 } from "@/lib/app-release-data";
+import { formatCount, formatDateTime, formatMonthDay } from "@/lib/display";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { KpiCard } from "@/components/app-watch/kpi-card";
 import { FilterBar } from "@/components/app-watch/filter-bar";
@@ -199,7 +200,7 @@ export default function AppUpdatesPage() {
         activeModule="app-watch"
         statusText={
           dataStatus === "ready"
-            ? formatReleaseDate(updatedAt)
+            ? formatMonthDay(baseline)
             : dataStatus === "loading"
               ? "加载中"
               : dataStatus === "empty"
@@ -207,19 +208,19 @@ export default function AppUpdatesPage() {
                 : "不可用"
         }
         statusTone={dataStatus === "ready" ? "ready" : dataStatus === "loading" ? "loading" : dataStatus === "empty" ? "stale" : "unavailable"}
-        statusDescription={updatedAt ? `App 更新数据更新时间：${updatedAt}` : dataMessage || undefined}
+        statusDescription={updatedAt ? `App 更新数据更新时间：${formatDateTime(updatedAt)}` : dataMessage || undefined}
         exportOptions={[
           {
             id: "filtered-csv",
-            label: "当前筛选 · CSV",
-            description: `${filteredRecords.length} 条记录`,
+            label: "当前筛选结果",
+            description: `${formatCount(filteredRecords.length)} 条记录`,
             disabled: filteredRecords.length === 0,
             onSelect: () => exportAppReleaseCsv(filteredRecords),
           },
           {
             id: "all-csv",
-            label: "全部数据 · CSV",
-            description: `${records.length} 条记录`,
+            label: "全部数据",
+            description: `${formatCount(records.length)} 条记录`,
             disabled: records.length === 0,
             onSelect: () => exportAppReleaseCsv(records),
           },
@@ -233,7 +234,7 @@ export default function AppUpdatesPage() {
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold tracking-tight text-[#172033] sm:text-2xl">App 更新</h2>
-            <p className="mt-1 text-xs text-[#667085]">汇总券商 App 版本变化、功能更新与体验改进。</p>
+            <p className="mt-1 text-xs text-[#667085]">汇总券商 App 版本与功能变化。</p>
           </div>
           <button
             type="button"
@@ -264,7 +265,7 @@ export default function AppUpdatesPage() {
 
         {/* KPI Cards */}
         <div className="surface-metrics grid grid-cols-2 gap-px sm:grid-cols-4">
-          <KpiCard label="更新条数" value={statistics.releaseCount} />
+          <KpiCard label="更新记录" value={statistics.releaseCount} />
           <KpiCard label="覆盖券商" value={statistics.brokerCount} />
           <KpiCard label="覆盖 App" value={statistics.appCount} />
           <KpiCard label="最新更新" value={formatReleaseDate(statistics.latestPublishDate)} isText />
@@ -318,7 +319,14 @@ export default function AppUpdatesPage() {
               }`}
             >
               <List className="w-4 h-4" />
-              更新明细 ({filteredRecords.length})
+              更新明细
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                  viewMode === "details" ? "bg-[#EAF2FF] text-[#2563EB]" : "bg-[#E8EDF3] text-[#667085]"
+                }`}
+              >
+                {formatCount(filteredRecords.length)}
+              </span>
             </button>
           </div>
 
@@ -349,9 +357,8 @@ export default function AppUpdatesPage() {
 
           {/* Updated at */}
           {updatedAt && (
-            <p className="flex items-center gap-1 text-[11px] text-[#98A2B3]">
-              <span className="w-3 h-3">📱</span>
-              数据更新时间：{updatedAt}
+            <p className="text-[11px] text-[#98A2B3]">
+              数据更新时间：{formatDateTime(updatedAt)}
             </p>
           )}
         </div>

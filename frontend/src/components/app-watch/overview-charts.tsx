@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  displayFeatureTag,
   formatReleaseDate,
   getBrokerReleaseCounts,
   getFeatureTagDistribution,
@@ -44,14 +45,14 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
               {tagData.map((item, index) => (
                 <span
                   key={item.name}
-                  title={`${item.name}：${item.count} 次`}
+                  title={`${displayFeatureTag(item.name)}：${item.count} 次`}
                     className={`rounded-md border px-2 py-1 text-xs font-medium transition-[border-color,background-color] duration-150 motion-reduce:transition-none ${
                     index < 3
                       ? "border-blue-100 bg-blue-50 text-blue-700"
                       : "border-[#E4EAF2] bg-[#F8FAFC] text-[#667085]"
                   }`}
                 >
-                  {item.name} <strong className="ml-1 tabular-nums">{item.count}</strong>
+                  {displayFeatureTag(item.name)} <strong className="ml-1 tabular-nums">{item.count}</strong>
                 </span>
               ))}
             </div>
@@ -60,12 +61,12 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
       </section>
 
       <section className={`${CARD_CLASS} lg:col-span-5`}>
-        <CardTitle title="券商更新活跃度" subtitle="更新次数" />
+        <CardTitle title="券商更新次数" subtitle="按次数排序" />
         {brokerData.length === 0 ? <EmptyState /> : <RankingList data={brokerData} />}
       </section>
 
       <section className={`${CARD_CLASS} lg:col-span-7`}>
-        <CardTitle title="近期更新" subtitle="最新 6 条" />
+        <CardTitle title="近期版本更新" subtitle="最新 6 条" />
         {recentUpdates.length === 0 ? (
           <EmptyState />
         ) : (
@@ -88,8 +89,8 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
                       {record.appVersion || "版本未识别"}
                     </span>
                   </span>
-                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]" title={record.highlights[0] || record.updateSummary || "暂无更新摘要"}>
-                    {record.highlights[0] || record.updateSummary || "暂无更新摘要"}
+                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]" title={record.highlights[0] || record.updateSummary || "暂无更新内容"}>
+                    {record.highlights[0] || record.updateSummary || "暂无更新内容"}
                   </span>
                 </span>
                 <span className="whitespace-nowrap text-[11px] tabular-nums text-[#98A2B3] transition-colors group-hover:text-[#667085]">

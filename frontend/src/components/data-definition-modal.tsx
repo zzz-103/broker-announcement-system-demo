@@ -21,7 +21,7 @@ export function DataDefinitionModal({
           <div className="px-6 py-5 space-y-4 text-[13px] text-[#172033] leading-relaxed">
             <p>
               <strong>公告记录不等于独立项目。</strong>
-              同一项目可能在不同阶段发布多条公告。“去重项目线索”按主体名称和标准化项目名去重计算。
+              同一项目可能在不同阶段发布多条公告。“项目线索”按主体名称和标准化项目名去重计算。
             </p>
             <p>
               <strong>活跃度受公开信息披露程度影响。</strong>

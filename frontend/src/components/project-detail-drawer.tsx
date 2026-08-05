@@ -3,6 +3,7 @@
 import { AlertCircle } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate, formatAmount, formatAmountInWan } from "@/lib/announcement-data";
+import { formatDateTime } from "@/lib/display";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 
 interface ProjectDetailDrawerProps {
@@ -30,15 +31,15 @@ export function ProjectDetailDrawer({
               项目概览
             </h3>
             <div className="space-y-2.5">
-              <Field label="主体" value={record.validBrokerName} />
+              <Field label="券商" value={record.validBrokerName} />
               <Field label="项目名称" value={record.project_name_raw} />
               <Field
                 label="标准化名称"
                 value={record.normalizedProjectName}
               />
-              <Field label="金融科技方向" value={record.primaryDomain} />
+              <Field label="项目方向" value={record.primaryDomain} />
               <div className="flex items-start gap-3 text-[13px]">
-                <span className="text-[#667085] w-28 shrink-0">主题标签</span>
+                <span className="text-[#667085] w-28 shrink-0">项目标签</span>
                 <div className="flex flex-wrap gap-1">
                   {record.topicTags.length > 0 ? (
                     record.topicTags.map((tag) => (
@@ -82,7 +83,7 @@ export function ProjectDetailDrawer({
                 amountKind="budget"
               />
               <Field
-                label="结果公告披露供应商"
+                label="披露供应商"
                 value={record.normalizedSupplier || "未披露"}
               />
               {record.normalizedSupplier && (
@@ -113,7 +114,7 @@ export function ProjectDetailDrawer({
             </h3>
             <div className="space-y-2.5">
               <Field label="数据来源" value={record.sourceName || "公开招采数据"} />
-              <Field label="处理时间" value={record.processed_at || "未提供"} />
+              <Field label="处理时间" value={formatDateTime(record.processed_at) || record.processed_at || "未提供"} />
               <div className="text-[11px] text-[#98A2B3] mt-2">
                 为保护运行环境，数据包不包含服务器文件路径或原始凭据。
               </div>

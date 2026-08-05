@@ -38,34 +38,34 @@ export const PROGRESS_RESET_DELAY_MS = 4000;
 export const INITIAL_CARD_STATE: Record<CardId, TaskCardState> = {
   crawler: {
     status: "idle",
-    summary: "可选择仅抓取采购与结果公告，或运行完整 Pipeline。",
+    summary: "可选择仅采集公告，或运行完整流程。",
     logs: [],
     lastOperationLabel: "公告采集",
   },
   llm: {
     status: "idle",
-    summary: "默认完成双公告 LLM、匹配与汇总，再由管理员手动推送到正式看板。",
+    summary: "完成公告数据处理、匹配与汇总，再由管理员更新看板。",
     logs: [],
-    lastOperationLabel: "LLM 数据处理",
+    lastOperationLabel: "数据处理",
   },
   ai: {
     status: "idle",
-    summary: "基于当前正式看板数据生成招采分析报告。",
+    summary: "基于当前数据生成招采分析。",
     logs: [],
     lastOperationLabel: "招采分析",
   },
   "app-watch": {
     status: "idle",
-    summary: "抓取各券商 App 更新并做 LLM 结构化，写入 App 更新看板。",
+    summary: "采集并整理券商 App 更新，写入 App 更新看板。",
     logs: [],
-    lastOperationLabel: "券商App更新",
+    lastOperationLabel: "App 更新采集",
   },
 };
 
 export const IDLE_PROGRESS: AdminTaskProgressState = {
   status: "idle",
-  taskName: "统一任务进度",
-  message: "当前没有运行中的任务",
+  taskName: "任务进度",
+  message: "当前无运行任务",
 };
 
 export function backendErrorMessage(error: BackendApiError) {
@@ -86,12 +86,12 @@ export function cardIdForJob(jobType: JobType): CardId {
 }
 
 export function labelForOperation(operationId: OperationId): string {
-  if (operationId === "scraper") return "双公告爬取";
-  if (operationId === "llm") return "LLM 数据处理";
-  if (operationId === "llm-external") return "外来公告导入";
-  if (operationId === "pipeline") return "自动化 Pipeline";
-  if (operationId === "app-watch") return "券商App更新";
-  if (operationId === "publish") return "推送";
+  if (operationId === "scraper") return "公告采集";
+  if (operationId === "llm") return "数据处理";
+  if (operationId === "llm-external") return "外来公告处理";
+  if (operationId === "pipeline") return "完整流程";
+  if (operationId === "app-watch") return "App 更新采集";
+  if (operationId === "publish") return "更新看板";
   return "招采分析";
 }
 
@@ -105,19 +105,19 @@ export function isTerminalJobStatus(status: string) {
 
 export function jobSuccessSummary(jobType: JobType, label: string): string {
   if (jobType === "llm-external") {
-    return "LLM 处理完成，候选数据已生成，请点击‘推送’更新正式看板。";
+    return "数据处理完成，候选数据已生成，请更新看板。";
   }
   if (jobType === "llm") {
-    return "双公告 LLM 结构化、规则匹配、LLM 双复核与 merger 已完成；请审核最终合并表后推送正式看板。";
+    return "数据处理、规则匹配与汇总已完成；请审核结果后更新看板。";
   }
   if (jobType === "pipeline") {
-    return "双公告爬取、双 LLM 结构化、规则匹配、LLM 双复核与 merger 已完成；请审核最终合并表后推送正式看板。";
+    return "公告采集、数据处理、规则匹配与汇总已完成；请审核结果后更新看板。";
   }
   if (jobType === "scraper") {
-    return "采购公告与结果公告爬取完成；尚未运行 LLM、匹配或汇总。";
+    return "采购公告与结果公告采集完成；尚未运行数据处理与匹配。";
   }
   if (jobType === "app-watch") {
-    return "券商 App 更新采集与 LLM 结构化已完成，可在 App 更新看板查看最新数据。";
+    return "券商 App 更新采集与整理已完成，可前往 App 更新看板查看最新数据。";
   }
   return `${label}已完成。`;
 }

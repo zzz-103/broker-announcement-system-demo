@@ -231,7 +231,7 @@ export function LoginPageWithApply() {
               {[
                 { label: "自动采集", detail: "全网公告实时抓取", Icon: ScanLine },
                 { label: "结构化处理", detail: "提取公告关键字段", Icon: BrainCircuit },
-                { label: "数据看板", detail: "多维情报洞察", Icon: LayoutDashboard },
+                { label: "数据看板", detail: "集中展示业务数据", Icon: LayoutDashboard },
               ].map(({ label, detail, Icon }) => (
                 <div key={label} className="min-w-0 border-t border-white/20 pt-3 md:pt-4">
                   <span className="flex size-8 items-center justify-center rounded-lg border border-blue-200/55 bg-white/10 text-blue-50 backdrop-blur-sm md:size-10"><Icon className="size-4 md:size-5" /></span>

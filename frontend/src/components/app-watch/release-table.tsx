@@ -4,6 +4,7 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import type { AppReleaseRecord } from "@/lib/app-release-data";
 import { UPDATE_TYPE_COLORS, formatReleaseDate } from "@/lib/app-release-data";
+import { formatCount } from "@/lib/display";
 
 type SortKey = "publishDate" | "brokerName" | "appName" | "appVersion" | "updateType";
 type SortConfig = { key: SortKey; direction: "asc" | "desc" } | null;
@@ -77,7 +78,7 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
               <Th label="App 名称" sortKey="appName" currentSort={sortConfig} onSort={handleSort} />
               <Th label="版本号" sortKey="appVersion" currentSort={sortConfig} onSort={handleSort} />
               <Th label="更新类型" sortKey="updateType" currentSort={sortConfig} onSort={handleSort} />
-              <Th label="更新摘要" currentSort={sortConfig} onSort={handleSort} />
+              <Th label="更新内容" currentSort={sortConfig} onSort={handleSort} />
               <Th label="操作" currentSort={sortConfig} onSort={handleSort} />
             </tr>
           </thead>
@@ -100,7 +101,7 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
             onClick={() => setDisplayLimit((count) => count + 50)}
             className="text-xs font-semibold text-[#2563EB] hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
           >
-            加载更多（剩余 {sortedReleases.length - displayLimit} 条）
+            加载更多（剩余 {formatCount(sortedReleases.length - displayLimit)} 条）
           </button>
         </div>
       )}
@@ -149,7 +150,7 @@ function ReleaseRow({ record, onClick }: { record: AppReleaseRecord; onClick: ()
   const broker = record.brokerName || "未知";
   const app = record.appName || "未知";
   const version = record.appVersion || "-";
-  const summary = record.updateSummary || "暂无摘要";
+  const summary = record.updateSummary || "暂无内容";
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTableRowElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;

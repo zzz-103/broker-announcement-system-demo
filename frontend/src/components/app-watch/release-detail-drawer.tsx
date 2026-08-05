@@ -2,7 +2,8 @@
 
 import { ExternalLink } from "lucide-react";
 import type { AppReleaseRecord } from "@/lib/app-release-data";
-import { formatReleaseDate, UPDATE_TYPE_COLORS } from "@/lib/app-release-data";
+import { displayFeatureTag, formatReleaseDate, UPDATE_TYPE_COLORS } from "@/lib/app-release-data";
+import { formatDateTime } from "@/lib/display";
 import { Drawer, DrawerContent } from "@/components/ui/drawer";
 
 interface ReleaseDetailDrawerProps {
@@ -38,7 +39,7 @@ export function ReleaseDetailDrawer({ record, onClose }: ReleaseDetailDrawerProp
               <Field label="版本号" value={record.appVersion || "未识别"} />
               <Field label="平台" value={record.platform} />
               <Field label="发布日期" value={formatReleaseDate(record.publishDate)} />
-              <Field label="一句摘要" value={record.updateSummary || "未提供"} />
+              <Field label="更新内容" value={record.updateSummary || "未提供"} />
               <div className="flex items-start gap-3 text-[13px]">
                 <span className="text-[#667085] w-24 shrink-0">功能标签</span>
                 <div className="flex flex-wrap gap-1">
@@ -48,7 +49,7 @@ export function ReleaseDetailDrawer({ record, onClose }: ReleaseDetailDrawerProp
                         key={tag}
                         className="text-[11px] px-1.5 py-0.5 rounded bg-[#F0F2F5] text-[#667085]"
                       >
-                        {tag}
+                        {displayFeatureTag(tag)}
                       </span>
                     ))
                   ) : (
@@ -88,8 +89,8 @@ export function ReleaseDetailDrawer({ record, onClose }: ReleaseDetailDrawerProp
             </h3>
             <div className="space-y-2.5">
               <Field label="券商代码" value={record.brokerCode || "未提供"} />
-              <Field label="采集时间" value={record.crawlTime || "未提供"} />
-              <Field label="处理时间" value={record.processedAt || "未提供"} />
+              <Field label="采集时间" value={formatDateTime(record.crawlTime) || record.crawlTime || "未提供"} />
+              <Field label="处理时间" value={formatDateTime(record.processedAt) || record.processedAt || "未提供"} />
               {record.sourceUrl ? (
                 <div className="flex items-start gap-3 text-[13px]">
                   <span className="text-[#667085] w-24 shrink-0">来源链接</span>

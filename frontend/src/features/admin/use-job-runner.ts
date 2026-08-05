@@ -386,14 +386,14 @@ export function useJobRunner({
       const cardId = cardIdForJob(jobType);
       const initialMessage =
         jobType === "scraper"
-          ? "正在连接后端并启动爬虫任务..."
+          ? "正在连接后端并启动公告采集任务..."
           : jobType === "pipeline"
-            ? "正在启动双公告爬取、LLM 结构化与匹配 Pipeline..."
+            ? "正在启动公告采集与数据处理流程..."
             : jobType === "llm-external"
-              ? "正在导入外来公告，输出候选 CSV..."
+              ? "正在处理外来公告，生成候选数据..."
               : jobType === "app-watch"
-                ? "正在启动券商 App 更新采集与 LLM 结构化..."
-                : "正在启动双公告 LLM、匹配与汇总...";
+                ? "正在启动券商 App 更新采集与整理..."
+                : "正在启动公告数据处理、匹配与汇总...";
       const label = beginOperation(jobType, cardId, initialMessage);
       const controller = new AbortController();
       activeControllerRef.current?.abort();
@@ -505,16 +505,17 @@ export function useJobRunner({
       handleUnauthorized();
       return;
     }
-    beginOperation("publish", "llm", "正在校验最终合并表并推送到正式看板...");
+    beginOperation("publish", "llm", "正在校验处理结果并更新看板...");
     const controller = new AbortController();
     activeControllerRef.current = controller;
     try {
       const result = await publishAnnouncements(token, controller.signal);
       if (controller.signal.aborted || !mountedRef.current) return;
+      const publishedCount = result.meta.published_count ?? result.meta.count;
       const backupText = result.meta.backup_file ? `，备份：${result.meta.backup_file}` : "";
-      const summary = `推送成功，正式发布 ${result.meta.published_count ?? result.meta.count} 条；staging ${result.meta.staging_count ?? result.meta.source_count ?? "unknown"} 条，false ${result.meta.false_count ?? 0} 条，空值 ${result.meta.empty_count ?? 0} 条${backupText}。`;
-      appendLog("llm", "system", summary);
-      finalizeTask("publish", "succeeded", summary);
+      const detail = `看板已更新：发布 ${publishedCount} 条；候选 ${result.meta.staging_count ?? result.meta.source_count ?? "unknown"} 条，非券商项目 ${result.meta.false_count ?? 0} 条，空值 ${result.meta.empty_count ?? 0} 条${backupText}。`;
+      appendLog("llm", "system", detail);
+      finalizeTask("publish", "succeeded", `看板已更新，发布 ${publishedCount} 条。`);
       onDataRefresh?.();
     } catch (error) {
       if (controller.signal.aborted || !mountedRef.current) return;
@@ -524,12 +525,12 @@ export function useJobRunner({
       }
       const summary =
         error instanceof BackendApiError && error.status === 404
-          ? "最终合并表不存在，请先运行完整 Pipeline，再执行推送。"
+          ? "合并结果不存在，请先运行完整流程，再更新看板。"
           : error instanceof BackendApiError
             ? backendErrorMessage(error)
             : error instanceof Error
               ? error.message
-              : "推送失败。";
+              : "看板更新失败。";
       appendLog("llm", "system", summary);
       finalizeTask("publish", "failed", summary);
     }

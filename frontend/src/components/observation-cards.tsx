@@ -78,7 +78,7 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
       <div>
         <div className="mb-3 flex items-center gap-1.5">
           <h3 className="text-[14px] font-bold text-[#172033]">
-            公开招采活跃主体
+            活跃券商
           </h3>
           <span
             className="relative group cursor-help"
@@ -177,7 +177,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
     <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-4">
       <div>
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
-          结果公告供应商观察
+          结果公示供应商
         </h3>
         <div className="space-y-0.5">
           {suppliers.map((s, i) => (
@@ -241,7 +241,7 @@ export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
     <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-3">
       <div>
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
-          公开金额案例
+          金额披露项目
         </h3>
         <div className="space-y-0.5">
           {samples.map((s) => (

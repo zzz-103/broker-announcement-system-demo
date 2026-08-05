@@ -110,7 +110,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
         extraCssText: "box-shadow: 0 4px 12px rgba(0,0,0,0.05); border-radius: 8px;",
       },
       legend: {
-        data: ["项目线索", "结果公示", "公开金额样本"],
+        data: ["项目线索", "结果公示", "金额披露项目"],
         right: 0,
         top: 0,
         icon: "circle",
@@ -156,7 +156,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           emphasis: { focus: "series", scale: 1.7 },
         },
         {
-          name: "公开金额样本",
+          name: "金额披露项目",
           type: "line",
           data: chartData.amounts,
           lineStyle: { color: "#F59E0B", width: 2 },
@@ -309,10 +309,10 @@ export function DomainDistributionChart({ data }: ChartsProps) {
   return (
     <section className={`${CHART_CARD_CLASS} col-span-1 md:col-span-3 lg:col-span-3`}>
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
-        金融科技方向
+        项目方向分布
       </h3>
       <div className="relative h-[240px] sm:h-[220px]">
-        <div ref={chartRef} className="h-full w-full" role="img" aria-label="金融科技方向分布图" />
+        <div ref={chartRef} className="h-full w-full" role="img" aria-label="项目方向分布图" />
         {data.length === 0 && <EmptyChartState />}
       </div>
     </section>
@@ -419,7 +419,7 @@ export function StageDistributionChart({ data }: ChartsProps) {
   return (
     <section className={`${CHART_CARD_CLASS} col-span-1 md:col-span-3 lg:col-span-3`}>
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
-        公告阶段
+        公告阶段分布
       </h3>
       <div className="relative h-[240px] sm:h-[220px]">
         <div ref={chartRef} className="h-full w-full" role="img" aria-label="公告阶段分布图" />

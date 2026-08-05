@@ -41,6 +41,13 @@ export const UPDATE_TYPE_ORDER = ["新功能", "体验优化", "问题修复", "
 export const FEATURE_TAG_ORDER = ["行情", "交易", "开户", "理财", "资讯", "AI智能", "安全", "其他"] as const;
 export const UPDATE_TYPE_COLORS: Record<string, string> = { 新功能: "#2563EB", 体验优化: "#0F9F8F", 问题修复: "#F59E0B", 合规安全: "#D64545", 其他: "#98A2B3" };
 
+/**
+ * 功能标签展示映射：后端标签值保持不变，仅在用户界面统一为业务语言。
+ */
+export function displayFeatureTag(tag: string): string {
+  return tag === "AI智能" ? "智能化" : tag;
+}
+
 function reviveDate(timestamp: number | null): Date | null {
   if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return null;
   const date = new Date(timestamp);

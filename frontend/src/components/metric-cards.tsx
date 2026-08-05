@@ -33,24 +33,24 @@ export function MetricCards({ data, baseline }: MetricCardsProps) {
     );
     return [
       {
-        label: "公告结构化记录",
+        label: "公告记录",
         value: totalRecords.toLocaleString(),
-        hint: "当前筛选后的记录数",
+        hint: "当前筛选范围",
       },
       {
-        label: "去重项目线索",
+        label: "项目线索",
         value: uniqueProjects.toLocaleString(),
-        hint: "按主体+标准化项目名去重",
+        hint: "按主体与项目名称去重",
       },
       {
-        label: "近30日新增线索",
+        label: "近30日新增",
         value: recentProjects.toLocaleString(),
-        hint: "以数据最新日期为基准",
+        hint: "按最新数据日期统计",
       },
       {
-        label: "结果公示项目",
+        label: "结果公示",
         value: resultProjects.toLocaleString(),
-        hint: "公告阶段为结果公示的去重线索",
+        hint: "已发布结果公示的项目",
       },
     ];
   }, [data, baseline]);

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, RotateCcw, Search } from "lucide-react";
 import { HoverSelect } from "@/components/hover-select";
+import { displayFeatureTag } from "@/lib/app-release-data";
 
 interface FilterState {
   search: string;
@@ -71,7 +72,7 @@ function FilterOptionGroup({
                   : "border-[#E4EAF2] bg-[#F8FAFC] text-[#475467] hover:border-blue-300 hover:bg-blue-50/50 hover:text-[#1D4ED8]"
               }`}
             >
-              {option}
+              {displayFeatureTag(option)}
             </button>
           );
         })}
