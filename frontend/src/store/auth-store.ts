@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { BackendApiError, loginAdmin } from "@/lib/api/backend-client";
+import { BackendApiError, getApiBaseUrlLabel, loginAdmin } from "@/lib/api/backend-client";
 import { getAuditContext } from "@/lib/audit-context";
 
 const TOKEN_KEY = "adminSessionToken";
@@ -45,7 +45,7 @@ export const useAuthStore = create<AuthState>((set) => {
         const message =
           error instanceof BackendApiError
             ? error.status === 0
-              ? "无法连接后端 API，请确认 FastAPI 或 Nginx 网关已启动"
+              ? `无法访问后端 API（${getApiBaseUrlLabel()}），请检查 FastAPI 端口或网关配置`
               : error.message
             : "Cannot connect to backend service";
         set({ error: message });

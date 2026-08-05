@@ -11,9 +11,18 @@ from .config import settings
 
 
 class QianfanError(Exception):
-    def __init__(self, message: str, request_id: str | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        request_id: str | None = None,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+    ) -> None:
         super().__init__(message)
         self.request_id = request_id
+        self.status_code = status_code
+        self.error_code = error_code
 
 
 class QianfanConfigurationError(QianfanError):
@@ -148,6 +157,39 @@ def _response_request_id(payload: dict[str, Any]) -> str | None:
     ).strip() or None
 
 
+def _response_error_code(payload: dict[str, Any]) -> str | None:
+    value = payload.get("code")
+    return _coerce_text(value).strip() or None
+
+
+def qianfan_error_message(error: QianfanError) -> str:
+    """Return a safe, actionable message without exposing upstream response text."""
+    if isinstance(error, QianfanConfigurationError):
+        return "百度智能搜索服务尚未配置。"
+    if isinstance(error, QianfanTimeoutError):
+        return "百度智能搜索请求超时，请稍后重试。"
+    code = (error.error_code or "").casefold()
+    if code in {"account_overdue", "accountoverdue", "overdue"}:
+        return "百度智能搜索账户欠费或账单逾期，请在千帆控制台处理后重试。"
+    if error.status_code == 429 or code in {"overratelimit", "ratelimit", "too_many_requests"}:
+        return "百度智能搜索达到频率或额度限制，请稍后重试。"
+    if error.status_code in {401, 403} or code in {"unauthorized", "forbidden", "permission_denied"}:
+        return "百度智能搜索鉴权失败，请检查服务端密钥、模型权限和鉴权头。"
+    if error.status_code == 400 or code in {"invalidargument", "invalid_argument", "bad_request"}:
+        return "百度智能搜索请求参数无效，请检查模型和搜索参数。"
+    return "百度智能搜索服务暂不可用，请稍后重试。"
+
+
+def qianfan_http_status(error: QianfanError) -> int:
+    if isinstance(error, QianfanConfigurationError):
+        return 503
+    if isinstance(error, QianfanTimeoutError):
+        return 504
+    if error.status_code == 429 or (error.error_code or "").casefold() in {"overratelimit", "ratelimit", "too_many_requests"}:
+        return 429
+    return 502
+
+
 def build_search_payload(
     query: str,
     *,
@@ -251,10 +293,14 @@ class QianfanSearchClient:
                 raise QianfanTimeoutError(
                     "百度智能搜索请求超时",
                     request_id=_response_request_id(error_payload),
+                    status_code=response.status_code,
+                    error_code=_response_error_code(error_payload),
                 )
             raise QianfanUpstreamError(
                 f"百度智能搜索服务返回 HTTP {response.status_code}",
                 request_id=_response_request_id(error_payload),
+                status_code=response.status_code,
+                error_code=_response_error_code(error_payload),
             )
         try:
             data = response.json()
@@ -264,9 +310,19 @@ class QianfanSearchClient:
             raise QianfanUpstreamError("百度智能搜索响应格式无效")
         upstream_code = data.get("code")
         if upstream_code in (501, 502, "501", "502") and not _message_content(data):
-            raise QianfanTimeoutError("百度智能搜索请求超时", request_id=_response_request_id(data))
+            raise QianfanTimeoutError(
+                "百度智能搜索请求超时",
+                request_id=_response_request_id(data),
+                status_code=response.status_code,
+                error_code=_response_error_code(data),
+            )
         if upstream_code not in (None, 0, "0") and not _message_content(data):
-            raise QianfanUpstreamError("百度智能搜索服务返回业务错误", request_id=_response_request_id(data))
+            raise QianfanUpstreamError(
+                "百度智能搜索服务返回业务错误",
+                request_id=_response_request_id(data),
+                status_code=response.status_code,
+                error_code=_response_error_code(data),
+            )
         return parse_search_response(data)
 
 

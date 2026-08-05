@@ -22,7 +22,13 @@ from ..custom_intelligence_service import (
     suggest_keywords,
 )
 from ..custom_intelligence_store import TopicNameConflictError
-from ..qianfan_search import QianfanConfigurationError, QianfanError, QianfanTimeoutError
+from ..qianfan_search import (
+    QianfanConfigurationError,
+    QianfanError,
+    QianfanTimeoutError,
+    qianfan_error_message,
+    qianfan_http_status,
+)
 
 
 router = APIRouter()
@@ -59,7 +65,7 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
     if isinstance(exc, QianfanTimeoutError):
         return HTTPException(status_code=504, detail="百度智能搜索请求超时，请稍后重试")
     if isinstance(exc, QianfanError):
-        return HTTPException(status_code=502, detail="百度智能搜索服务暂不可用，请稍后重试")
+        return HTTPException(status_code=qianfan_http_status(exc), detail=qianfan_error_message(exc))
     if isinstance(exc, IntelligenceStoreError):
         return HTTPException(status_code=500, detail=fallback)
     return HTTPException(status_code=500, detail=fallback)

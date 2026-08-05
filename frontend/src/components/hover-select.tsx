@@ -115,6 +115,8 @@ export function HoverSelect({
       <button
         ref={triggerRef}
         type="button"
+        aria-expanded={isOpen}
+        onClick={openDropdown}
         className={`
           w-full flex items-center justify-between gap-1.5
           px-3 py-2 text-[13px] rounded-md

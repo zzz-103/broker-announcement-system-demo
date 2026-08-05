@@ -5,6 +5,17 @@ function normalizeApiBaseUrl(value: string | undefined): string {
 
 const API_BASE_URL = normalizeApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 
+export function getApiBaseUrlLabel(): string {
+  return API_BASE_URL || "当前页面同源 /api";
+}
+
+export function isAbortError(error: unknown): boolean {
+  return (
+    (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError")
+    || (error instanceof Error && error.name === "AbortError")
+  );
+}
+
 export function buildApiUrl(path: string): string {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${API_BASE_URL}${normalizedPath}`;
@@ -29,6 +40,19 @@ export async function readError(response: Response): Promise<string> {
     const data = (await response.json()) as { detail?: unknown; error?: unknown };
     const detail = data.detail ?? data.error;
     if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      const messages = detail.map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return "";
+        const payload = item as { loc?: unknown; msg?: unknown };
+        const message = typeof payload.msg === "string" ? payload.msg : "";
+        const location = Array.isArray(payload.loc)
+          ? payload.loc.filter((part): part is string | number => typeof part === "string" || typeof part === "number").join(".")
+          : "";
+        return location && message ? `${location}: ${message}` : message;
+      }).filter(Boolean);
+      return messages.length ? messages.join("；") : "请求参数有误";
+    }
     if (detail && typeof detail === "object") {
       const payload = detail as { message?: unknown; meta?: unknown };
       const message = typeof payload.message === "string" ? payload.message : response.statusText;
@@ -57,7 +81,8 @@ export async function requestJson<T>(
       },
     });
   } catch (error) {
-    throw new BackendApiError(error instanceof Error ? error.message : "Cannot connect to backend", 0);
+    if (isAbortError(error)) throw error;
+    throw new BackendApiError("无法访问后端 API", 0);
   }
   if (!response.ok) throw new BackendApiError(await readError(response), response.status);
   return (await response.json()) as T;

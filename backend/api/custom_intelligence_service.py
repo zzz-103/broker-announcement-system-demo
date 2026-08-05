@@ -20,11 +20,11 @@ from .custom_intelligence_store import (
     store,
 )
 from .qianfan_search import (
-    QianfanConfigurationError,
     QianfanError,
     QianfanSearchResult,
     build_search_payload,
     client as qianfan_client,
+    qianfan_error_message,
     validate_configuration,
 )
 
@@ -63,10 +63,31 @@ SOURCE_PREFERENCE_LABELS = {
 }
 PRESET_QUESTIONS = [
     {
-        "id": "broker_competition",
-        "title": "券商竞争动态",
-        "question": "近期券商在财富管理、投顾和数字化业务上的竞争变化有哪些？",
-        "analysis_perspective": "industry_research",
+        "id": "management_strategy",
+        "title": "战略变化与经营影响",
+        "question": "近期证券行业的重要战略变化将如何影响公司的经营重点与资源投入？",
+        "analysis_perspective": "management",
+        "report_type": "management_brief",
+    },
+    {
+        "id": "management_opportunities_risks",
+        "title": "机会与风险判断",
+        "question": "当前竞争格局下，未来半年最值得管理层关注的业务机会和主要风险是什么？",
+        "analysis_perspective": "management",
+        "report_type": "management_brief",
+    },
+    {
+        "id": "product_experience",
+        "title": "产品与客户体验",
+        "question": "近期头部券商在产品功能和客户体验方面有哪些值得借鉴的新做法？",
+        "analysis_perspective": "product_business",
+        "report_type": "competitive_analysis",
+    },
+    {
+        "id": "business_model_practice",
+        "title": "业务模式与同业实践",
+        "question": "券商重点业务模式正在发生哪些变化，代表性同业实践带来了什么启示？",
+        "analysis_perspective": "product_business",
         "report_type": "competitive_analysis",
     },
     {
@@ -77,10 +98,38 @@ PRESET_QUESTIONS = [
         "report_type": "risk_monitoring",
     },
     {
-        "id": "technology_trends",
-        "title": "金融科技趋势",
-        "question": "近期证券行业人工智能和金融科技应用有哪些新进展？",
+        "id": "technology_llm_agent",
+        "title": "大模型与 Agent 应用",
+        "question": "近期券商在大模型、知识库和 Agent 应用方面有哪些落地进展与建设重点？",
         "analysis_perspective": "technology",
+        "report_type": "industry_trends",
+    },
+    {
+        "id": "technology_data_platform",
+        "title": "数据平台与系统建设",
+        "question": "证券行业数据平台和核心系统建设近期有哪些代表性项目与技术路线变化？",
+        "analysis_perspective": "technology",
+        "report_type": "industry_trends",
+    },
+    {
+        "id": "compliance_data_model",
+        "title": "数据与模型风险",
+        "question": "证券机构在数据安全、模型风险和内容合规方面面临哪些新增要求与典型问题？",
+        "analysis_perspective": "compliance_risk",
+        "report_type": "risk_monitoring",
+    },
+    {
+        "id": "industry_trends",
+        "title": "行业趋势与热点",
+        "question": "近期证券行业有哪些持续升温的趋势和市场热点，背后的驱动因素是什么？",
+        "analysis_perspective": "industry_research",
+        "report_type": "industry_trends",
+    },
+    {
+        "id": "industry_cases",
+        "title": "代表案例与机构动态",
+        "question": "近期证券行业有哪些代表性案例和重点机构动态值得持续跟踪？",
+        "analysis_perspective": "industry_research",
         "report_type": "industry_trends",
     },
 ]
@@ -354,14 +403,8 @@ def normalize_report(
 
 
 def _error_message(exc: Exception) -> str:
-    if isinstance(exc, QianfanConfigurationError):
-        return "百度智能搜索配置缺失，请联系管理员配置服务端环境变量。"
-    from .qianfan_search import QianfanTimeoutError
-
-    if isinstance(exc, QianfanTimeoutError):
-        return "百度智能搜索请求超时，请稍后重试。"
     if isinstance(exc, QianfanError):
-        return "百度智能搜索服务暂不可用，请稍后重试。"
+        return qianfan_error_message(exc)
     return "情报执行失败，请稍后重试。"
 
 
