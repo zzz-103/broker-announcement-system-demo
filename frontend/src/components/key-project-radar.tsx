@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
+import { ChevronRight } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import {
   scoreProject,
   getScoreReason,
   displayAmountLabel,
   formatDate,
-  formatAmount,
+  formatAmountInWan,
 } from "@/lib/announcement-data";
 
 interface KeyProjectRadarProps {
@@ -15,6 +16,9 @@ interface KeyProjectRadarProps {
   baseline: Date | null;
   onSelectProject: (r: ProcessedRecord) => void;
 }
+
+// 后端兜底文案：未命中任何具体关注点时使用，列表中不再重复展示。
+const GENERIC_REASON = "公开招采动态值得关注";
 
 export function KeyProjectRadar({
   data,
@@ -54,95 +58,105 @@ export function KeyProjectRadar({
       });
   }, [data, baseline]);
 
-  const getAccentColor = (stage: string, domain: string) => {
-    if (domain === "交易、柜台与核心系统") return "#D64545"; // Red
-    if (stage === "采购招标") return "#2563EB"; // Blue
-    if (stage === "结果公示") return "#16A36A"; // Green
-    return "#CBD5E1"; // Gray default
-  };
-
   return (
     <section className="surface-panel p-4 sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-[15px] font-bold text-[#172033]">
-        重点项目雷达
-        </h3>
-        <span className="text-[11px] text-[#7A8699]">按近期变化和金额优先</span>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[15px] font-bold text-[#172033]">重点项目</h3>
+        <span className="text-[11px] text-[#7A8699]">按近期动态排序</span>
       </div>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {projects.map(({ record: r, reason }) => (
-          <button
-            type="button"
-            key={r.projectKey}
-            onClick={() => onSelectProject(r)}
-            className="relative flex min-h-[168px] cursor-pointer flex-col justify-between overflow-hidden rounded-lg border border-[#E4EAF2] bg-white py-3 pl-4 pr-3 text-left transition-colors hover:border-[#B9D0F5] hover:bg-[#FBFCFE] motion-reduce:transition-none"
-          >
-            {/* Left accent strip */}
-            <div 
-              className="absolute left-0 top-0 bottom-0 w-[4px]"
-              style={{ backgroundColor: getAccentColor(r.announcement_stage, r.primaryDomain) }}
-            />
 
-            {/* Upper Section */}
-            <div className="w-full">
-              <div className="mb-1.5 flex items-center gap-2">
-                  <span
-                  className="size-1.5 shrink-0 rounded-full bg-[#7A9BCB]"
-                  />
-                <span className="truncate text-[11px] font-medium text-[#667085]">
-                  {r.primaryDomain}
-                </span>
-              </div>
-              <div className="mb-1.5 flex h-[36px] items-start text-[13px] font-bold leading-relaxed text-[#172033] line-clamp-2">
-                {r.normalizedProjectName}
-              </div>
-              <div className="mb-2 flex h-[18px] flex-wrap gap-1 overflow-hidden">
-                {r.topicTags.slice(0, 3).map((tag) => (
-                  <span
-                    key={tag}
-                    className="flex items-center rounded bg-[#F0F2F5] px-1.5 py-0.5 text-[10px] leading-none text-[#667085]"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            {/* Lower Section (with top border for alignment visualization) */}
-            <div className="mt-auto w-full border-t border-[#F0F2F5] pt-2">
-              <div className="flex h-[16px] items-center justify-between text-[11px] text-[#7A8699]">
-                <span className="max-w-[65%] truncate pr-2 font-medium text-[#718096]">{r.validBrokerName}</span>
-                <span className="tabular-nums shrink-0">{formatDate(r.validPublishDate)}</span>
-              </div>
-              <div className="mt-1.5 flex h-[16px] items-center justify-between text-[11px]">
-                {r.normalizedSupplier ? (
-                  <span className="text-[#667085] truncate max-w-[65%] font-medium">
-                    供应商: <span className="text-[#172033] font-semibold">{r.normalizedSupplier}</span>
-                  </span>
-                ) : (
-                  <span className="text-[#98A2B3] italic font-normal">招标阶段</span>
-                )}
-                {r.display_amount_yuan !== null ? (
-                  <span className={`${r.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"} font-bold tabular-nums text-[12px] shrink-0`}>
-                    <span className="mr-1 text-[10px] font-medium">{displayAmountLabel(r)}</span>
-                    {formatAmount(r.display_amount_yuan)}
-                  </span>
-                ) : (
-                  <span className="shrink-0 w-4 h-4" />
-                )}
-              </div>
-              <div className="mt-1.5 h-[14px] text-[10px] font-medium leading-tight text-[#B7791F] line-clamp-1">
-                {reason}
-              </div>
-            </div>
-          </button>
-        ))}
-      </div>
-      {projects.length === 0 && (
-        <p className="text-[12px] text-[#98A2B3] py-8 text-center">
-          暂无重点项目
+      {projects.length === 0 ? (
+        <p className="py-8 text-center text-[12px] text-[#98A2B3]">
+          暂无符合条件的重点项目
         </p>
+      ) : (
+        <ol className="divide-y divide-[#EEF2F6]">
+          {projects.map(({ record, reason }, index) => (
+            <KeyProjectRow
+              key={record.projectKey}
+              record={record}
+              reason={reason}
+              rank={index + 1}
+              onSelect={() => onSelectProject(record)}
+            />
+          ))}
+        </ol>
       )}
     </section>
+  );
+}
+
+interface KeyProjectRowProps {
+  record: ProcessedRecord;
+  reason: string;
+  rank: number;
+  onSelect: () => void;
+}
+
+function KeyProjectRow({
+  record: r,
+  reason,
+  rank,
+  onSelect,
+}: KeyProjectRowProps) {
+  // 第二层：券商 · 业务方向 · 公告日期
+  const meta = [r.validBrokerName, r.primaryDomain, formatDate(r.validPublishDate)]
+    .filter(Boolean)
+    .join(" · ");
+
+  // 第三层：阶段 / 金额 / 供应商 / 关注点，按数据实际存在组合，最多一行
+  const supplementParts: string[] = [];
+  if (r.announcement_stage && r.announcement_stage !== "其他") {
+    supplementParts.push(r.announcement_stage);
+  }
+  if (r.display_amount_yuan !== null) {
+    supplementParts.push(`${displayAmountLabel(r)} ${formatAmountInWan(r.display_amount_yuan)}`);
+  }
+  if (r.normalizedSupplier) {
+    supplementParts.push(`供应商：${r.normalizedSupplier}`);
+  }
+  if (reason && reason !== GENERIC_REASON) {
+    supplementParts.push(`关注点：${reason}`);
+  }
+  const supplement = supplementParts.join(" · ");
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-label={`查看项目详情：${r.normalizedProjectName}`}
+        className="group grid w-full grid-cols-[28px_minmax(0,1fr)_auto] items-start gap-x-3 rounded-md px-2 py-3 text-left transition-colors duration-150 motion-reduce:transition-none hover:bg-blue-50/40 focus-visible:bg-blue-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
+      >
+        {/* 序号 */}
+        <span className="pt-0.5 text-[13px] font-bold tabular-nums text-[#98A2B3]">
+          {String(rank).padStart(2, "0")}
+        </span>
+
+        {/* 主体信息 */}
+        <span className="min-w-0">
+          <span
+            className="block line-clamp-2 text-[13.5px] font-bold leading-relaxed text-[#172033]"
+            title={r.normalizedProjectName}
+          >
+            {r.normalizedProjectName}
+          </span>
+          <span className="mt-1 block truncate text-[11px] text-[#7A8699]" title={meta}>
+            {meta}
+          </span>
+          {supplement && (
+            <span className="mt-1 block truncate text-[11px] text-[#667085]" title={supplement}>
+              {supplement}
+            </span>
+          )}
+        </span>
+
+        {/* 详情入口 */}
+        <span className="inline-flex shrink-0 items-center gap-0.5 pt-0.5 text-[11px] font-semibold text-[#2563EB]">
+          查看
+          <ChevronRight className="size-3.5" aria-hidden="true" />
+        </span>
+      </button>
+    </li>
   );
 }
