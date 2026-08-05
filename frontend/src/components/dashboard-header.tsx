@@ -18,6 +18,7 @@ interface DashboardHeaderProps {
   isAdmin: boolean;
   activeModule: ActiveModule;
   statusText: string;
+  statusTone?: "loading" | "ready" | "stale" | "unavailable";
   statusLabel?: string;
   statusDescription?: string;
   exportOptions: DashboardExportOption[];
@@ -166,6 +167,7 @@ export function DashboardHeader({
   isAdmin,
   activeModule,
   statusText,
+  statusTone = "ready",
   statusLabel = "最新数据",
   statusDescription,
   exportOptions,
@@ -190,7 +192,17 @@ export function DashboardHeader({
             className="hidden h-9 w-[146px] shrink-0 items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-[11px] text-slate-300 lg:flex"
             title={statusDescription || `${statusLabel}：${statusText}`}
           >
-            <span className="size-1.5 shrink-0 rounded-full bg-emerald-400" />
+            <span
+              className={`size-1.5 shrink-0 rounded-full ${
+                statusTone === "ready"
+                  ? "bg-emerald-400"
+                  : statusTone === "loading"
+                    ? "bg-blue-300"
+                    : statusTone === "stale"
+                      ? "bg-amber-300"
+                      : "bg-rose-400"
+              }`}
+            />
             <span className="shrink-0 text-slate-400">{statusLabel}</span>
             <span className="min-w-0 truncate font-medium text-white">{statusText}</span>
           </div>

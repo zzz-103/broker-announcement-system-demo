@@ -73,7 +73,7 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
         : 0;
 
   return (
-    <section className="mt-6 rounded-xl border border-[#E4E9F0] bg-white p-5 shadow-sm">
+    <section className="mt-6 rounded-lg border border-[#E4E9F0] bg-white p-5 shadow-sm" aria-live="polite">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
           <div
@@ -122,7 +122,15 @@ export function AdminTaskProgress({ progress, onCancel }: AdminTaskProgressProps
       </div>
 
       <div className="mt-4">
-        <div className="relative h-3 overflow-hidden rounded-full bg-[#E9EEF5]">
+        <div
+          className="relative h-3 overflow-hidden rounded-full bg-[#E9EEF5]"
+          role="progressbar"
+          aria-label={progress.taskName || "任务进度"}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={determinate || progress.status !== "running" ? percent : undefined}
+          aria-valuetext={progressLabel(progress)}
+        >
           {determinate || progress.status === "succeeded" || progress.status === "failed" || progress.status === "cancelled" ? (
             <div
               className={cn(

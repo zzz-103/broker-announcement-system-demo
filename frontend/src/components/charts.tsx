@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
 import * as echarts from "echarts/core";
 import { BarChart, LineChart, PieChart } from "echarts/charts";
 import {
@@ -11,8 +11,7 @@ import {
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { ProcessedRecord } from "@/lib/announcement-data";
-import { ANNOUNCEMENT_STAGES, uniqueCount } from "@/lib/announcement-data";
-import { useFilterStore } from "@/store/filter-store";
+import { ANNOUNCEMENT_STAGES } from "@/lib/announcement-data";
 
 // Register only the components we use (tree-shaking)
 echarts.use([
@@ -30,9 +29,25 @@ interface ChartsProps {
   data: ProcessedRecord[];
 }
 
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  return reduced;
+}
+
+const CHART_CARD_CLASS = "min-w-0 rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)]";
+
 function EmptyChartState() {
   return (
-    <div className="absolute inset-0 flex items-center justify-center text-[13px] text-[#98A2B3] pointer-events-none">
+    <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center text-[13px] text-[#7A8699]">
       暂无数据
     </div>
   );
@@ -41,7 +56,7 @@ function EmptyChartState() {
 export function ProcurementTrendChart({ data }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
-  const { setAnnouncementStage } = useFilterStore();
+  const reducedMotion = useReducedMotion();
 
   const chartData = useMemo(() => {
     // Group by month
@@ -85,6 +100,7 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
     }
     const chart = chartInstance.current;
     chart.setOption({
+      animation: !reducedMotion,
       tooltip: {
         trigger: "axis",
         backgroundColor: "#ffffff",
@@ -105,12 +121,12 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
       xAxis: {
         type: "category",
         data: chartData.months,
-        axisLabel: { fontSize: 10, color: "#98A2B3" },
+          axisLabel: { fontSize: 11, color: "#7A8699" },
         axisLine: { lineStyle: { color: "#E4EAF2" } },
       },
       yAxis: {
         type: "value",
-        axisLabel: { fontSize: 10, color: "#98A2B3" },
+        axisLabel: { fontSize: 11, color: "#7A8699" },
         splitLine: { lineStyle: { color: "#F0F2F5" } },
       },
       series: [
@@ -152,16 +168,20 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
       ],
     });
     return () => {};
-  }, [chartData]);
+  }, [chartData, reducedMotion]);
 
   useEffect(() => {
     const handleResize = () => chartInstance.current?.resize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      chartInstance.current?.dispose();
+      chartInstance.current = null;
+    };
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-6 lg:col-span-6 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
+    <section className={`${CHART_CARD_CLASS} col-span-1 md:col-span-6 lg:col-span-6`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-[14px] font-bold text-[#172033]">
           公开招采趋势
@@ -170,17 +190,18 @@ export function ProcurementTrendChart({ data }: ChartsProps) {
           趋势受历史采集覆盖范围影响
         </span>
       </div>
-      <div className="relative h-[260px] sm:h-[220px]">
-        <div ref={chartRef} className="h-full w-full" />
+      <div className="relative h-[240px] sm:h-[220px]">
+        <div ref={chartRef} className="h-full w-full" role="img" aria-label="公开招采趋势图" />
         {data.length === 0 && <EmptyChartState />}
       </div>
-    </div>
+    </section>
   );
 }
 
 export function DomainDistributionChart({ data }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const reducedMotion = useReducedMotion();
 
   const chartData = useMemo(() => {
     const domainKeys: Record<string, Set<string>> = {};
@@ -210,6 +231,7 @@ export function DomainDistributionChart({ data }: ChartsProps) {
       chartInstance.current = echarts.init(chartRef.current);
     }
     chartInstance.current.setOption({
+      animation: !reducedMotion,
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
@@ -265,37 +287,42 @@ export function DomainDistributionChart({ data }: ChartsProps) {
               const idx = chartData.counts.length - 1 - params.dataIndex;
               return `${chartData.counts[idx]} · ${chartData.percentages[idx]}%`;
             },
-            fontSize: 10,
+            fontSize: 11,
             color: "#667085",
             fontWeight: 500,
           },
         },
       ],
     });
-  }, [chartData]);
+  }, [chartData, reducedMotion]);
 
   useEffect(() => {
     const handleResize = () => chartInstance.current?.resize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      chartInstance.current?.dispose();
+      chartInstance.current = null;
+    };
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
+    <section className={`${CHART_CARD_CLASS} col-span-1 md:col-span-3 lg:col-span-3`}>
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         金融科技方向
       </h3>
-      <div className="relative h-[260px] sm:h-[220px]">
-        <div ref={chartRef} className="h-full w-full" />
+      <div className="relative h-[240px] sm:h-[220px]">
+        <div ref={chartRef} className="h-full w-full" role="img" aria-label="金融科技方向分布图" />
         {data.length === 0 && <EmptyChartState />}
       </div>
-    </div>
+    </section>
   );
 }
 
 export function StageDistributionChart({ data }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const reducedMotion = useReducedMotion();
 
   const chartData = useMemo(() => {
     const stageCounts: Record<string, number> = {};
@@ -325,6 +352,7 @@ export function StageDistributionChart({ data }: ChartsProps) {
     const totalSum = chartData.reduce((acc, curr) => acc + curr.value, 0);
 
     chartInstance.current.setOption({
+      animation: !reducedMotion,
       title: {
         text: totalSum.toLocaleString(),
         subtext: "全部公告",
@@ -376,23 +404,27 @@ export function StageDistributionChart({ data }: ChartsProps) {
         },
       ],
     });
-  }, [chartData]);
+  }, [chartData, reducedMotion]);
 
   useEffect(() => {
     const handleResize = () => chartInstance.current?.resize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      chartInstance.current?.dispose();
+      chartInstance.current = null;
+    };
   }, []);
 
   return (
-    <div className="col-span-1 min-w-0 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]">
+    <section className={`${CHART_CARD_CLASS} col-span-1 md:col-span-3 lg:col-span-3`}>
       <h3 className="text-[14px] font-bold text-[#172033] mb-4">
         公告阶段
       </h3>
-      <div className="relative h-[260px] sm:h-[220px]">
-        <div ref={chartRef} className="h-full w-full" />
+      <div className="relative h-[240px] sm:h-[220px]">
+        <div ref={chartRef} className="h-full w-full" role="img" aria-label="公告阶段分布图" />
         {data.length === 0 && <EmptyChartState />}
       </div>
-    </div>
+    </section>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { X, AlertCircle } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import type { ProcessedRecord } from "@/lib/announcement-data";
 import { formatDate, formatAmount, formatAmountInWan } from "@/lib/announcement-data";
+import { Drawer, DrawerContent } from "@/components/ui/drawer";
 
 interface ProjectDetailDrawerProps {
   record: ProcessedRecord | null;
@@ -13,27 +14,13 @@ export function ProjectDetailDrawer({
   record,
   onClose,
 }: ProjectDetailDrawerProps) {
-  if (!record) return null;
-
   return (
-    <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/20 z-40"
-        onClick={onClose}
-      />
-      {/* Drawer */}
-      <div className="fixed top-0 right-0 h-full w-full sm:w-[42%] sm:max-w-[720px] bg-white shadow-xl z-50 overflow-y-auto">
+    <Drawer open={Boolean(record)} onOpenChange={(open) => !open && onClose()}>
+      {record && <DrawerContent title="项目详情">
         <div className="sticky top-0 bg-white border-b border-[#E4E9F0] px-6 py-4 flex items-center justify-between z-10">
           <h2 className="text-[16px] font-semibold text-[#172033]">
             项目详情
           </h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-          >
-            <X className="w-4 h-4 text-[#667085]" />
-          </button>
         </div>
 
         <div className="px-6 py-5 space-y-6">
@@ -159,8 +146,8 @@ export function ProjectDetailDrawer({
             </div>
           </section>
         </div>
-      </div>
-    </>
+      </DrawerContent>}
+    </Drawer>
   );
 }
 

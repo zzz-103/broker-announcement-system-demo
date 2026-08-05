@@ -175,10 +175,15 @@ export default function AppUpdatesPage() {
   const updateTypeOptions = useMemo(() => dataFilters?.app_updates.update_types ?? getUpdateTypeDistribution(records).map(i => i.name), [dataFilters, records]);
   const tagOptions = useMemo(() => dataFilters?.app_updates.feature_tags ?? getFeatureTagDistribution(records).map(i => i.name), [dataFilters, records]);
 
-  // Handle record click
-  const handleRecordClick = (record: AppReleaseRecord) => {
-    setSelectedRecord(record);
-  };
+  // Keep the detail drawer focused on distinct information when an imported
+  // highlight repeats the one-line summary shown in the overview fields.
+  const handleRecordClick = useCallback((record: AppReleaseRecord) => {
+    const summary = record.updateSummary.trim();
+    const highlights = summary
+      ? record.highlights.filter((highlight) => highlight.trim() !== summary)
+      : record.highlights;
+    setSelectedRecord(highlights.length === record.highlights.length ? record : { ...record, highlights });
+  }, []);
 
   const isBusy = dataStatus === "loading";
 
@@ -201,6 +206,7 @@ export default function AppUpdatesPage() {
                 ? "待生成"
                 : "不可用"
         }
+        statusTone={dataStatus === "ready" ? "ready" : dataStatus === "loading" ? "loading" : dataStatus === "empty" ? "stale" : "unavailable"}
         statusDescription={updatedAt ? `App 更新数据更新时间：${updatedAt}` : dataMessage || undefined}
         exportOptions={[
           {
@@ -223,7 +229,7 @@ export default function AppUpdatesPage() {
       />
 
       {/* Main content */}
-      <main className="mx-auto max-w-[1600px] min-w-0 px-3 py-4 space-y-4 sm:px-8 sm:py-5">
+      <main className="mx-auto max-w-[1600px] min-w-0 space-y-4 px-3 py-4 sm:px-8 sm:py-5" aria-busy={isBusy}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold tracking-tight text-[#172033] sm:text-2xl">App 更新</h2>
@@ -235,13 +241,15 @@ export default function AppUpdatesPage() {
             disabled={isBusy}
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw className={`size-3.5 ${isBusy ? "animate-spin" : ""}`} />
+            <RefreshCw className={`size-3.5 ${isBusy ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden="true" />
             刷新数据
           </button>
         </div>
         {/* Status message */}
         {(dataStatus === "loading" || dataStatus === "empty" || dataStatus === "error") && (
           <div
+            role={dataStatus === "error" ? "alert" : "status"}
+            aria-live={dataStatus === "error" ? "assertive" : "polite"}
             className={`rounded-[10px] border px-4 py-3 text-[13px] ${
               dataStatus === "error"
                 ? "border-red-100 bg-red-50 text-red-600"
@@ -255,7 +263,7 @@ export default function AppUpdatesPage() {
         )}
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+        <div className="grid grid-cols-2 gap-px overflow-hidden border-y border-[#DCE4EE] bg-[#DCE4EE] sm:grid-cols-4">
           <KpiCard label="更新条数" value={statistics.releaseCount} />
           <KpiCard label="覆盖券商" value={statistics.brokerCount} />
           <KpiCard label="覆盖 App" value={statistics.appCount} />
@@ -265,24 +273,48 @@ export default function AppUpdatesPage() {
         {/* View toggle & filter bar */}
         <div className="space-y-3">
           {/* View toggle */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 border-b border-[#DCE4EE]" role="tablist" aria-label="App 更新内容">
             <button
+              type="button"
+              role="tab"
+              id="app-updates-tab-overview"
+              aria-selected={viewMode === "overview"}
+              aria-controls="app-updates-overview-panel"
+              tabIndex={viewMode === "overview" ? 0 : -1}
               onClick={() => setViewMode("overview")}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+                event.preventDefault();
+                setViewMode("details");
+                requestAnimationFrame(() => document.getElementById("app-updates-tab-details")?.focus());
+              }}
+              className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none ${
                 viewMode === "overview"
-                  ? "border border-[#D7E5FF] bg-white text-[#2563EB] shadow-[0_1px_3px_rgba(16,40,71,0.08)]"
-                  : "border border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
+                  ? "border-[#2563EB] text-[#2563EB]"
+                  : "border-transparent text-[#667085] hover:text-[#344054]"
               }`}
             >
               <TrendingUp className="w-4 h-4" />
               更新总览
             </button>
             <button
+              type="button"
+              role="tab"
+              id="app-updates-tab-details"
+              aria-selected={viewMode === "details"}
+              aria-controls="app-updates-details-panel"
+              tabIndex={viewMode === "details" ? 0 : -1}
               onClick={() => setViewMode("details")}
-              className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold transition-all duration-200 ${
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+                event.preventDefault();
+                setViewMode("overview");
+                requestAnimationFrame(() => document.getElementById("app-updates-tab-overview")?.focus());
+              }}
+              className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none ${
                 viewMode === "details"
-                  ? "border border-[#D7E5FF] bg-white text-[#2563EB] shadow-[0_1px_3px_rgba(16,40,71,0.08)]"
-                  : "border border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
+                  ? "border-[#2563EB] text-[#2563EB]"
+                  : "border-transparent text-[#667085] hover:text-[#344054]"
               }`}
             >
               <List className="w-4 h-4" />
@@ -304,16 +336,15 @@ export default function AppUpdatesPage() {
           {viewMode === "overview" ? (
             <>
               {/* Charts */}
-              <div className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-6 lg:grid-cols-12">
+              <div id="app-updates-overview-panel" role="tabpanel" aria-labelledby="app-updates-tab-overview" className="grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-6 lg:grid-cols-12">
                 <OverviewCharts data={filteredRecords} onSelect={handleRecordClick} />
               </div>
             </>
           ) : (
             /* Details table */
-            <ReleaseTable
-              releases={filteredRecords}
-              onSelect={handleRecordClick}
-            />
+            <div id="app-updates-details-panel" role="tabpanel" aria-labelledby="app-updates-tab-details">
+              <ReleaseTable releases={filteredRecords} onSelect={handleRecordClick} />
+            </div>
           )}
 
           {/* Updated at */}

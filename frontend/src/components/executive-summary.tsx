@@ -102,15 +102,7 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       .slice(0, 3)
       .map(([s]) => s);
 
-    // Summary 4: Public amount disclosure rate
-    const amountSamples = uniqueCount(
-      data.filter((r) => r.amountSampleKey).map((r) => r.amountSampleKey!)
-    );
-    const totalProjects = uniqueCount(data.map((r) => r.projectKey));
-    const amountRate =
-      totalProjects > 0 ? ((amountSamples / totalProjects) * 100).toFixed(1) : "0";
-
-    return { topDomains, topBrokers, topSuppliers, amountSamples, amountRate };
+    return { topDomains, topBrokers, topSuppliers };
   }, [data, baseline]);
 
   // Coverage quality
@@ -132,6 +124,18 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       shaMap[r.document_sha1].add(r.markdown_file);
     }
     const dupCount = Object.values(shaMap).filter((s) => s.size > 1).length;
+    const sourceCount = new Set(allData.map((record) => record.sourceName).filter(Boolean)).size;
+    const activeBrokers = uniqueCount(
+      data.filter((record) => record.validBrokerName !== "主体待识别").map((record) => record.validBrokerName),
+    );
+    const supplierProjects = uniqueCount(
+      data
+        .filter((record) => record.announcement_stage === "结果公示" && record.normalizedSupplier)
+        .map((record) => record.projectKey),
+    );
+    const amountSamples = uniqueCount(
+      data.filter((record) => record.amountSampleKey).map((record) => record.amountSampleKey!),
+    );
 
     return {
       latestDate: formatDate(baseline),
@@ -139,100 +143,76 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
       supplierRate: total > 0 ? ((validSuppliers / total) * 100).toFixed(1) : "0",
       amountRate: total > 0 ? ((validAmounts / total) * 100).toFixed(1) : "0",
       dupCount,
+      sourceCount,
+      activeBrokers,
+      supplierProjects,
+      amountSamples,
       totalBrokers: uniqueCount(
         allData.filter((r) => r.validBrokerName !== "主体待识别").map((r) => r.validBrokerName)
       ),
     };
-  }, [allData, baseline]);
+  }, [allData, baseline, data]);
 
   return (
     <div className="grid grid-cols-12 gap-4 md:gap-5">
-      {/* Left: Intelligence Summary */}
-      <div className="col-span-12 lg:col-span-8 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between min-h-[220px]">
+      {/* Left: concise business summary */}
+      <div className="col-span-12 flex min-h-[190px] flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 lg:col-span-8">
         {data.length === 0 ? (
           <div className="flex flex-col items-center justify-center text-center py-8 h-full">
             <p className="text-[13px] text-[#475467] font-semibold mb-1">
               当前筛选条件下暂无公开招采项目数据
             </p>
             <p className="text-[11px] text-[#98A2B3] max-w-sm">
-              无法生成本期情报摘要。请尝试调整时间范围、取消“仅看金融科技”勾选或选择其他券商主体。
+              请调整时间范围、业务方向或券商主体后重试。
             </p>
           </div>
         ) : (
           <>
             <div>
-              <h3 className="text-[15px] font-bold text-[#172033] mb-3">
-                本期情报摘要
-              </h3>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-[15px] font-bold text-[#172033]">当前筛选摘要</h3>
+                <span className="text-[11px] text-[#7A8699]">按去重项目线索统计</span>
+              </div>
               
               {/* 1. 顶部核心结论 */}
               {summary.topDomains.length > 0 && (
-                <div className="bg-blue-50/50 rounded-xl p-3.5 border border-blue-100/40 text-[13px] leading-relaxed mb-4 text-[#102847] font-semibold">
-                  📌 核心发现：公开项目线索高度聚焦于金融科技的 <span className="text-[#2563EB] font-bold underline decoration-blue-300 decoration-2 underline-offset-2">{summary.topDomains.join("、")}</span> 建设方向。
+                <div className="border-l-2 border-[#2563EB] bg-[#F8FAFD] px-3.5 py-3 text-[13px] font-semibold leading-relaxed text-[#243B61]">
+                  核心方向：公开项目线索主要集中于 <span className="font-bold text-[#2563EB]">{summary.topDomains.join("、")}</span>。
                 </div>
               )}
 
-              {/* 2. 中部关键发现 (分块展示) */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3.5">
-                  <div className="text-[11px] text-[#718096] font-bold mb-1">方向热点</div>
-                  <div className="text-[13px] text-[#172033] leading-relaxed">
-                    当前科技采购主要集中于 <span className="font-semibold text-purple-600">{summary.topDomains.slice(0, 2).join("与")}</span> 等核心方向。
-                  </div>
-                </div>
-                <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3.5">
-                  <div className="text-[11px] text-[#718096] font-bold mb-1">活跃机构</div>
-                  <div className="text-[13px] text-[#172033] leading-relaxed">
-                    近期 <span className="font-semibold text-blue-600">{summary.topBrokers.join("、") || "各大券商"}</span> 在公开渠道披露的建设动态较多。
-                  </div>
-                </div>
-                <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3.5">
-                  <div className="text-[11px] text-[#718096] font-bold mb-1">活跃供应商</div>
-                  <div className="text-[13px] text-[#172033] leading-relaxed">
-                    项目中标结果中频繁出现 <span className="font-semibold text-teal-600">{summary.topSuppliers.slice(0, 2).join("与")}</span> 等行业供应商。
-                  </div>
-                </div>
+              {/* 2. Inline findings keep the scan path compact. */}
+              <div className="mt-4 grid grid-cols-1 gap-3 border-t border-[#EEF2F6] pt-3 text-[12px] leading-5 text-[#475467] md:grid-cols-3 md:gap-4">
+                <p><span className="font-semibold text-[#667085]">方向热点：</span>{summary.topDomains.slice(0, 2).join("、") || "暂无"}</p>
+                <p><span className="font-semibold text-[#667085]">活跃主体：</span>{summary.topBrokers.join("、") || "暂无"}</p>
+                <p><span className="font-semibold text-[#667085]">活跃供应商：</span>{summary.topSuppliers.slice(0, 2).join("、") || "暂无"}</p>
               </div>
             </div>
 
-            {/* 3. 底部辅助说明 */}
-            <div className="border-t border-[#F0F2F5] pt-3 mt-3 flex items-center justify-between text-[12px] text-[#667085] flex-wrap gap-2">
-              <div>
-                当前拥有有效公开金额样本 <span className="font-bold text-[#0F9F8F] text-[13px]">{summary.amountSamples}</span> 条，金额披露率为 <span className="font-bold text-blue-600 text-[13px]">{summary.amountRate}%</span>。
-              </div>
-              <div className="text-[11px] text-[#98A2B3]">
-                ℹ️ 数据受到各主体信息披露程度及采集覆盖范围影响。
-              </div>
+            <div className="mt-3 border-t border-[#EEF2F6] pt-2 text-[11px] text-[#7A8699]">
+              数据受到公开披露程度及采集覆盖范围影响。
             </div>
           </>
         )}
       </div>
 
-      {/* Right: Coverage & Quality */}
-      <div className="col-span-12 lg:col-span-4 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between">
+      {/* Right: data quality and secondary metrics */}
+      <div className="col-span-12 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 lg:col-span-4">
         <div>
           <h3 className="text-[15px] font-bold text-[#172033] mb-3">
-            数据覆盖与可信度
+            数据质量与覆盖
           </h3>
 
-          {/* Top stats row */}
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3 text-center">
-              <p className="text-[11px] text-[#98A2B3] mb-0.5">数据最新日期</p>
-              <p className="text-[13px] font-bold text-[#172033] tracking-wide">
-                {coverage.latestDate}
-              </p>
-            </div>
-            <div className="bg-[#F8FAFC]/60 border border-[#E4EAF2] rounded-xl p-3 text-center">
-              <p className="text-[11px] text-[#98A2B3] mb-0.5">覆盖主体数</p>
-              <p className="text-[18px] font-bold text-[#2563EB] tabular-nums leading-none mt-0.5">
-                {coverage.totalBrokers}
-              </p>
-            </div>
+          <div className="mb-4 grid grid-cols-2 gap-x-4 gap-y-2 border-b border-[#EEF2F6] pb-3 sm:grid-cols-3 lg:grid-cols-2">
+            <div><p className="text-[10px] text-[#7A8699]">数据最新日期</p><p className="mt-0.5 text-[12px] font-semibold text-[#172033]">{coverage.latestDate}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">已接入数据源</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.sourceCount}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">当前覆盖主体</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.activeBrokers}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">披露供应商项目</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.supplierProjects}</p></div>
+            <div><p className="text-[10px] text-[#7A8699]">公开金额样本</p><p className="mt-0.5 text-[16px] font-bold tabular-nums text-[#172033]">{coverage.amountSamples}</p></div>
           </div>
 
           {/* Progress bars */}
-          <div className="space-y-3.5">
+          <div className="space-y-3">
             <CoverageBar
               label="有效日期覆盖率"
               value={parseFloat(coverage.dateRate)}
@@ -253,7 +233,7 @@ export function ExecutiveSummary({ data, allData, baseline }: ExecutiveSummaryPr
 
         {/* Duplicate warning */}
         {coverage.dupCount > 0 && (
-          <div className="mt-4 flex items-center gap-2 text-[12px] text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-3 py-2">
+          <div className="mt-4 flex items-center gap-2 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-[12px] text-[#B45309]">
             <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] shrink-0" />
             疑似重复源文件 {coverage.dupCount} 组
           </div>

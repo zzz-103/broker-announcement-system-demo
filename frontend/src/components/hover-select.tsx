@@ -28,18 +28,9 @@ export function HoverSelect({
   const [triggerWidth, setTriggerWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idRef = useRef(++nextId);
 
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  }, []);
-
   const openDropdown = useCallback(() => {
-    clearCloseTimer();
     if (triggerRef.current) {
       setTriggerWidth(triggerRef.current.offsetWidth);
     }
@@ -52,7 +43,7 @@ export function HoverSelect({
         setIsOpen(false);
       }
     };
-  }, [clearCloseTimer]);
+  }, []);
 
   const closeDropdown = useCallback(() => {
     setIsOpen(false);
@@ -60,18 +51,6 @@ export function HoverSelect({
       activeDropdown = null;
     }
   }, []);
-
-  const handleMouseEnter = useCallback(() => {
-    clearCloseTimer();
-    openDropdown();
-  }, [clearCloseTimer, openDropdown]);
-
-  const handleMouseLeave = useCallback(() => {
-    clearCloseTimer();
-    closeTimerRef.current = setTimeout(() => {
-      closeDropdown();
-    }, 50);
-  }, [clearCloseTimer, closeDropdown]);
 
   const handleSelect = useCallback(
     (val: string) => {
@@ -91,15 +70,19 @@ export function HoverSelect({
         closeDropdown();
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isOpen, closeDropdown]);
-
-  useEffect(() => {
-    return () => {
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeDropdown();
+        triggerRef.current?.focus();
+      }
     };
-  }, []);
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, closeDropdown]);
 
   const displayLabel =
     options.find((o) => o.value === value)?.label || placeholder;
@@ -108,19 +91,18 @@ export function HoverSelect({
     <div
       ref={containerRef}
       className={`relative inline-block ${className}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
       {/* Trigger */}
       <button
         ref={triggerRef}
         type="button"
+        aria-haspopup="listbox"
         aria-expanded={isOpen}
-        onClick={openDropdown}
+        onClick={() => (isOpen ? closeDropdown() : openDropdown())}
         className={`
           w-full flex items-center justify-between gap-1.5
           px-3 py-2 text-[13px] rounded-md
-          border transition-all duration-150 cursor-pointer
+          border transition-[background-color,border-color,box-shadow,color] duration-150 cursor-pointer
           ${
             isOpen
               ? "border-[#2563EB]/40 bg-white ring-1 ring-[#2563EB]/20"
@@ -138,13 +120,12 @@ export function HoverSelect({
       </button>
 
       {/* Dropdown Panel - frosted glass + slide-down animation */}
-      <div
+      {isOpen && <div
+        role="listbox"
         className={`
           absolute top-full left-0 mt-1 rounded-lg z-50
-          bg-white/75 backdrop-blur-xl border border-white/60
-          shadow-[0_8px_32px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]
-          origin-top transition-[transform,opacity] duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)]
-          ${isOpen ? "opacity-100 scale-y-100 pointer-events-auto" : "opacity-0 scale-y-0 pointer-events-none"}
+          bg-white border border-[#D9E2EC]
+          shadow-[0_8px_24px_rgba(16,40,71,0.12)]
         `}
         style={{ width: triggerWidth > 0 ? `${triggerWidth}px` : "auto" }}
       >
@@ -156,6 +137,8 @@ export function HoverSelect({
             <button
               key={opt.value}
               type="button"
+              role="option"
+              aria-selected={opt.value === value}
               onClick={() => handleSelect(opt.value)}
               className={`
                 w-full text-left px-3 py-[7px] text-[13px] transition-colors duration-100
@@ -170,7 +153,7 @@ export function HoverSelect({
             </button>
           ))}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

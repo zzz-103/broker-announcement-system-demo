@@ -132,7 +132,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         accessorKey: "announcement_stage",
         header: "公告阶段",
         size: 90,
-        cell: ({ getValue, row }) => {
+        cell: ({ getValue }) => {
           const stage = getValue<string>() || "其他";
           const style = STAGE_STYLES[stage] || "bg-slate-50 border-slate-100 text-slate-600";
           return (
@@ -231,7 +231,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
   const currentPage = table.getState().pagination.pageIndex + 1;
 
   return (
-    <div className="bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] overflow-hidden">
+    <section className="overflow-hidden rounded-xl border border-[#E4EAF2] bg-white shadow-[0_1px_2px_rgba(16,40,71,0.03)]" aria-label="项目明细">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-5 py-4 border-b border-[#E4EAF2] gap-3">
         <div>
           <h3 className="text-[15px] font-bold text-[#172033]">
@@ -243,8 +243,10 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <div className="inline-flex items-center rounded-xl border border-[#E4EAF2] bg-[#F8FAFC] p-1 shadow-[0_1px_2px_rgba(16,40,71,0.03)]">
-            <button
-              onClick={() => setSortMode("date")}
+              <button
+                type="button"
+                onClick={() => setSortMode("date")}
+                aria-pressed={sortMode === "date"}
               className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
                 sortMode === "date"
                   ? "bg-white text-[#172033] shadow-[0_1px_3px_rgba(16,40,71,0.12)]"
@@ -254,8 +256,10 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               <CalendarDays className="h-3.5 w-3.5" />
               按日期
             </button>
-            <button
-              onClick={() => setSortMode("amount")}
+              <button
+                type="button"
+                onClick={() => setSortMode("amount")}
+                aria-pressed={sortMode === "amount"}
               className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
                 sortMode === "amount"
                   ? "bg-white text-[#172033] shadow-[0_1px_3px_rgba(16,40,71,0.12)]"
@@ -317,7 +321,8 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
       </div>
 
       <div className="relative hidden overflow-x-auto md:block">
-        <table className="w-full border-collapse">
+        <table className="w-full border-collapse" aria-label="招采项目明细表">
+          <caption className="sr-only">当前筛选条件下的招采项目明细</caption>
           <thead className="sticky top-0 z-10 bg-[#F4F7FB] border-b border-[#E4EAF2]">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
@@ -326,13 +331,17 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                   return (
                     <th
                       key={header.id}
-                      className={`px-4 py-3 text-left text-[11px] font-bold text-[#475467] uppercase tracking-wider whitespace-nowrap bg-[#F4F7FB] ${hideOnMobile ? "hidden md:table-cell" : ""}`}
+                      scope="col"
+                      aria-sort={header.column.getIsSorted() === "asc" ? "ascending" : header.column.getIsSorted() === "desc" ? "descending" : "none"}
+                      className={`bg-[#F4F7FB] px-4 py-3 text-left text-[12px] font-semibold text-[#475467] whitespace-nowrap ${hideOnMobile ? "hidden md:table-cell" : ""}`}
                       style={{ width: header.getSize() }}
                     >
                       {header.column.getCanSort() ? (
                         <button
                           onClick={header.column.getToggleSortingHandler()}
-                          className="inline-flex items-center gap-1 hover:text-[#172033] transition-colors group"
+                          type="button"
+                          aria-label={`按${String(header.column.columnDef.header)}排序`}
+                          className="group inline-flex items-center gap-1 transition-colors hover:text-[#172033]"
                         >
                           <span>
                             {flexRender(
@@ -403,8 +412,9 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           共 {sortedData.length} 条，第 {currentPage}/{pageCount} 页
         </span>
         <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => table.previousPage()}
+            <button
+              type="button"
+              onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
             aria-label="上一页"
             className="p-1.5 rounded-lg text-[#98A2B3] hover:text-[#102847] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
@@ -421,8 +431,10 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
             .filter((p) => p < pageCount)
             .map((pageIndex) => (
               <button
+                type="button"
                 key={pageIndex}
                 onClick={() => table.setPageIndex(pageIndex)}
+                aria-current={pageIndex === currentPage - 1 ? "page" : undefined}
                 className={`min-w-[28px] h-7 rounded-lg text-[12px] font-bold transition-all ${
                   pageIndex === currentPage - 1
                     ? "bg-[#102847] text-white shadow-sm"
@@ -433,6 +445,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               </button>
             ))}</div>
           <button
+            type="button"
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
             aria-label="下一页"
@@ -442,6 +455,6 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

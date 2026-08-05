@@ -13,8 +13,6 @@ import {
   LogOut,
   RefreshCw,
   Smartphone,
-  Sparkles,
-  Square,
   TerminalSquare,
   Upload,
   Workflow,
@@ -79,45 +77,14 @@ function GlowButton({
   disabled?: boolean;
   className?: string;
 }) {
-  const [coords, setCoords] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setCoords({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
-  };
-
   return (
     <Button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      className={cn(
-        "relative overflow-hidden transition-all duration-200",
-        className
-      )}
+      className={className}
     >
-      {isHovered && !disabled && (
-        <span
-          className="absolute pointer-events-none rounded-full bg-white/20 blur-md transition-opacity duration-300 pointer-events-none"
-          style={{
-            width: "60px",
-            height: "60px",
-            left: `${coords.x - 30}px`,
-            top: `${coords.y - 30}px`,
-            transform: "translate3d(0, 0, 0)",
-          }}
-        />
-      )}
-      <span className="relative z-10 flex items-center justify-center gap-1.5 w-full h-full">
-        {children}
-      </span>
+      {children}
     </Button>
   );
 }
@@ -130,6 +97,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const [llmModeDialogOpen, setLlmModeDialogOpen] = useState(false);
   const [dashboardExporting, setDashboardExporting] = useState(false);
   const [dashboardExportMessage, setDashboardExportMessage] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<"tasks" | "users" | "records">("tasks");
   const {
     activeOperation,
     cardStates,
@@ -203,30 +171,26 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
       {
         id: "crawler" as const,
         icon: Globe,
-        iconBg: "from-emerald-500 to-teal-600",
         title: "公告采集",
-        description: "抓取采购公告与结果公告；可选择仅采集，或继续运行完整 Pipeline。",
+        description: "采集采购公告与结果公告，可继续执行完整处理流程。",
       },
       {
         id: "llm" as const,
         icon: Database,
-        iconBg: "from-blue-500 to-indigo-600",
-        title: "LLM 数据处理",
-        description: "默认完成双公告 LLM、匹配与汇总；外来公告仅生成候选 CSV。",
+        title: "公告数据处理",
+        description: "结构化处理公告，完成项目匹配与结果汇总。",
       },
       {
         id: "ai" as const,
         icon: Brain,
-        iconBg: "from-fuchsia-500 to-pink-600",
-        title: "AI 情报分析",
-        description: "基于当前正式看板数据生成近 30 天的 AI 情报分析。",
+        title: "招采分析",
+        description: "基于正式看板数据更新近 30 天分析报告。",
       },
       {
         id: "app-watch" as const,
         icon: Smartphone,
-        iconBg: "from-sky-500 to-cyan-600",
         title: "券商 App 更新",
-        description: "抓取各券商 App 更新公告并做 LLM 结构化，写入 App 更新看板。",
+        description: "采集并处理券商 App 更新公告，更新明细看板。",
       },
     ],
     [],
@@ -236,7 +200,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
 
   return (
     <div className="min-h-screen bg-[#F5F7FA]">
-      <header className="sticky top-0 z-40 bg-[#162B49]/90 backdrop-blur-md border-b border-white/5 text-white">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#162B49] text-white">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 sm:px-8">
           <div className="flex items-center gap-3">
             <button
@@ -248,7 +212,6 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             </button>
             <div className="h-5 w-px bg-white/20" />
             <div className="flex items-center gap-2">
-              <Sparkles className="size-4 text-amber-400" />
               <span className="text-sm font-medium">管理控制台</span>
               <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] text-blue-100">v{APP_VERSION}</span>
             </div>
@@ -270,20 +233,27 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#E4E9F0] pb-5">
           <div>
             <h1 className="text-2xl font-bold text-[#172033]">管理控制台</h1>
-            <p className="mt-1 text-xs text-[#667085]">管理抓取、数据处理、推送发布与 AI 情报分析</p>
+            <p className="mt-1 text-xs text-[#667085]">运行数据任务，管理用户与查看业务记录</p>
           </div>
           <div className="flex items-center gap-3 text-xs text-[#667085]">
-            <span className="flex items-center gap-1 bg-white/70 backdrop-blur-md border border-white/40 px-2.5 py-1 rounded-full shadow-sm">
-              <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              服务已连接
-            </span>
-            <span className="bg-white/70 backdrop-blur-md border border-white/40 px-2.5 py-1 rounded-full shadow-sm">
+            <span className="border border-[#D9E2EC] bg-white px-2.5 py-1 rounded-md">
               当前管理员: <span className="font-semibold text-[#172033]">{username}</span>
             </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <div role="tablist" aria-label="管理内容" className="mb-6 flex gap-1 border-b border-[#D9E2EC]">
+          {[
+            ["tasks", "任务运行"],
+            ["users", "用户与审批"],
+            ["records", "审计与反馈"],
+          ].map(([id, label]) => (
+            <button key={id} type="button" role="tab" aria-selected={activeSection === id} onClick={() => setActiveSection(id as typeof activeSection)} className={cn("border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors", activeSection === id ? "border-[#2563EB] text-[#1F5BB5]" : "border-transparent text-[#667085] hover:text-[#344054]")}>{label}</button>
+          ))}
+        </div>
+
+        {activeSection === "tasks" && <>
+        <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => {
             const state = cardStates[card.id];
             const isBusy = Boolean(activeOperation);
@@ -291,21 +261,16 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             return (
               <section
                 key={card.id}
-                className="flex h-full flex-col rounded-2xl border border-[#E4E9F0] bg-white shadow-sm hover:shadow-md hover:-translate-y-[2px] transition-all duration-200"
+                className="flex h-full flex-col rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]"
               >
                 <div className="flex h-full flex-col p-6">
                   <div className="flex items-start justify-between">
                     <div
-                      className={cn(
-                        "flex size-10 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm",
-                        card.iconBg,
-                      )}
+                      className="flex size-9 items-center justify-center rounded-md bg-[#EAF2FF]"
                     >
-                      <card.icon className="size-5 text-white" />
+                      <card.icon className="size-4.5 text-[#1F5BB5]" />
                     </div>
-                    <span className="rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-semibold text-blue-600 border border-blue-100">
-                      已接通
-                    </span>
+                    <span className={cn("rounded-full px-2.5 py-0.5 text-[10px] font-semibold", statusTone(state.status))}>{statusText(state.status)}</span>
                   </div>
 
                   <div className="mt-4 flex-grow flex flex-col justify-start">
@@ -313,12 +278,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                     <p className="mt-1.5 text-xs leading-relaxed text-[#667085] min-h-[36px]">{card.description}</p>
                   </div>
 
-                  <div className="mt-4 min-h-[110px] rounded-xl bg-[#F8FAFC]/85 backdrop-blur-sm border border-[#E4E9F0] p-4 flex flex-col justify-between">
+                  <div className="mt-4 min-h-[104px] border-t border-[#E4E9F0] pt-4 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold border", statusTone(state.status))}>
-                          {statusText(state.status)}
-                        </span>
                         <span className="text-[10px] text-[#98A2B3] font-medium">{state.lastOperationLabel}</span>
                       </div>
 
@@ -349,7 +311,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         <GlowButton
                           onClick={() => setLlmModeDialogOpen(true)}
                           disabled={isBusy}
-                          className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex-[7] flex items-center justify-center gap-1.5"
+                          className="h-10 flex-[7] bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
                         >
                           {activeOperation?.id === "llm" || activeOperation?.id === "llm-external" ? (
                             <>
@@ -393,7 +355,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                       <GlowButton
                         onClick={() => setCrawlerModeDialogOpen(true)}
                         disabled={isBusy}
-                        className="h-10 w-full text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
+                        className="h-10 w-full bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
                       >
                         {activeOperation?.id === "scraper" || activeOperation?.id === "pipeline" ? (
                           <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
@@ -404,7 +366,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         <GlowButton
                           onClick={() => void runJob("app-watch")}
                           disabled={isBusy}
-                          className="h-10 text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
+                          className="h-10 bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
                         >
                           {activeOperation?.id === "app-watch" ? (
                             <><RefreshCw className="size-3.5 animate-spin" />运行中...</>
@@ -414,7 +376,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                           onClick={() => router.push("/app-updates")}
                           disabled={isBusy}
                           variant="outline"
-                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex items-center justify-center gap-1 transition-all"
+                          className="h-10 text-xs font-semibold border-[#E4E9F0] text-[#162B49] hover:bg-slate-50 flex items-center justify-center gap-1 transition-colors"
                         >
                           <LayoutGrid className="size-3.5" />
                           前往 App 更新看板
@@ -424,7 +386,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                       <GlowButton
                         onClick={() => void runAiAnalysis()}
                         disabled={isBusy}
-                        className="h-10 w-full text-xs font-semibold text-white bg-gradient-to-r from-[#162B49] to-[#2563EB] hover:from-[#1e3a5f] hover:to-[#3b82f6] shadow-sm flex items-center justify-center gap-1.5"
+                        className="h-10 w-full bg-[#1F5BB5] text-xs font-semibold text-white hover:bg-[#174B98]"
                       >
                         {activeOperation?.cardId === card.id ? (
                           <>
@@ -441,11 +403,11 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           })}
         </div>
 
-        <section className="mt-5 rounded-2xl border border-[#D7E5FF] bg-white shadow-sm">
+        <section className="mt-5 rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]">
           <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-base font-bold text-[#172033]">纯前端数据包</h2>
-              <p className="mt-1 text-xs leading-relaxed text-[#667085]">将当前已处理的招采、App 更新、筛选项和 AI 分析导出为统一 dashboard-data 目录及 ZIP，复制后无需数据库或后端即可展示。</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#667085]">导出当前招采、App 更新、筛选项与分析结果，供纯前端看板使用。</p>
               {dashboardExportMessage && <p className="mt-2 text-xs text-[#2563EB]">{dashboardExportMessage}</p>}
             </div>
             <Button type="button" onClick={() => void handleDashboardExport()} disabled={Boolean(activeOperation) || dashboardExporting} className="shrink-0 bg-[#162B49] text-xs font-semibold text-white hover:bg-[#1e3a5f]">
@@ -467,7 +429,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           }
         />
 
-        <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+        <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50/50 p-4">
           <div className="flex items-center gap-3">
             <AlertCircle className="size-4 shrink-0 text-blue-600" />
             <div className="text-xs text-blue-800 flex flex-wrap gap-x-6 gap-y-1 leading-relaxed">
@@ -483,9 +445,10 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           </div>
         </div>
 
-        <UserApprovalManager />
-        <AuditRecordsManager />
-        <FeedbackManager />
+        </>}
+
+        {activeSection === "users" && <UserApprovalManager />}
+        {activeSection === "records" && <><AuditRecordsManager /><FeedbackManager /></>}
       </main>
 
       <AdminTaskLogDialog

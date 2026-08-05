@@ -17,7 +17,7 @@ interface OverviewChartsProps {
 }
 
 const CARD_CLASS =
-  "min-w-0 rounded-2xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-[border-color,box-shadow] duration-200 hover:border-blue-200/80 hover:shadow-[0_8px_24px_rgba(16,40,71,0.08)]";
+  "min-w-0 border-b border-[#DCE4EE] bg-white p-3 sm:p-4";
 
 export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
   const trendData = getReleaseTrend(data).slice(-12);
@@ -29,12 +29,12 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
   return (
     <>
       <section className={`${CARD_CLASS} lg:col-span-7`}>
-        <CardTitle title="版本更新趋势" subtitle="按月统计更新次数" />
+        <CardTitle title="版本更新趋势" subtitle="按月" />
         {trendData.length === 0 ? <EmptyState /> : <TrendLine data={trendData} />}
       </section>
 
       <section className={`${CARD_CLASS} lg:col-span-5`}>
-        <CardTitle title="更新内容构成" subtitle="更新类型与重点功能标签" />
+        <CardTitle title="更新内容构成" subtitle="类型与标签" />
         {typeData.length === 0 ? (
           <EmptyState />
         ) : (
@@ -45,7 +45,7 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
                 <span
                   key={item.name}
                   title={`${item.name}：${item.count} 次`}
-                  className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-[transform,box-shadow,border-color] duration-150 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-[0_4px_10px_rgba(37,99,235,0.10)] ${
+                    className={`rounded-md border px-2 py-1 text-xs font-medium transition-[border-color,background-color] duration-150 motion-reduce:transition-none ${
                     index < 3
                       ? "border-blue-100 bg-blue-50 text-blue-700"
                       : "border-[#E4EAF2] bg-[#F8FAFC] text-[#667085]"
@@ -60,12 +60,12 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
       </section>
 
       <section className={`${CARD_CLASS} lg:col-span-5`}>
-        <CardTitle title="券商更新活跃度" subtitle="当前筛选范围内更新次数排行" />
+        <CardTitle title="券商更新活跃度" subtitle="更新次数" />
         {brokerData.length === 0 ? <EmptyState /> : <RankingList data={brokerData} />}
       </section>
 
       <section className={`${CARD_CLASS} lg:col-span-7`}>
-        <CardTitle title="近期重点更新" subtitle="优先展示最新版本与核心更新内容" />
+        <CardTitle title="近期更新" subtitle="最新 6 条" />
         {recentUpdates.length === 0 ? (
           <EmptyState />
         ) : (
@@ -88,7 +88,7 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
                       {record.appVersion || "版本未识别"}
                     </span>
                   </span>
-                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]">
+                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]" title={record.highlights[0] || record.updateSummary || "暂无更新摘要"}>
                     {record.highlights[0] || record.updateSummary || "暂无更新摘要"}
                   </span>
                 </span>
@@ -106,7 +106,7 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
 
 function CardTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="mb-4 flex items-start justify-between gap-3">
+    <div className="mb-3 flex items-start justify-between gap-3">
       <h3 className="text-[14px] font-bold text-[#172033]">{title}</h3>
       <span className="text-right text-[10px] text-[#98A2B3]">{subtitle}</span>
     </div>
@@ -241,5 +241,5 @@ function RankingList({ data }: { data: { name: string; count: number }[] }) {
 }
 
 function EmptyState() {
-  return <div className="flex h-32 items-center justify-center text-sm text-[#98A2B3]">暂无数据</div>;
+  return <div className="flex h-28 items-center justify-center text-sm text-[#98A2B3]" role="status">暂无数据</div>;
 }

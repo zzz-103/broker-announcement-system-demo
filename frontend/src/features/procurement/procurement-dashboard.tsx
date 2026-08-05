@@ -14,32 +14,19 @@ import {
   exportCsv,
   type ProcessedRecord,
 } from "@/lib/announcement-data";
-import { useFilterStore, type TimeRange } from "@/store/filter-store";
+import { useFilterStore } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
 import { BackendApiError, recordDashboardView } from "@/lib/api/backend-client";
 import { getAuditContext } from "@/lib/audit-context";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardFilters } from "@/components/dashboard-filters";
-import { DashboardTabs } from "@/components/dashboard-tabs";
+import { ProcurementTabs } from "@/components/procurement/procurement-tabs";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import type { FeedbackCategory } from "@/lib/api/backend-client";
 import type { DashboardFilters as DashboardFiltersData } from "@dashboard-data/contracts";
-
-const DOMAIN_OPTIONS = [
-  "AI 与智能化",
-  "数据治理与数据平台",
-  "财富管理与客户经营",
-  "交易、柜台与核心系统",
-  "APP 与数字化渠道",
-  "网络安全与监管科技",
-  "云计算、算力与基础设施",
-  "IT 运维与技术服务",
-  "投研资讯与金融数据",
-  "非金融科技及其他",
-];
 
 // Dynamic imports for heavy components (code splitting)
 const AdminDashboard = dynamic(
@@ -48,19 +35,19 @@ const AdminDashboard = dynamic(
 );
 const AiSummary = dynamic(
   () => import("@/components/ai-summary").then((m) => m.AiSummary),
-  { ssr: false, loading: () => <div className="h-48 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+  { ssr: false, loading: () => <div className="h-48 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
 );
 const ProcurementTrendChart = dynamic(
   () => import("@/components/charts").then((m) => m.ProcurementTrendChart),
-  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+  { ssr: false, loading: () => <div className="h-64 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
 );
 const DomainDistributionChart = dynamic(
   () => import("@/components/charts").then((m) => m.DomainDistributionChart),
-  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+  { ssr: false, loading: () => <div className="h-64 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
 );
 const StageDistributionChart = dynamic(
   () => import("@/components/charts").then((m) => m.StageDistributionChart),
-  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-white rounded-xl border border-[#E4E9F0]" /> }
+  { ssr: false, loading: () => <div className="h-64 rounded-xl border border-[#E4E9F0] bg-white motion-reduce:animate-none" /> }
 );
 const BrokerActivityCard = dynamic(
   () => import("@/components/observation-cards").then((m) => m.BrokerActivityCard),
@@ -108,16 +95,6 @@ export default function Dashboard() {
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
   const [landingResolved, setLandingResolved] = useState(false);
-  const [requestedProcurementView, setRequestedProcurementView] = useState(false);
-
-  // App Watch returns here with an explicit view marker. Admin users normally
-  // land in the admin console at "/", but this navigation must show the
-  // procurement dashboard instead.
-  useEffect(() => {
-    setRequestedProcurementView(
-      new URLSearchParams(window.location.search).get("view") === "procurement",
-    );
-  }, []);
 
   // Auth state
   const { isLoggedIn, isAdmin, username, logout, token, clearAuth } = useAuthStore();
@@ -132,9 +109,9 @@ export default function Dashboard() {
       setLandingResolved(false);
       return;
     }
-    setShowDashboard(isAdmin && !requestedProcurementView);
+    setShowDashboard(false);
     setLandingResolved(true);
-  }, [isAdmin, isLoggedIn, requestedProcurementView]);
+  }, [isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn || !token || showDashboard || !landingResolved) return;
@@ -145,7 +122,7 @@ export default function Dashboard() {
     });
   }, [clearAuth, isLoggedIn, landingResolved, showDashboard, token]);
 
-  // Broker tags: show the 20 most active brokers until explicitly expanded.
+  // Broker tags: show a compact subset until explicitly expanded.
   const [showAllBrokers, setShowAllBrokers] = useState(false);
 
   const {
@@ -356,6 +333,7 @@ export default function Dashboard() {
                 ? "待生成"
                 : "不可用"
         }
+        statusTone={dataStatus === "ready" ? "ready" : dataStatus === "loading" ? "loading" : dataStatus === "empty" ? "stale" : "unavailable"}
         statusDescription={dataUpdatedAt ? `标准化数据更新时间：${dataUpdatedAt}` : dataMessage || undefined}
         exportOptions={[
           {
@@ -458,7 +436,7 @@ export default function Dashboard() {
         />
 
         {/* Tab Bar - Sticky below header */}
-        <DashboardTabs
+        <ProcurementTabs
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           filteredCount={filteredData.length}
@@ -467,9 +445,9 @@ export default function Dashboard() {
 
         {/* Tab Content */}
         {activeTab === "ai" ? (
-          <AiSummary />
+          <div id="procurement-panel-ai" role="tabpanel" aria-labelledby="procurement-tab-ai"><AiSummary /></div>
         ) : activeTab === "overview" ? (
-          <>
+          <div id="procurement-panel-overview" role="tabpanel" aria-labelledby="procurement-tab-overview" className="space-y-4">
             {/* Metric Cards */}
             <MetricCards data={filteredData} baseline={baseline} statistics={dashboardStatistics} updatedAt={dataUpdatedAt} />
 
@@ -499,13 +477,10 @@ export default function Dashboard() {
               baseline={baseline}
               onSelectProject={setSelectedProject}
             />
-          </>
+          </div>
         ) : (
           /* Project Table Tab */
-          <ProjectTable
-            data={filteredData}
-            onSelectProject={setSelectedProject}
-          />
+          <div id="procurement-panel-table" role="tabpanel" aria-labelledby="procurement-tab-table"><ProjectTable data={filteredData} onSelectProject={setSelectedProject} /></div>
         )}
       </main>
 

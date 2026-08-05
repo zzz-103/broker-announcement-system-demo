@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface DataDefinitionModalProps {
   open: boolean;
@@ -11,24 +11,13 @@ export function DataDefinitionModal({
   open,
   onClose,
 }: DataDefinitionModalProps) {
-  if (!open) return null;
-
   return (
-    <>
-      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-8">
-        <div className="bg-white rounded-[10px] border border-[#E4E9F0] shadow-xl max-w-[640px] w-full max-h-[80vh] overflow-y-auto">
-          <div className="sticky top-0 bg-white border-b border-[#E4E9F0] px-6 py-4 flex items-center justify-between">
-            <h2 className="text-[16px] font-semibold text-[#172033]">
-              数据口径说明
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-            >
-              <X className="w-4 h-4 text-[#667085]" />
-            </button>
-          </div>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent className="max-h-[80vh] max-w-[640px] gap-0 overflow-y-auto border-[#E4E9F0] bg-white p-0">
+          <DialogHeader className="sticky top-0 z-10 border-b border-[#E4E9F0] bg-white px-6 py-4">
+            <DialogTitle className="text-[16px] font-semibold text-[#172033]">数据口径说明</DialogTitle>
+            <DialogDescription className="sr-only">招采看板指标与数据范围说明</DialogDescription>
+          </DialogHeader>
           <div className="px-6 py-5 space-y-4 text-[13px] text-[#172033] leading-relaxed">
             <p>
               <strong>公告记录不等于独立项目。</strong>
@@ -55,8 +44,7 @@ export function DataDefinitionModal({
               分类结果基于项目名称、细分品类和一级类别的关键词匹配，可能存在偏差。
             </p>
           </div>
-        </div>
-      </div>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }

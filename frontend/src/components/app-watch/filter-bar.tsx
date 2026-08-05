@@ -155,19 +155,21 @@ export function FilterBar({
   };
 
   return (
-    <div className="space-y-4 rounded-2xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)] sm:p-5">
+    <div className="space-y-3 border-y border-[#E4EAF2] bg-white px-3 py-3 sm:px-4" aria-label="App 更新筛选">
       <div className="relative group">
         <Search className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#98A2B3] transition-colors group-focus-within:text-[#2563EB]" />
         <input
+          id="app-release-search"
           type="text"
           value={filters.search}
           onChange={(event) => setFilters({ ...filters, search: event.target.value })}
           placeholder="搜索券商、App、版本或更新内容"
-          className="h-[38px] w-full rounded-lg border border-[#E4EAF2] bg-[#F8FAFC] py-2 pr-3 pl-10 text-[13px] text-[#172033] outline-none transition-all placeholder:text-[#98A2B3] focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10"
+          aria-label="搜索券商、App、版本或更新内容"
+          className="h-9 w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] py-2 pr-3 pl-10 text-[13px] text-[#172033] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[#98A2B3] focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10"
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5 border-t border-[#F0F2F5] pt-4">
+      <div className="flex flex-wrap items-center gap-2 border-t border-[#F0F2F5] pt-3">
         <span className="text-[12px] font-semibold text-[#475467]">时间范围</span>
         <HoverSelect
           value={filters.timeRange}
@@ -187,7 +189,7 @@ export function FilterBar({
           <button
             type="button"
             onClick={resetFilters}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-[#667085] transition-all hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/20 active:scale-[0.97]"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-[#667085] transition-[background-color,color,transform] duration-150 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/20 active:scale-[0.97]"
           >
             <RotateCcw className="size-3.5" />
             重置
@@ -195,7 +197,7 @@ export function FilterBar({
         )}
       </div>
 
-      <div className="grid gap-x-8 gap-y-3 border-t border-[#F0F2F5] pt-4 xl:grid-cols-2">
+      <div className="grid gap-x-8 gap-y-2.5 border-t border-[#F0F2F5] pt-3 xl:grid-cols-2">
         <FilterOptionGroup
           label="券商"
           options={brokerOptions}

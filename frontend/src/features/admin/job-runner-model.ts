@@ -50,9 +50,9 @@ export const INITIAL_CARD_STATE: Record<CardId, TaskCardState> = {
   },
   ai: {
     status: "idle",
-    summary: "基于当前正式看板数据生成 AI 情报分析。",
+    summary: "基于当前正式看板数据生成招采分析报告。",
     logs: [],
-    lastOperationLabel: "AI 情报分析",
+    lastOperationLabel: "招采分析",
   },
   "app-watch": {
     status: "idle",
@@ -92,7 +92,7 @@ export function labelForOperation(operationId: OperationId): string {
   if (operationId === "pipeline") return "自动化 Pipeline";
   if (operationId === "app-watch") return "券商App更新";
   if (operationId === "publish") return "推送";
-  return "AI 情报分析";
+  return "招采分析";
 }
 
 export function isActiveJobStatus(status: string) {

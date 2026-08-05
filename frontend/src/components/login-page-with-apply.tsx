@@ -38,7 +38,7 @@ type LoginMode = "login" | "apply" | "success";
 
 const ANIMATION_MS = 320;
 const FIELD_BASE_CLASS =
-  "w-full h-11 rounded-lg border bg-white text-sm text-[#172033] placeholder:text-[#98A2B3] shadow-[inset_0_0_0_1000px_white] focus:outline-none focus:ring-4 transition-all disabled:bg-[#F2F4F7] disabled:text-[#98A2B3] disabled:cursor-not-allowed";
+  "w-full h-11 rounded-lg border bg-white text-sm text-[#172033] placeholder:text-[#98A2B3] shadow-[inset_0_0_0_1000px_white] focus:outline-none focus:ring-4 transition-[border-color,box-shadow,background-color,color] disabled:bg-[#F2F4F7] disabled:text-[#98A2B3] disabled:cursor-not-allowed";
 const FIELD_NORMAL_CLASS =
   "border-[#D0D5DD] focus:border-[#2563EB] focus:ring-[#2563EB]/10";
 const FIELD_ERROR_CLASS =
@@ -80,10 +80,6 @@ export function LoginPageWithApply() {
     password: string;
   } | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "username" | "password" | "failed">("idle");
-  const [coords, setCoords] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-  const [btnCoords, setBtnCoords] = useState({ x: 0, y: 0 });
-  const [btnHovered, setBtnHovered] = useState(false);
   const applySubmittingRef = useRef(false);
 
   const login = useAuthStore((s) => s.login);
@@ -197,24 +193,6 @@ export function LoginPageWithApply() {
     setCopyState("idle");
   };
 
-  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setCoords({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    });
-  };
-
-  const handleBtnMouseMove = (event: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setBtnCoords({
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top,
-    });
-  };
-
-  const circleX = isHovered ? (coords.x - 250) * 0.18 : 0;
-  const circleY = isHovered ? (coords.y - 300) * 0.18 : 0;
   const modeIndex = mode === "login" ? 0 : 1;
 
   const getPanelClass = (panelMode: LoginMode) => {
@@ -223,7 +201,7 @@ export function LoginPageWithApply() {
     const translate =
       panelIndex === modeIndex ? "translate-x-0" : panelIndex < modeIndex ? "-translate-x-full" : "translate-x-full";
     return `absolute inset-0 overflow-y-auto pr-1 transition-all duration-300 ease-out motion-reduce:transition-opacity motion-reduce:duration-150 ${translate} ${
-      isActive ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+      isActive ? "visible opacity-100 pointer-events-auto" : "invisible opacity-0 pointer-events-none"
     }`;
   };
 
@@ -237,34 +215,9 @@ export function LoginPageWithApply() {
         <div className="absolute bottom-[10%] left-[10%] w-[40vw] h-[40vw] max-w-[500px] bg-indigo-100/50 rounded-full opacity-60 blur-3xl" />
       </div>
       <div className="relative flex w-full max-w-[1160px] flex-col overflow-hidden rounded-[20px] border border-[#E4E9F0] bg-white shadow-[0_24px_70px_rgba(15,32,56,0.16)] md:min-h-[640px] md:flex-row">
-        <div
-          onMouseMove={handleMouseMove}
-          onMouseEnter={() => setIsHovered(true)}
-          onMouseLeave={() => setIsHovered(false)}
-          className="relative flex w-full shrink-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_84%_20%,rgba(49,130,246,0.32),transparent_30%),linear-gradient(145deg,#071a38_0%,#0c2a58_52%,#0e4bb5_100%)] p-6 text-white md:w-[55%] md:p-12"
-        >
+        <div className="relative flex w-full shrink-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_84%_20%,rgba(49,130,246,0.22),transparent_30%),linear-gradient(145deg,#071a38_0%,#0c2a58_52%,#0e4bb5_100%)] p-6 text-white md:w-[55%] md:p-12">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,#ffffff0d_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0d_1px,transparent_1px)] bg-[size:28px_28px] opacity-60" />
           <div className="pointer-events-none absolute inset-x-[-12%] bottom-[-18%] h-[52%] rotate-[-8deg] bg-[radial-gradient(ellipse_at_center,rgba(37,99,235,0.72)_0%,rgba(37,99,235,0.16)_34%,transparent_68%)] blur-xl" />
-          {isHovered && (
-            <div
-              className="absolute pointer-events-none rounded-full bg-white/[0.15] blur-[70px] transition-opacity duration-300"
-              style={{
-                width: "320px",
-                height: "320px",
-                left: `${coords.x - 160}px`,
-                top: `${coords.y - 160}px`,
-                transform: "translate3d(0, 0, 0)",
-              }}
-            />
-          )}
-          <div
-            className="absolute -top-20 -left-20 w-60 h-60 bg-blue-500/18 rounded-full blur-3xl pointer-events-none transition-transform duration-500 ease-out"
-            style={{ transform: `translate3d(${circleX}px, ${circleY}px, 0)` }}
-          />
-          <div
-            className="absolute -bottom-20 -right-20 w-60 h-60 bg-indigo-500/22 rounded-full blur-3xl pointer-events-none transition-transform duration-700 ease-out"
-            style={{ transform: `translate3d(${-circleX}px, ${-circleY}px, 0)` }}
-          />
           <div className="relative z-10 flex h-full flex-col">
             <div className="flex items-center gap-3">
               <Image src="/brand/company-icon.png" alt="世纪证券" width={52} height={52} className="size-11 rounded-xl shadow-[0_8px_18px_rgba(0,0,0,0.22)] md:size-[52px]" priority />
@@ -277,7 +230,7 @@ export function LoginPageWithApply() {
             <div className="mt-8 grid grid-cols-3 gap-2.5 md:mt-auto md:gap-5">
               {[
                 { label: "自动采集", detail: "全网公告实时抓取", Icon: ScanLine },
-                { label: "智能分析", detail: "AI结构化处理", Icon: BrainCircuit },
+                { label: "结构化处理", detail: "提取公告关键字段", Icon: BrainCircuit },
                 { label: "数据看板", detail: "多维情报洞察", Icon: LayoutDashboard },
               ].map(({ label, detail, Icon }) => (
                 <div key={label} className="min-w-0 border-t border-white/20 pt-3 md:pt-4">
@@ -302,12 +255,13 @@ export function LoginPageWithApply() {
                 </div>
                 <form onSubmit={handleSubmit} className="space-y-3.5">
                   <div className="group">
-                    <label className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">
+                    <label htmlFor="login-username" className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">
                       用户名
                     </label>
                     <div className="relative">
                       <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-[#98A2B3] group-focus-within:text-[#2563EB] transition-colors" />
                       <input
+                        id="login-username"
                         type="text"
                         value={username}
                         onChange={(event) => setUsername(event.target.value)}
@@ -318,12 +272,13 @@ export function LoginPageWithApply() {
                     </div>
                   </div>
                   <div className="group">
-                    <label className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">
+                    <label htmlFor="login-password" className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">
                       密码
                     </label>
                     <div className="relative">
                       <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-[#98A2B3] group-focus-within:text-[#2563EB] transition-colors" />
                       <input
+                        id="login-password"
                         type={showPassword ? "text" : "password"}
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
@@ -333,6 +288,7 @@ export function LoginPageWithApply() {
                       />
                       <button
                         type="button"
+                        aria-label={showPassword ? "隐藏密码" : "显示密码"}
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#98A2B3] hover:text-[#172033] transition-colors"
                       >
@@ -344,23 +300,8 @@ export function LoginPageWithApply() {
                   <button
                     type="submit"
                     disabled={loading}
-                    onMouseMove={handleBtnMouseMove}
-                    onMouseEnter={() => setBtnHovered(true)}
-                    onMouseLeave={() => setBtnHovered(false)}
-                    className="relative overflow-hidden w-full h-11 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="relative w-full h-11 rounded-lg bg-[#1F5BB5] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-[#174B98] active:translate-y-px transition-[background-color,transform] disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {btnHovered && !loading && (
-                      <span
-                        className="absolute pointer-events-none rounded-full bg-white/20 blur-md transition-opacity duration-300"
-                        style={{
-                          width: "80px",
-                          height: "80px",
-                          left: `${btnCoords.x - 40}px`,
-                          top: `${btnCoords.y - 40}px`,
-                          transform: "translate3d(0, 0, 0)",
-                        }}
-                      />
-                    )}
                     {loading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -382,7 +323,7 @@ export function LoginPageWithApply() {
                       setError("");
                     }}
                     disabled={isTransitioning}
-                    className="w-full h-10 rounded-lg border border-[#D0D5DD] text-sm font-semibold text-[#162B49] hover:bg-[#F8FAFC] active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full h-10 rounded-lg border border-[#D0D5DD] text-sm font-semibold text-[#162B49] hover:bg-[#F8FAFC] active:translate-y-px transition-[background-color,transform] flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <UserPlus className="w-4 h-4" />
                     申请体验
@@ -411,9 +352,10 @@ export function LoginPageWithApply() {
                 <form onSubmit={handleApply} className="space-y-3.5">
                   <TextField label="姓名" value={applyName} onChange={setApplyName} placeholder="示例：张三" hasError={Boolean(error)} />
                   <div className="group">
-                    <label className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">工作邮箱</label>
-                    <div className={`flex h-11 min-w-0 overflow-hidden rounded-lg border bg-white transition-all focus-within:ring-2 ${emailError ? "border-red-300 focus-within:border-red-500 focus-within:ring-red-500/10" : "border-[#D0D5DD] focus-within:border-[#2563EB] focus-within:ring-[#2563EB]/10"}`}>
+                    <label htmlFor="apply-email-prefix" className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">工作邮箱</label>
+                    <div className={`flex h-11 min-w-0 overflow-hidden rounded-lg border bg-white transition-[border-color,box-shadow] focus-within:ring-2 ${emailError ? "border-red-300 focus-within:border-red-500 focus-within:ring-red-500/10" : "border-[#D0D5DD] focus-within:border-[#2563EB] focus-within:ring-[#2563EB]/10"}`}>
                       <input
+                        id="apply-email-prefix"
                         value={applyEmailPrefix}
                         onChange={(event) => {
                           setApplyEmailPrefix(event.target.value);
@@ -469,23 +411,8 @@ export function LoginPageWithApply() {
                   <button
                     type="submit"
                     disabled={applyLoading || isTransitioning}
-                    onMouseMove={handleBtnMouseMove}
-                    onMouseEnter={() => setBtnHovered(true)}
-                    onMouseLeave={() => setBtnHovered(false)}
-                    className="relative overflow-hidden w-full h-11 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="relative w-full h-11 rounded-lg bg-[#1F5BB5] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-[#174B98] active:translate-y-px transition-[background-color,transform] disabled:opacity-60 disabled:cursor-not-allowed"
                   >
-                    {btnHovered && !applyLoading && (
-                      <span
-                        className="absolute pointer-events-none rounded-full bg-white/20 blur-md transition-opacity duration-300"
-                        style={{
-                          width: "80px",
-                          height: "80px",
-                          left: `${btnCoords.x - 40}px`,
-                          top: `${btnCoords.y - 40}px`,
-                          transform: "translate3d(0, 0, 0)",
-                        }}
-                      />
-                    )}
                     {applyLoading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -535,7 +462,7 @@ export function LoginPageWithApply() {
                   type="button"
                   onClick={showLogin}
                   disabled={isTransitioning}
-                  className="w-full h-11 rounded-lg bg-gradient-to-r from-[#162B49] to-[#2563EB] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-[0_4px_12px_rgba(37,99,235,0.2)] hover:shadow-[0_6px_20px_rgba(37,99,235,0.3)] active:scale-[0.99] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="w-full h-11 rounded-lg bg-[#1F5BB5] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm hover:bg-[#174B98] active:translate-y-px transition-[background-color,transform] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <ArrowLeft className="w-4 h-4" />
                   返回登录
@@ -578,12 +505,14 @@ function TextField({
   type?: string;
   hasError?: boolean;
 }) {
+  const inputId = `apply-${label === "姓名" ? "name" : "department"}`;
   return (
     <div className="group">
-      <label className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">
+      <label htmlFor={inputId} className="block text-sm font-medium text-[#344054] mb-1.5 group-focus-within:text-[#2563EB] transition-colors">
         {label}
       </label>
       <input
+        id={inputId}
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -597,7 +526,7 @@ function TextField({
 
 function ErrorMessage({ message }: { message: string }) {
   return (
-    <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex items-start gap-1.5">
+    <div role="alert" aria-live="polite" className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 flex items-start gap-1.5">
       <span className="font-semibold select-none shrink-0">提示:</span>
       <span>{message}</span>
     </div>

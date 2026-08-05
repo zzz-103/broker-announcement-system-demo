@@ -6,7 +6,6 @@ import {
   displayAmountLabel,
   formatDate,
   formatAmountInWan,
-  uniqueCount,
 } from "@/lib/announcement-data";
 import { Info } from "lucide-react";
 
@@ -75,9 +74,9 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
   }, [brokers]);
 
   return (
-    <div className="col-span-1 md:col-span-6 lg:col-span-5 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between">
+    <section className="col-span-1 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 md:col-span-6 lg:col-span-5">
       <div>
-        <div className="flex items-center gap-1.5 mb-3.5">
+        <div className="mb-3 flex items-center gap-1.5">
           <h3 className="text-[14px] font-bold text-[#172033]">
             公开招采活跃主体
           </h3>
@@ -88,15 +87,15 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
             <Info className="w-3.5 h-3.5 text-[#98A2B3] hover:text-[#718096] transition-colors" />
           </span>
         </div>
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {brokers.map((b, i) => (
-            <div key={b.name} className="relative py-1.5 group select-none">
+            <div key={b.name} className="group relative py-1 select-none">
               {/* Relative indicator bar */}
               <div 
                 className="absolute bottom-0 left-8 h-[2px] bg-blue-500/10 rounded-full transition-all duration-300 motion-reduce:transition-none"
                 style={{ width: `calc(${(b.count / maxCount) * 100}% - 32px)` }}
               />
-              <div className="relative z-10 flex min-w-0 items-center gap-2 text-[13px] sm:gap-3">
+              <div className="relative z-10 flex min-w-0 items-center gap-2 text-[12px] sm:gap-3">
                 <span className="w-5 text-[11px] text-[#98A2B3] tabular-nums text-right font-medium">
                   {i + 1}
                 </span>
@@ -122,7 +121,7 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -175,20 +174,20 @@ export function SupplierObservationCard({ data }: ObservationProps) {
   }, [suppliers]);
 
   return (
-    <div className="col-span-1 md:col-span-3 lg:col-span-4 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between">
+    <section className="col-span-1 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 md:col-span-3 lg:col-span-4">
       <div>
-        <h3 className="text-[14px] font-bold text-[#172033] mb-3.5">
+        <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           结果公告供应商观察
         </h3>
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {suppliers.map((s, i) => (
-            <div key={s.name} className="relative py-1.5 group select-none">
+            <div key={s.name} className="group relative py-1 select-none">
               {/* Relative indicator bar */}
               <div 
                 className="absolute bottom-0 left-8 h-[2px] bg-teal-500/10 rounded-full transition-all duration-300 motion-reduce:transition-none"
                 style={{ width: `calc(${(s.projectCount / maxCount) * 100}% - 32px)` }}
               />
-              <div className="relative z-10 flex min-w-0 items-center gap-2 text-[13px] sm:gap-3">
+              <div className="relative z-10 flex min-w-0 items-center gap-2 text-[12px] sm:gap-3">
                 <span className="w-5 text-[11px] text-[#98A2B3] tabular-nums text-right font-medium">
                   {i + 1}
                 </span>
@@ -214,7 +213,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -239,18 +238,18 @@ export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
   }, [data]);
 
   return (
-    <div className="col-span-1 md:col-span-3 lg:col-span-3 bg-white rounded-2xl border border-[#E4EAF2] shadow-[0_1px_3px_rgba(0,0,0,0.02)] p-4 sm:p-5 flex flex-col justify-between">
+    <section className="col-span-1 flex flex-col justify-between rounded-xl border border-[#E4EAF2] bg-white p-4 shadow-[0_1px_2px_rgba(16,40,71,0.03)] sm:p-5 md:col-span-3 lg:col-span-3">
       <div>
-        <h3 className="text-[14px] font-bold text-[#172033] mb-3.5">
+        <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           公开金额案例
         </h3>
-        <div className="space-y-1.5">
+        <div className="space-y-0.5">
           {samples.map((s) => (
             <button
               key={s.amountSampleKey}
               type="button"
               onClick={() => onSelectProject(s)}
-              className="group w-full rounded-xl border border-transparent px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-blue-100 hover:bg-white hover:shadow-[0_6px_16px_rgba(16,40,71,0.10)] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transform-none"
+              className="group w-full rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors duration-150 hover:border-blue-100 hover:bg-[#FBFCFE] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transition-none"
             >
               <div className="line-clamp-2 text-[12px] font-semibold leading-relaxed text-[#172033] transition-colors group-hover:text-[#2563EB]" title={s.normalizedProjectName}>
                 {s.normalizedProjectName}
@@ -274,6 +273,6 @@ export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 }

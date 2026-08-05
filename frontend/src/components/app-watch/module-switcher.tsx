@@ -26,6 +26,7 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
             key={key}
             type="button"
             aria-current={active ? "page" : undefined}
+            aria-label={label}
             onClick={() => {
               if (key === "procurement") {
                 router.push("/?view=procurement");
@@ -35,14 +36,14 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
                 router.push("/custom-intelligence");
               }
             }}
-            className={`inline-flex h-8 w-[100px] items-center justify-center gap-1 rounded-[5px] px-2 text-[12px] font-medium whitespace-nowrap transition-colors duration-150 motion-reduce:transition-none ${
+            className={`inline-flex h-8 w-9 items-center justify-center gap-1 rounded-[5px] px-1.5 text-[12px] font-medium whitespace-nowrap transition-colors duration-150 motion-reduce:transition-none sm:w-[92px] sm:px-2 ${
               active
                 ? "bg-white/[0.14] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
                 : "text-slate-300 hover:bg-white/[0.08] hover:text-white"
             }`}
           >
             <Icon className="size-3.5 shrink-0" strokeWidth={1.8} />
-            {label}
+            <span className="hidden sm:inline">{label}</span>
           </button>
         );
       })}

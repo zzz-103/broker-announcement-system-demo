@@ -2,19 +2,11 @@
 
 import {
   AlertCircle,
-  BrainCircuit,
   ChevronDown,
-  Clock3,
-  FileText,
   Lightbulb,
   Loader2,
-  Pencil,
   Play,
-  Plus,
-  RefreshCw,
-  Search,
   Sparkles,
-  Tag,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -41,7 +33,6 @@ import {
 } from "@/lib/api/custom-intelligence";
 import type {
   CustomIntelligenceExecution,
-  CustomIntelligenceOption,
   CustomIntelligenceOptionsResponse,
   CustomIntelligenceExecutionStatus,
   IntelligenceTopic,
@@ -63,8 +54,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  CustomIntelligenceTabs,
+  ExecutionList,
+  TopicList,
+  type CustomIntelligenceTab,
+} from "@/features/custom-intelligence/custom-intelligence-sections";
 
-type ActiveTab = "instant" | "topics" | "executions";
+type ActiveTab = CustomIntelligenceTab;
 
 const DEFAULT_FORM: InstantSearchRequest = {
   question: "",
@@ -172,14 +169,6 @@ function mergeExecution(
   const next = [...list];
   next[index] = incoming;
   return next;
-}
-
-function optionLabel<T extends string>(
-  options: CustomIntelligenceOption<T>[],
-  value: string | undefined,
-  fallback = "—",
-): string {
-  return options.find((item) => item.value === value)?.label ?? fallback;
 }
 
 function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
@@ -389,18 +378,6 @@ function ConfigFields({
   );
 }
 
-function StatusPill({ status }: { status: CustomIntelligenceExecutionStatus }) {
-  const style = status === "succeeded"
-    ? "bg-emerald-50 text-emerald-700 border-emerald-100"
-    : status === "failed"
-      ? "bg-red-50 text-red-700 border-red-100"
-      : status === "empty"
-        ? "bg-slate-100 text-slate-600 border-slate-200"
-        : "bg-amber-50 text-amber-700 border-amber-100";
-  const label = status === "succeeded" ? "已完成" : status === "failed" ? "失败" : status === "empty" ? "无结果" : status === "running" ? "执行中" : "排队中";
-  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${style}`}>{isActiveExecution(status) && <Loader2 className="size-3 animate-spin" />}{label}</span>;
-}
-
 function TextList({ items, empty = "暂无" }: { items: string[] | undefined; empty?: string }) {
   const values = (items ?? []).filter(Boolean);
   if (!values.length) return <span className="text-sm text-[#98A2B3]">{empty}</span>;
@@ -436,7 +413,7 @@ function ReportDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const report = (execution?.report ?? null) as Partial<IntelligenceReport> | null;
-  const sources = execution?.sources ?? [];
+  const sources = useMemo(() => execution?.sources ?? [], [execution?.sources]);
   const sourceMap = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
   const focusSections = (report?.focus_sections ?? []) as IntelligenceFocusSection[];
   return (
@@ -507,7 +484,6 @@ export default function CustomIntelligencePage() {
   const [topics, setTopics] = useState<IntelligenceTopic[]>([]);
   const [executions, setExecutions] = useState<CustomIntelligenceExecution[]>([]);
   const [executionsTotal, setExecutionsTotal] = useState(0);
-  const [loadingTopics, setLoadingTopics] = useState(false);
   const [loadingExecutions, setLoadingExecutions] = useState(false);
   const [activeExecutionId, setActiveExecutionId] = useState<number | null>(null);
   const [pageError, setPageError] = useState("");
@@ -540,19 +516,6 @@ export default function CustomIntelligencePage() {
     setPageError(errorMessage(error, fallback));
     return false;
   }, [clearAuth]);
-
-  const loadTopics = useCallback(async (signal?: AbortSignal) => {
-    if (!token) return;
-    setLoadingTopics(true);
-    try {
-      const response = await fetchCustomIntelligenceTopics(token, signal);
-      setTopics(response.topics);
-    } catch (error) {
-      if (!isAbortError(error)) handleError(error, "无法加载情报主题");
-    } finally {
-      if (!signal?.aborted) setLoadingTopics(false);
-    }
-  }, [handleError, token]);
 
   const loadExecutions = useCallback(async (signal?: AbortSignal) => {
     if (!token) return;
@@ -877,6 +840,7 @@ export default function CustomIntelligencePage() {
                 ? "服务就绪"
                 : "待配置"
         }
+        statusTone={activeExecutionId !== null || optionsLoading ? "loading" : options.service_configured ? "ready" : "unavailable"}
         statusDescription={
           activeExecutionId !== null
             ? "当前有一条自定义情报正在执行"
@@ -905,8 +869,8 @@ export default function CustomIntelligencePage() {
       />
 
       <main className="mx-auto max-w-[1600px] min-w-0 space-y-4 px-3 py-4 sm:px-8 sm:py-5">
-        {(pageError || notice) && <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${pageError ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700"}`}><AlertCircle className="mt-0.5 size-4 shrink-0" /><span className="whitespace-pre-wrap break-words">{pageError || notice}</span><button className="ml-auto shrink-0 opacity-60 hover:opacity-100" onClick={() => { setPageError(""); setNotice(""); }} aria-label="关闭提示"><X className="size-4" /></button></div>}
-        {!optionsLoading && !options.service_configured && <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">搜索服务尚未配置。你仍可先编辑和保存主题，执行时请联系管理员完成服务端配置。</div>}
+        {(pageError || notice) && <div role={pageError ? "alert" : "status"} aria-live={pageError ? "assertive" : "polite"} className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${pageError ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700"}`}><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 whitespace-pre-wrap break-words">{pageError || notice}</span><button type="button" className="ml-auto shrink-0 opacity-60 hover:opacity-100" onClick={() => { setPageError(""); setNotice(""); }} aria-label="关闭提示"><X className="size-4" aria-hidden="true" /></button></div>}
+        {!optionsLoading && !options.service_configured && <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">搜索服务尚未配置。可先编辑和保存主题，执行时再联系管理员完成服务端配置。</div>}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-[#172033] sm:text-[26px]">自定义情报</h2>
@@ -914,20 +878,18 @@ export default function CustomIntelligencePage() {
           </div>
           {activeExecutionId !== null && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              <span className="inline-flex items-center gap-1.5"><Loader2 className="size-3.5 animate-spin" />有一条情报正在执行</span>
+              <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite"><Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />有一条情报正在执行</span>
             </div>
           )}
         </div>
 
-        <div className="flex gap-1 overflow-x-auto border-b border-[#DDE5F0]">
-          {([ ["instant", "即时搜索", Search], ["topics", "情报主题", Tag], ["executions", "执行记录", Clock3] ] as const).map(([tab, label, Icon]) => <button key={tab} onClick={() => setActiveTab(tab)} className={`inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-semibold transition ${activeTab === tab ? "border-[#3568C8] text-[#2455AC]" : "border-transparent text-[#667085] hover:text-[#344054]"}`}><Icon className="size-4" />{label}{tab === "executions" && executionsTotal > 0 && <span className="rounded-full bg-[#EEF4FF] px-1.5 text-[10px] text-[#315EA8]">{executionsTotal}</span>}</button>)}
-        </div>
+        <CustomIntelligenceTabs activeTab={activeTab} executionCount={executionsTotal} onChange={setActiveTab} />
 
         {activeTab === "instant" && (
-          <section className="rounded-2xl border border-[#E4E9F0] bg-white p-4 shadow-[0_4px_18px_rgba(16,40,71,0.05)] sm:p-6">
+          <section id="custom-intelligence-panel-instant" role="tabpanel" aria-label="即时搜索" aria-busy={optionsLoading} className="border-y border-[#E4E9F0] bg-white px-3 py-4 sm:px-4">
             <div className="mb-5">
-              <h3 className="text-base font-bold text-[#172033]">即时搜索</h3>
-              <p className="mt-1 text-xs leading-5 text-[#667085]">输入核心问题并选择分析视角和时间范围即可开始。</p>
+              <h3 className="text-base font-semibold text-[#172033]">即时搜索</h3>
+              <p className="mt-1 text-xs leading-5 text-[#667085]">填写核心问题、分析视角和时间范围。</p>
             </div>
             <div className="mb-5"><ConfigFields value={form} onChange={setForm} options={visibleOptions} /></div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E4E9F0] pt-4">
@@ -950,9 +912,24 @@ export default function CustomIntelligencePage() {
           </section>
         )}
 
-        {activeTab === "topics" && <section className="rounded-2xl border border-[#E4E9F0] bg-white p-4 shadow-[0_4px_18px_rgba(16,40,71,0.05)] sm:p-6"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-[#172033]">情报主题</h3><p className="mt-1 text-xs text-[#667085]">保存常用配置，按需启停或手动执行。主题属于当前登录用户。</p></div><button onClick={openCreateTopic} className="inline-flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8]"><Plus className="size-3.5" />新建主题</button></div>{loadingTopics ? <div className="flex items-center gap-2 py-10 text-sm text-[#667085]"><Loader2 className="size-4 animate-spin" />正在加载主题…</div> : topics.length === 0 ? <div className="rounded-xl border border-dashed border-[#C8D7F0] bg-[#F8FAFD] py-8 text-center"><BrainCircuit className="mx-auto size-8 text-[#9FB9E8]" /><p className="mt-3 text-sm font-semibold text-[#344054]">还没有保存的情报主题</p><p className="mt-1 text-xs text-[#98A2B3]">可直接新建，或在即时搜索完成后保存。</p><button onClick={openCreateTopic} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8]"><Plus className="size-3.5" />新建主题</button></div> : <div className="grid gap-3 lg:grid-cols-2">{topics.map((topic) => <article key={topic.id} className={`rounded-xl border p-4 transition ${topic.enabled ? "border-[#D8E4F7] bg-white" : "border-[#E4E9F0] bg-[#FAFBFC] opacity-75"}`}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h4 className="truncate text-sm font-bold text-[#243B61]">{topic.name}</h4><p className="mt-1 line-clamp-2 text-xs leading-5 text-[#667085]">{topic.description || "未填写主题描述"}</p></div><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${topic.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{topic.enabled ? "已启用" : "已停用"}</span></div><div className="mt-3 flex flex-wrap gap-1.5">{topic.keywords.slice(0, 5).map((keyword) => <span key={keyword} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[10px] text-[#315EA8]">{keyword}</span>)}{topic.keywords.length > 5 && <span className="text-[10px] text-[#98A2B3]">+{topic.keywords.length - 5}</span>}</div><p className="mt-3 text-[10px] text-[#98A2B3]">{optionLabel(visibleOptions.perspectives, topic.analysis_perspective)} · {optionLabel(visibleOptions.time_ranges, topic.time_range)} · 更新于 {formatDate(topic.updated_at)}</p><div className="mt-4 flex flex-wrap gap-2 border-t border-[#E4E9F0] pt-3"><button onClick={() => toggleTopic(topic)} disabled={topicUpdatingId === topic.id || activeExecutionId !== null} className="rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:opacity-50">{topicUpdatingId === topic.id ? "保存中…" : topic.enabled ? "停用" : "启用"}</button><button onClick={() => openEditTopic(topic)} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]"><Pencil className="size-3" />编辑</button><button onClick={() => executeTopic(topic)} disabled={!topic.enabled || activeExecutionId !== null} className="ml-auto inline-flex items-center gap-1 rounded-md bg-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-45"><Play className="size-3" />手动执行</button></div></article>)}</div>}</section>}
+        {activeTab === "topics" && (
+          <section id="custom-intelligence-panel-topics" role="tabpanel" aria-label="情报主题" className="border-y border-[#E4E9F0] bg-white px-3 py-4 sm:px-4">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-[#172033]">情报主题</h3>
+                <p className="mt-1 text-xs text-[#667085]">保存常用配置，按需启停或执行。</p>
+              </div>
+              <button type="button" onClick={openCreateTopic} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]"><span aria-hidden="true">＋</span>新建主题</button>
+            </div>
+            <TopicList topics={topics} loading={optionsLoading} options={visibleOptions} activeExecutionId={activeExecutionId} topicUpdatingId={topicUpdatingId} onCreate={openCreateTopic} onToggle={toggleTopic} onEdit={openEditTopic} onExecute={executeTopic} />
+          </section>
+        )}
 
-        {activeTab === "executions" && <section className="rounded-2xl border border-[#E4E9F0] bg-white p-4 shadow-[0_4px_18px_rgba(16,40,71,0.05)] sm:p-6"><div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-base font-bold text-[#172033]">执行记录</h3><p className="mt-1 text-xs text-[#667085]">查看每次检索的状态、来源与情报报告；失败记录可重新执行。</p></div><button onClick={() => void loadExecutions()} disabled={loadingExecutions} className="inline-flex items-center gap-1.5 rounded-lg border border-[#D0D5DD] px-3 py-2 text-xs font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:opacity-50"><RefreshCw className={`size-3.5 ${loadingExecutions ? "animate-spin" : ""}`} />刷新记录</button></div>{loadingExecutions && executions.length === 0 ? <div className="flex items-center gap-2 py-10 text-sm text-[#667085]"><Loader2 className="size-4 animate-spin" />正在加载执行记录…</div> : executions.length === 0 ? <div className="rounded-xl border border-dashed border-[#C8D7F0] bg-[#F8FAFD] py-8 text-center"><FileText className="mx-auto size-8 text-[#9FB9E8]" /><p className="mt-3 text-sm font-semibold text-[#344054]">暂无执行记录</p><p className="mt-1 text-xs text-[#98A2B3]">完成一次即时搜索或主题执行后，结果会显示在这里。</p><button onClick={() => setActiveTab("instant")} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8]"><Search className="size-3.5" />开始搜索</button></div> : <div className="space-y-3">{executions.map((execution) => <article key={execution.id} className={`rounded-xl border p-4 ${isActiveExecution(execution.status) ? "border-amber-200 bg-amber-50/30" : "border-[#E4E9F0] bg-white"}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h4 className="truncate text-sm font-bold text-[#243B61]">{execution.topic_name || (execution.trigger_type === "instant" ? "即时搜索" : "自定义情报执行")}</h4><StatusPill status={execution.status} /><span className="rounded bg-[#F2F4F7] px-1.5 py-0.5 text-[10px] text-[#667085]">{execution.trigger_type === "topic" ? "主题执行" : execution.trigger_type === "rerun" ? "重跑" : "即时搜索"}</span></div><p className="mt-1 line-clamp-2 text-xs leading-5 text-[#667085]">{execution.original_query || execution.snapshot.question || "未记录问题"}</p></div><div className="shrink-0 text-right text-[11px] text-[#98A2B3]">{formatDate(execution.created_at)}</div></div><div className="mt-3 grid gap-2 text-xs text-[#667085] sm:grid-cols-3"><span>来源数：<b className="text-[#344054]">{execution.sources.length}</b></span><span>完成时间：<b className="text-[#344054]">{formatDate(execution.completed_at)}</b></span><span className="truncate">{execution.error_message ? <span className="text-red-600">错误：{execution.error_message}</span> : <span>报告：{execution.report?.title || "待生成"}</span>}</span></div><div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-[#E4E9F0] pt-3">{execution.status === "succeeded" && execution.trigger_type === "instant" && <button onClick={() => openCreateTopicFromExecution(execution)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF]"><Plus className="size-3" />保存为主题</button>}<button onClick={() => void openReport(execution)} disabled={!execution.report && isActiveExecution(execution.status)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50"><FileText className="size-3" />{isActiveExecution(execution.status) ? "执行中" : "查看报告"}</button><button onClick={() => void rerun(execution)} disabled={activeExecutionId !== null || isActiveExecution(execution.status)} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className="size-3" />重跑</button></div></article>)}</div>}</section>}
+        {activeTab === "executions" && (
+          <section id="custom-intelligence-panel-executions" role="tabpanel" aria-label="执行记录" className="border-y border-[#E4E9F0] bg-white px-3 py-4 sm:px-4">
+            <ExecutionList executions={executions} loading={loadingExecutions} onRefresh={() => void loadExecutions()} onStartSearch={() => setActiveTab("instant")} onSaveTopic={openCreateTopicFromExecution} onOpenReport={(execution) => void openReport(execution)} onRerun={(execution) => void rerun(execution)} activeExecutionId={activeExecutionId} />
+          </section>
+        )}
       </main>
 
       <Dialog open={topicDialogOpen} onOpenChange={(open) => !topicSaving && setTopicDialogOpen(open)}>
@@ -966,7 +943,7 @@ export default function CustomIntelligencePage() {
               <FieldLabel hint="必填">主题名称</FieldLabel>
               <input value={topicName} onChange={(event) => setTopicName(event.target.value)} maxLength={120} placeholder="例如：券商财富管理竞争监测" className={FIELD_INPUT_CLASS} />
             </div>
-            <ConfigFields value={topicDraft} onChange={setTopicDraft} options={visibleOptions} showQuestion={false} advancedDefaultOpen />
+            <ConfigFields value={topicDraft} onChange={setTopicDraft} options={visibleOptions} showQuestion={false} />
             <div className="mt-4 rounded-xl border border-[#C8D7F0] bg-[#F8FAFD] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>

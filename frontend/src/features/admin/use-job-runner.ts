@@ -548,13 +548,13 @@ export function useJobRunner({
       handleUnauthorized();
       return;
     }
-    beginOperation("ai_analysis", "ai", "正在生成 AI 情报分析...");
+    beginOperation("ai_analysis", "ai", "正在生成招采分析...");
     const controller = new AbortController();
     activeControllerRef.current = controller;
     try {
       const result = await generateAiAnalysis(token, controller.signal);
       if (controller.signal.aborted || !mountedRef.current) return;
-      const summary = `AI 情报分析已生成，样本数 ${result.meta?.source_count ?? 0}。`;
+      const summary = `招采分析已生成，样本数 ${result.meta?.source_count ?? 0}。`;
       appendLog("ai", "system", summary);
       finalizeTask("ai_analysis", "succeeded", summary);
     } catch (error) {
@@ -568,7 +568,7 @@ export function useJobRunner({
           ? backendErrorMessage(error)
           : error instanceof Error
             ? error.message
-            : "AI 情报分析生成失败。";
+            : "招采分析生成失败。";
       appendLog("ai", "system", summary);
       finalizeTask("ai_analysis", "failed", summary);
     }

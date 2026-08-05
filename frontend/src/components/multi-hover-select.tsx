@@ -41,55 +41,50 @@ export function MultiHoverSelect({
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [panelWidth, setPanelWidth] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const clearCloseTimer = useCallback(() => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
-  }, []);
-
   const closeDropdown = useCallback(() => {
-    clearCloseTimer();
     setIsOpen(false);
-  }, [clearCloseTimer]);
+  }, []);
 
   const openDropdown = useCallback(() => {
     // Close any other open dropdown first
     if (activeDropdownClose && activeDropdownClose !== closeDropdown) {
       activeDropdownClose();
     }
-    clearCloseTimer();
     setIsOpen(true);
     activeDropdownClose = closeDropdown;
     // Measure trigger width
     if (triggerRef.current) {
       setPanelWidth(Math.max(triggerRef.current.offsetWidth, 120));
     }
-  }, [clearCloseTimer, closeDropdown]);
-
-  const handleMouseEnter = useCallback(() => {
-    openDropdown();
-  }, [openDropdown]);
-
-  const handleMouseLeave = useCallback(() => {
-    closeTimerRef.current = setTimeout(() => {
-      setIsOpen(false);
-      if (activeDropdownClose === closeDropdown) {
-        activeDropdownClose = null;
-      }
-    }, 50);
   }, [closeDropdown]);
 
   useEffect(() => {
     return () => {
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
       if (activeDropdownClose === closeDropdown) activeDropdownClose = null;
     };
   }, [closeDropdown]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) closeDropdown();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeDropdown();
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeDropdown, isOpen]);
 
   const handleSelect = (value: string) => {
     if (value === "") {
@@ -118,15 +113,16 @@ export function MultiHoverSelect({
     <div
       ref={containerRef}
       className={`relative min-w-0 ${className}`}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
       <button
         ref={triggerRef}
         type="button"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => (isOpen ? closeDropdown() : openDropdown())}
         className={`
           w-full flex items-center justify-between gap-1.5 px-3 py-1.5 rounded-md text-[13px]
-          border transition-all duration-150 whitespace-nowrap
+          border transition-[background-color,border-color,color] duration-150 whitespace-nowrap
           ${
             values.length > 0
               ? "border-[#2563EB]/30 bg-[#2563EB]/5 text-[#2563EB]"
@@ -142,13 +138,13 @@ export function MultiHoverSelect({
       </button>
 
       {/* Dropdown panel */}
-      <div
+      {isOpen && <div
+        role="listbox"
+        aria-multiselectable="true"
         className={`
           absolute top-full left-0 mt-1 z-50
-          bg-white/80 backdrop-blur-xl rounded-lg
-          border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.06)]
-          origin-top transition-all duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)]
-          ${isOpen ? "opacity-100 scale-y-100 pointer-events-auto" : "opacity-0 scale-y-95 pointer-events-none"}
+          bg-white rounded-lg
+          border border-[#D9E2EC] shadow-[0_8px_24px_rgba(16,40,71,0.12)]
         `}
         style={{ minWidth: panelWidth, maxHeight: maxHeight + 8 }}
       >
@@ -168,6 +164,8 @@ export function MultiHoverSelect({
           {!normalizedQuery && (
             <button
               type="button"
+              role="option"
+              aria-selected={values.length === 0}
               onClick={() => onChange([])}
               className={`
                 w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2
@@ -186,6 +184,8 @@ export function MultiHoverSelect({
               <button
                 key={opt.value}
                 type="button"
+                role="option"
+                aria-selected={isSelected}
                 onClick={() => handleSelect(opt.value)}
                 className={`
                   w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2
@@ -196,7 +196,7 @@ export function MultiHoverSelect({
                 <span
                   className={`
                     w-4 h-4 shrink-0 rounded border flex items-center justify-center
-                    transition-all duration-150
+                    transition-[background-color,border-color] duration-150
                     ${isSelected ? "bg-[#2563EB] border-[#2563EB]" : "border-[#D0D5DD] bg-white"}
                   `}
                 >
@@ -227,7 +227,7 @@ export function MultiHoverSelect({
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
