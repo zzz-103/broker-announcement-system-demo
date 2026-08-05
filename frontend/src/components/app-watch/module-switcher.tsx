@@ -7,20 +7,25 @@ export type ActiveModule = "procurement" | "app-watch" | "custom-intelligence";
 
 const MODULES: { key: ActiveModule; label: string; icon: typeof LayoutGrid }[] = [
   { key: "procurement", label: "招采情报", icon: LayoutGrid },
-  { key: "app-watch", label: "App更新", icon: Smartphone },
+  { key: "app-watch", label: "App 更新", icon: Smartphone },
   { key: "custom-intelligence", label: "自定义情报", icon: BrainCircuit },
 ];
 
 export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule }) {
   const router = useRouter();
-  
+
   return (
-    <div className="inline-flex items-center gap-0.5 rounded-lg border border-white/15 bg-white/5 p-0.5">
+    <nav
+      aria-label="业务模块"
+      className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-md border border-white/12 bg-white/[0.04] p-0.5"
+    >
       {MODULES.map(({ key, label, icon: Icon }) => {
         const active = key === activeModule;
         return (
           <button
             key={key}
+            type="button"
+            aria-current={active ? "page" : undefined}
             onClick={() => {
               if (key === "procurement") {
                 router.push("/?view=procurement");
@@ -30,17 +35,17 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
                 router.push("/custom-intelligence");
               }
             }}
-            className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all whitespace-nowrap sm:text-[12px] ${
+            className={`inline-flex h-8 w-[100px] items-center justify-center gap-1 rounded-[5px] px-2 text-[12px] font-medium whitespace-nowrap transition-colors duration-150 motion-reduce:transition-none ${
               active
-                ? "bg-white text-[#102847] shadow-sm"
-                : "text-slate-200 hover:bg-white/10 hover:text-white"
+                ? "bg-white/[0.14] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
+                : "text-slate-300 hover:bg-white/[0.08] hover:text-white"
             }`}
           >
-            <Icon className="w-3.5 h-3.5" />
+            <Icon className="size-3.5 shrink-0" strokeWidth={1.8} />
             {label}
           </button>
         );
       })}
-    </div>
+    </nav>
   );
 }

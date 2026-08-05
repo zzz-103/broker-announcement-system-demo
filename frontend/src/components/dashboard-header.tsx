@@ -1,168 +1,201 @@
 "use client";
 
-import { useRef } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Download, Settings, LogOut, ArrowLeft, HelpCircle, MessageSquarePlus } from "lucide-react";
-import type { ProcessedRecord } from "@/lib/announcement-data";
-import { formatDate } from "@/lib/announcement-data";
+import { ChevronDown, Download, LogOut, Settings, UserRound } from "lucide-react";
 import { ModuleSwitcher, type ActiveModule } from "@/components/app-watch/module-switcher";
-import { APP_VERSION } from "@/lib/app-version";
+
+export interface DashboardExportOption {
+  id: string;
+  label: string;
+  description?: string;
+  onSelect: () => void;
+  disabled?: boolean;
+}
 
 interface DashboardHeaderProps {
   username: string;
-  totalBrokers: number;
-  baseline: Date | null;
-  filteredData: ProcessedRecord[];
   isAdmin: boolean;
-  showDashboard: boolean;
-  activeModule?: ActiveModule;
-  onShowModal: () => void;
-  onExport: () => void;
-  onOpenFeedback: () => void;
-  onShowDashboard: (show: boolean) => void;
+  activeModule: ActiveModule;
+  statusText: string;
+  statusLabel?: string;
+  statusDescription?: string;
+  exportOptions: DashboardExportOption[];
+  onOpenAdmin?: () => void;
   onLogout: () => void;
+}
+
+function useDismissableMenu(open: boolean, onClose: () => void, menuId: "export" | "user") {
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest(`[data-dashboard-menu="${menuId}"]`)) return;
+      onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuId, onClose, open]);
+}
+
+function ExportMenu({ options }: { options: DashboardExportOption[] }) {
+  const [open, setOpen] = useState(false);
+  const hasEnabledOption = options.some((option) => !option.disabled);
+
+  useDismissableMenu(open, () => setOpen(false), "export");
+
+  return (
+    <div className="relative shrink-0" data-dashboard-menu="export">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        disabled={!hasEnabledOption}
+        className="inline-flex h-9 w-[84px] items-center justify-center gap-1.5 rounded-md border border-blue-300/40 bg-blue-500/90 px-2 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(37,99,235,0.22)] transition-colors hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-55"
+      >
+        <Download className="size-3.5" />
+        <span>导出</span>
+        <ChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[224px] rounded-lg border border-[#D9E2EC] bg-white p-1.5 text-[#172033] shadow-[0_12px_32px_rgba(16,40,71,0.18)]"
+        >
+          <p className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#98A2B3]">导出数据</p>
+          {options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="menuitem"
+              disabled={option.disabled}
+              onClick={() => {
+                setOpen(false);
+                option.onSelect();
+              }}
+              className="flex w-full items-start justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-[#F2F6FC] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-[12px] font-semibold text-[#344054]">{option.label}</span>
+                {option.description && <span className="mt-0.5 block truncate text-[10px] text-[#98A2B3]">{option.description}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserMenu({
+  username,
+  isAdmin,
+  onOpenAdmin,
+  onLogout,
+}: Pick<DashboardHeaderProps, "username" | "isAdmin" | "onOpenAdmin" | "onLogout">) {
+  const [open, setOpen] = useState(false);
+
+  useDismissableMenu(open, () => setOpen(false), "user");
+
+  return (
+    <div className="relative shrink-0" data-dashboard-menu="user">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`用户菜单：${username || "当前用户"}`}
+        title={username || "当前用户"}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex h-9 w-[132px] min-w-0 items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2.5 text-left text-[12px] text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+      >
+        <UserRound className="size-3.5 shrink-0 text-slate-300" />
+        <span className="min-w-0 flex-1 truncate">{username || "当前用户"}</span>
+        <ChevronDown className={`size-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[224px] rounded-lg border border-[#D9E2EC] bg-white p-1.5 text-[#172033] shadow-[0_12px_32px_rgba(16,40,71,0.18)]"
+        >
+          <div className="border-b border-[#EEF2F6] px-2.5 pb-2 pt-1">
+            <p className="break-all text-[12px] font-semibold text-[#172033]">{username || "当前用户"}</p>
+            <p className="mt-0.5 text-[10px] text-[#98A2B3]">{isAdmin ? "管理员账号" : "业务用户"}</p>
+          </div>
+          {isAdmin && onOpenAdmin && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onOpenAdmin();
+              }}
+              className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-semibold text-[#344054] transition-colors hover:bg-[#F2F6FC]"
+            >
+              <Settings className="size-3.5 text-[#315EA8]" />
+              管理控制台
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-semibold text-[#667085] transition-colors hover:bg-rose-50 hover:text-rose-600"
+          >
+            <LogOut className="size-3.5" />
+            退出登录
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function DashboardHeader({
   username,
-  totalBrokers,
-  baseline,
-  filteredData,
   isAdmin,
-  showDashboard,
   activeModule,
-  onShowModal,
-  onExport,
-  onOpenFeedback,
-  onShowDashboard,
+  statusText,
+  statusLabel = "最新数据",
+  statusDescription,
+  exportOptions,
+  onOpenAdmin,
   onLogout,
 }: DashboardHeaderProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const container = containerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    container.style.setProperty("--pointer-x", `${x}px`);
-    container.style.setProperty("--pointer-y", `${y}px`);
-  };
-
   return (
     <header
-      ref={containerRef}
-      onMouseMove={handleMouseMove}
-      className="relative flex min-w-0 flex-col overflow-hidden px-3 py-3 text-white sm:h-[76px] sm:flex-row sm:items-center sm:px-8 sm:py-0 sticky top-0 z-40 border-b border-blue-500/20 shrink-0"
-      style={{
-        background: "linear-gradient(105deg, #102847 0%, #17385F 58%, #1E4070 100%)",
-        "--pointer-x": "-999px",
-        "--pointer-y": "-999px",
-      } as React.CSSProperties}
+      className="sticky top-0 z-40 h-[68px] min-w-0 overflow-visible border-b border-blue-400/20 bg-[linear-gradient(105deg,#102847_0%,#17385F_58%,#1E4070_100%)] text-white"
+      aria-label="平台导航"
     >
-      {/* Non-reactive Pointer Glow */}
-      <div
-        className="absolute pointer-events-none inset-0 mix-blend-screen opacity-70 transition-opacity duration-300 motion-reduce:hidden"
-        style={{
-          background: "radial-gradient(380px circle at var(--pointer-x) var(--pointer-y), rgba(37, 99, 235, 0.22), transparent)",
-        }}
-      />
-
-      {/* Brand Title Area */}
-      <div className="relative z-10 flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          {showDashboard && (
-            <button
-              onClick={() => onShowDashboard(false)}
-              className="mr-2 flex items-center gap-1 text-xs text-slate-300 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              返回
-            </button>
-          )}
-          <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg sm:size-9" priority />
-          <h1 className="min-w-0 text-[15px] font-bold leading-tight tracking-wide text-white sm:text-[18px]">
-            <span>世纪证券业务信息平台</span>
-          </h1>
-          <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] font-medium text-blue-100">
-            v{APP_VERSION}
-          </span>
+      <div className="mx-auto flex h-full min-w-0 max-w-[1600px] items-center gap-3 px-3 sm:px-6 lg:px-8">
+        <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
+          <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg" priority />
+          <h1 className="min-w-0 truncate text-[15px] font-bold tracking-wide text-white sm:text-[17px]">世纪证券业务信息平台</h1>
         </div>
-        <p className="mt-0.5 hidden truncate text-[11px] font-normal text-[#B7C6D9] sm:block sm:text-[12px]">
-          跟踪招采动态 · 监测券商 App 更新 · 辅助业务研判
-        </p>
-      </div>
 
-      {/* Grouped Right Area */}
-      <div className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-300 sm:mt-0 sm:gap-4 sm:text-[12px]">
-        {/* 0. Module Switcher (NEW) */}
-        {activeModule && (
-          <div className="flex shrink-0 items-center gap-1.5 border-r border-white/10 pr-1.5 sm:border-l sm:border-r-0 sm:pr-0 sm:pl-3.5">
-            <ModuleSwitcher activeModule={activeModule} />
+        <ModuleSwitcher activeModule={activeModule} />
+
+        <div className="flex shrink-0 items-center justify-end gap-2">
+          <div
+            className="hidden h-9 w-[146px] shrink-0 items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5 text-[11px] text-slate-300 lg:flex"
+            title={statusDescription || `${statusLabel}：${statusText}`}
+          >
+            <span className="size-1.5 shrink-0 rounded-full bg-emerald-400" />
+            <span className="shrink-0 text-slate-400">{statusLabel}</span>
+            <span className="min-w-0 truncate font-medium text-white">{statusText}</span>
           </div>
-        )}
-
-        {/* 1. Data Status Group */}
-        <div className="flex items-center gap-3.5 border-r border-white/10 pr-3.5 hidden md:flex">
-          <span className="whitespace-nowrap flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            最新数据：<span className="text-white font-medium">{formatDate(baseline)}</span>
-          </span>
-          <span className="whitespace-nowrap">
-            覆盖主体：<span className="text-white font-medium">{totalBrokers}</span>
-          </span>
-        </div>
-
-        {/* 2. Main Actions Group */}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none sm:gap-2.5">
-          <button
-            onClick={onShowModal}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/15 text-slate-200 hover:text-white hover:bg-white/10 active:scale-[0.98] transition-all whitespace-nowrap"
-          >
-            <HelpCircle className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">数据口径</span><span className="sm:hidden">口径</span>
-          </button>
-          <button
-            onClick={onOpenFeedback}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-sky-300/40 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white active:scale-[0.98] transition-all whitespace-nowrap"
-            title="补充券商、反馈数据问题或提出产品建议"
-          >
-            <MessageSquarePlus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">提交反馈</span><span className="sm:hidden">反馈</span>
-          </button>
-          <button
-            onClick={onExport}
-            className="group relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white font-semibold shadow-[0_2px_8px_rgba(37,99,235,0.35)] hover:bg-blue-500 active:scale-[0.97] transition-all duration-150 whitespace-nowrap"
-          >
-            <Download className="w-3.5 h-3.5 transition-transform group-hover:-translate-y-0.5" />
-            <span className="hidden sm:inline">导出当前数据</span><span className="sm:hidden">导出</span>
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-normal ml-0.5">
-              {filteredData.length}
-            </span>
-          </button>
-        </div>
-
-        {/* 3. Admin & User Controls Group */}
-        <div className="flex shrink-0 items-center gap-1.5 border-l border-white/10 pl-1.5 sm:gap-3 sm:pl-3.5">
-          {isAdmin && (
-            <button
-              onClick={() => onShowDashboard(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-amber-400/40 text-amber-300 hover:bg-amber-400/10 active:scale-[0.98] transition-all"
-            >
-              <Settings className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">管理控制台</span><span className="sm:hidden">管理</span>
-            </button>
-          )}
-          <div className="flex items-center gap-2.5">
-            <span className="text-slate-300 max-w-[80px] truncate hidden sm:inline">{username}</span>
-            <button
-              onClick={onLogout}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 active:scale-[0.95] transition-all"
-              title="退出登录"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+          <ExportMenu options={exportOptions} />
+          <UserMenu username={username} isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onLogout={onLogout} />
         </div>
       </div>
     </header>

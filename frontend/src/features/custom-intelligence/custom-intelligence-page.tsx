@@ -8,7 +8,6 @@ import {
   FileText,
   Lightbulb,
   Loader2,
-  LogOut,
   Pencil,
   Play,
   Plus,
@@ -18,14 +17,14 @@ import {
   Tag,
   X,
 } from "lucide-react";
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
-import { ModuleSwitcher } from "@/components/app-watch/module-switcher";
+import { DashboardHeader } from "@/components/dashboard-header";
 import { HoverSelect } from "@/components/hover-select";
-import { APP_VERSION } from "@/lib/app-version";
 import { BackendApiError, getApiBaseUrlLabel, isAbortError } from "@/lib/api/backend-client";
+import { exportCustomIntelligenceCsv, exportCustomIntelligenceJson } from "@/lib/custom-intelligence-export";
 import {
   createCustomIntelligenceExecution,
   createCustomIntelligenceTopic,
@@ -498,7 +497,8 @@ function ReportDialog({
 }
 
 export default function CustomIntelligencePage() {
-  const { isLoggedIn, token, username, logout, clearAuth } = useAuthStore();
+  const router = useRouter();
+  const { isLoggedIn, token, username, isAdmin, logout, clearAuth } = useAuthStore();
   const restoreSession = useAuthStore((state) => state.restoreSession);
   const [activeTab, setActiveTab] = useState<ActiveTab>("instant");
   const [form, setForm] = useState<InstantSearchRequest>(DEFAULT_FORM);
@@ -863,18 +863,46 @@ export default function CustomIntelligencePage() {
 
   return (
     <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#F4F7FB]">
-      <header className="relative z-40 flex min-w-0 flex-col overflow-hidden border-b border-blue-500/20 bg-[linear-gradient(105deg,#102847_0%,#17385F_58%,#1E4070_100%)] px-3 py-3 text-white sm:h-[76px] sm:flex-row sm:items-center sm:px-8 sm:py-0">
-        <div className="relative z-10 flex min-w-0 flex-1 items-center gap-2">
-          <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg sm:size-9" priority />
-          <div className="min-w-0"><h1 className="truncate text-[16px] font-bold tracking-wide sm:text-[18px]">自定义情报</h1><p className="hidden truncate text-[11px] text-[#B7C6D9] sm:block">配置即时搜索并管理常用情报主题</p></div>
-          <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] text-blue-100">v{APP_VERSION}</span>
-        </div>
-        <div className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-300 sm:mt-0 sm:gap-4 sm:text-[12px]">
-          <div className="flex shrink-0 items-center border-r border-white/10 pr-1.5 sm:border-l sm:border-r-0 sm:pr-0 sm:pl-3.5"><ModuleSwitcher activeModule="custom-intelligence" /></div>
-          <div className="hidden items-center gap-1.5 border-r border-white/10 pr-3.5 md:flex"><span className="size-1.5 rounded-full bg-emerald-400" />当前登录：<span className="font-medium text-white">{username}</span></div>
-          <button onClick={logout} className="inline-flex items-center gap-1 rounded-lg border border-white/15 px-2.5 py-1.5 text-slate-200 transition hover:bg-white/10 hover:text-white"><LogOut className="size-3.5" /><span className="hidden sm:inline">退出</span></button>
-        </div>
-      </header>
+      <DashboardHeader
+        username={username}
+        isAdmin={isAdmin}
+        activeModule="custom-intelligence"
+        statusLabel="当前状态"
+        statusText={
+          activeExecutionId !== null
+            ? "执行中"
+            : optionsLoading
+              ? "加载中"
+              : options.service_configured
+                ? "服务就绪"
+                : "待配置"
+        }
+        statusDescription={
+          activeExecutionId !== null
+            ? "当前有一条自定义情报正在执行"
+            : options.service_configured
+              ? "自定义情报搜索服务已配置"
+              : "搜索服务尚未配置"
+        }
+        exportOptions={[
+          {
+            id: "executions-csv",
+            label: "已加载记录 · CSV",
+            description: `${executions.length} 条记录`,
+            disabled: executions.length === 0,
+            onSelect: () => exportCustomIntelligenceCsv(executions),
+          },
+          {
+            id: "executions-json",
+            label: "已加载记录 · JSON",
+            description: "保留结构化报告与来源",
+            disabled: executions.length === 0,
+            onSelect: () => exportCustomIntelligenceJson(executions),
+          },
+        ]}
+        onOpenAdmin={() => router.push("/")}
+        onLogout={logout}
+      />
 
       <main className="mx-auto max-w-[1600px] min-w-0 space-y-4 px-3 py-4 sm:px-8 sm:py-5">
         {(pageError || notice) && <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-sm ${pageError ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700"}`}><AlertCircle className="mt-0.5 size-4 shrink-0" /><span className="whitespace-pre-wrap break-words">{pageError || notice}</span><button className="ml-auto shrink-0 opacity-60 hover:opacity-100" onClick={() => { setPageError(""); setNotice(""); }} aria-label="关闭提示"><X className="size-4" /></button></div>}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useState, useMemo, useRef, useLayoutEffect } from "react";
+import { useCallback, useDeferredValue, useEffect, useState, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { HelpCircle, MessageSquarePlus, RefreshCw } from "lucide-react";
 import {
   DataNotGeneratedError,
   loadAndProcessData,
@@ -10,6 +10,7 @@ import {
   getDashboardStatistics,
   getValidBrokerName,
   recordMatchesSearch,
+  formatDate,
   exportCsv,
   type ProcessedRecord,
 } from "@/lib/announcement-data";
@@ -25,8 +26,7 @@ import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import type { FeedbackCategory } from "@/lib/api/backend-client";
-import type { ActiveModule } from "@/components/app-watch/module-switcher";
-import type { DashboardFilters as DashboardFiltersData, DashboardOverview } from "@dashboard-data/contracts";
+import type { DashboardFilters as DashboardFiltersData } from "@dashboard-data/contracts";
 
 const DOMAIN_OPTIONS = [
   "AI 与智能化",
@@ -92,7 +92,6 @@ const DataDefinitionModal = dynamic(
 );
 
 export default function Dashboard() {
-  const router = useRouter();
   const [allData, setAllData] = useState<ProcessedRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
@@ -104,12 +103,10 @@ export default function Dashboard() {
   const [showDashboard, setShowDashboard] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
-  const [dataOverview, setDataOverview] = useState<DashboardOverview | null>(null);
   const [dataFilters, setDataFilters] = useState<DashboardFiltersData | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
-  const [activeModule, setActiveModule] = useState<ActiveModule>("procurement");
   const [landingResolved, setLandingResolved] = useState(false);
   const [requestedProcurementView, setRequestedProcurementView] = useState(false);
 
@@ -120,31 +117,6 @@ export default function Dashboard() {
     setRequestedProcurementView(
       new URLSearchParams(window.location.search).get("view") === "procurement",
     );
-  }, []);
-
-  // Detect path changes and update activeModule accordingly
-  useEffect(() => {
-    const handleLocationChange = () => {
-      const path = window.location.pathname;
-      if (path === "/app-updates") {
-        setActiveModule("app-watch");
-      } else {
-        setActiveModule("procurement");
-      }
-    };
-
-    // Initial check
-    handleLocationChange();
-
-    // Listen to popstate events (browser back/forward)
-    const handlePopState = () => {
-      handleLocationChange();
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => {
-      window.removeEventListener('popstate', handlePopState);
-    };
   }, []);
 
   // Auth state
@@ -172,10 +144,6 @@ export default function Dashboard() {
       }
     });
   }, [clearAuth, isLoggedIn, landingResolved, showDashboard, token]);
-
-  // Header height measurement for sticky tab bar positioning
-  const headerRef = useRef<HTMLElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(72);
 
   // Broker tags: show the 20 most active brokers until explicitly expanded.
   const [showAllBrokers, setShowAllBrokers] = useState(false);
@@ -210,10 +178,9 @@ export default function Dashboard() {
     setDataStatus("loading");
     setDataMessage(null);
     loadAndProcessData(token)
-      .then(({ records, updatedAt, overview, filters }) => {
+      .then(({ records, updatedAt, filters }) => {
         setAllData(records);
         setDataUpdatedAt(updatedAt);
-        setDataOverview(overview);
         setDataFilters(filters);
         setDataStatus(records.length === 0 ? "empty" : "ready");
         setDataMessage(
@@ -231,14 +198,12 @@ export default function Dashboard() {
         if (err instanceof DataNotGeneratedError) {
           setAllData([]);
           setDataUpdatedAt(null);
-          setDataOverview(null);
           setDataFilters(null);
           setDataStatus("empty");
           setDataMessage(err.message);
         } else {
           setAllData([]);
           setDataUpdatedAt(null);
-          setDataOverview(null);
           setDataFilters(null);
           setDataStatus("error");
           setDataMessage(err instanceof Error ? err.message : "数据加载失败");
@@ -344,17 +309,6 @@ export default function Dashboard() {
     });
   }, [dataBeforeBrokerFilter]);
 
-  // Measure header height for sticky tab bar positioning
-  useLayoutEffect(() => {
-    const header = headerRef.current;
-    if (!header) return;
-    const update = () => setHeaderHeight(header.offsetHeight);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(header);
-    return () => ro.disconnect();
-  }, []);
-
   const hasFilters = Boolean(
     search ||
     brokerNames.length > 0 ||
@@ -389,23 +343,76 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
       {/* ─── Top Navigation ─── */}
-            <DashboardHeader
+      <DashboardHeader
         username={username}
-              totalBrokers={dataOverview?.tender_projects.broker_count ?? dashboardStatistics.brokerCount}
-        baseline={baseline}
-        filteredData={filteredData}
         isAdmin={isAdmin}
-        showDashboard={showDashboard}
-        activeModule={activeModule}
-        onShowModal={() => setShowModal(true)}
-        onExport={() => exportCsv(filteredData)}
-        onOpenFeedback={() => openFeedback()}
-        onShowDashboard={setShowDashboard}
+        activeModule="procurement"
+        statusText={
+          dataStatus === "ready"
+            ? formatDate(baseline)
+            : dataStatus === "loading"
+              ? "加载中"
+              : dataStatus === "empty"
+                ? "待生成"
+                : "不可用"
+        }
+        statusDescription={dataUpdatedAt ? `标准化数据更新时间：${dataUpdatedAt}` : dataMessage || undefined}
+        exportOptions={[
+          {
+            id: "filtered-csv",
+            label: "当前筛选 · CSV",
+            description: `${filteredData.length} 条记录`,
+            disabled: filteredData.length === 0,
+            onSelect: () => exportCsv(filteredData),
+          },
+          {
+            id: "all-csv",
+            label: "全部数据 · CSV",
+            description: `${allData.length} 条记录`,
+            disabled: allData.length === 0,
+            onSelect: () => exportCsv(allData),
+          },
+        ]}
+        onOpenAdmin={() => setShowDashboard(true)}
         onLogout={logout}
       />
 
       {/* ─── Main Content ─── */}
       <main className="mx-auto max-w-[1600px] min-w-0 px-3 py-4 space-y-4 sm:px-8 sm:py-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-[#172033] sm:text-2xl">招采情报</h2>
+            <p className="mt-1 text-xs text-[#667085]">跟踪公开招采动态，辅助项目研判与业务跟进。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={refreshData}
+              disabled={isLoading}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+              刷新数据
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD]"
+            >
+              <HelpCircle className="size-3.5" />
+              数据口径
+            </button>
+            <button
+              type="button"
+              onClick={() => openFeedback()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#C8D7F0] bg-[#F8FAFD] px-3 text-xs font-semibold text-[#315EA8] transition-colors hover:bg-[#EEF4FF]"
+              title="补充券商、反馈数据问题或提出产品建议"
+            >
+              <MessageSquarePlus className="size-3.5" />
+              提交反馈
+            </button>
+          </div>
+        </div>
         {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
           <div
             className={`rounded-[10px] border px-4 py-3 text-[13px] ${
@@ -455,7 +462,7 @@ export default function Dashboard() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           filteredCount={filteredData.length}
-          headerHeight={headerHeight}
+          headerHeight={68}
         />
 
         {/* Tab Content */}

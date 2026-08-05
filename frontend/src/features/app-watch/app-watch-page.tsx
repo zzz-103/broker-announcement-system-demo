@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
-import { LogOut, RefreshCw, TrendingUp, List, ArrowLeft } from "lucide-react";
-import Image from "next/image";
+import { RefreshCw, TrendingUp, List } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
 import { BackendApiError } from "@/lib/api/backend-client";
@@ -15,15 +14,15 @@ import {
   appReleaseMatchesSearch,
   getUpdateTypeDistribution,
   getFeatureTagDistribution,
+  exportAppReleaseCsv,
   type AppReleaseRecord,
 } from "@/lib/app-release-data";
-import { APP_VERSION } from "@/lib/app-version";
+import { DashboardHeader } from "@/components/dashboard-header";
 import { KpiCard } from "@/components/app-watch/kpi-card";
 import { FilterBar } from "@/components/app-watch/filter-bar";
 import { OverviewCharts } from "@/components/app-watch/overview-charts";
 import { ReleaseTable } from "@/components/app-watch/release-table";
 import { ReleaseDetailDrawer } from "@/components/app-watch/release-detail-drawer";
-import { ModuleSwitcher } from "@/components/app-watch/module-switcher";
 import type { DashboardFilters, DashboardOverview } from "@dashboard-data/contracts";
 
 type ViewMode = "overview" | "details";
@@ -189,73 +188,57 @@ export default function AppUpdatesPage() {
 
   return (
     <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
-      {/* Header */}
-      <header
-        className="relative flex min-w-0 flex-col overflow-hidden px-3 py-3 text-white sm:h-[76px] sm:flex-row sm:items-center sm:px-8 sm:py-0 sticky top-0 z-40 border-b border-blue-500/20 shrink-0"
-        style={{ background: "linear-gradient(105deg, #102847 0%, #17385F 58%, #1E4070 100%)" }}
-      >
-        <div className="relative z-10 flex flex-1 items-center gap-2 min-w-0">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => router.push("/?view=procurement")}
-              className="mr-2 flex items-center gap-1 text-xs text-slate-300 hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              返回
-            </button>
-            <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg sm:size-9" priority />
-            <span className="text-lg font-bold">券商 App 更新看板</span>
-            <span className="rounded border border-white/15 bg-white/10 px-1.5 py-0.5 text-[9px] text-blue-100">v{APP_VERSION}</span>
-          </div>
-        </div>
-
-        <div className="relative z-10 mt-2 flex min-w-0 items-center gap-1.5 text-[11px] text-slate-300 sm:mt-0 sm:gap-4 sm:text-[12px]">
-          {/* Module Switcher */}
-          <div className="flex shrink-0 items-center gap-1.5 border-r border-white/10 pr-1.5 sm:border-l sm:border-r-0 sm:pr-0 sm:pl-3.5">
-            <ModuleSwitcher activeModule="app-watch" />
-          </div>
-
-          {/* Data Status Group */}
-          <div className="flex items-center gap-3.5 border-r border-white/10 pr-3.5 hidden md:flex">
-              <span className="whitespace-nowrap flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                最新数据：
-                <span className="text-white font-medium">
-                  {updatedAt ? updatedAt.slice(0, 10) : "数据未生成"}
-                </span>
-              </span>
-          </div>
-
-          {/* Main Actions Group */}
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:flex-none sm:gap-2.5">
-            <button
-              onClick={refreshData}
-              disabled={isBusy}
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-white/15 text-slate-200 hover:text-white hover:bg-white/10 active:scale-[0.98] transition-all whitespace-nowrap disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isBusy ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">刷新数据</span>
-            </button>
-          </div>
-
-          {/* Admin & User Controls Group */}
-          <div className="flex shrink-0 items-center gap-1.5 border-l border-white/10 pl-1.5 sm:gap-3 sm:pl-3.5">
-            <span className="text-slate-300 max-w-[80px] truncate hidden sm:inline">
-              {username}{isAdmin ? "（管理员）" : ""}
-            </span>
-            <button
-              onClick={logout}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 active:scale-[0.95] transition-all"
-              title="退出登录"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </header>
+      <DashboardHeader
+        username={username}
+        isAdmin={isAdmin}
+        activeModule="app-watch"
+        statusText={
+          dataStatus === "ready"
+            ? formatReleaseDate(updatedAt)
+            : dataStatus === "loading"
+              ? "加载中"
+              : dataStatus === "empty"
+                ? "待生成"
+                : "不可用"
+        }
+        statusDescription={updatedAt ? `App 更新数据更新时间：${updatedAt}` : dataMessage || undefined}
+        exportOptions={[
+          {
+            id: "filtered-csv",
+            label: "当前筛选 · CSV",
+            description: `${filteredRecords.length} 条记录`,
+            disabled: filteredRecords.length === 0,
+            onSelect: () => exportAppReleaseCsv(filteredRecords),
+          },
+          {
+            id: "all-csv",
+            label: "全部数据 · CSV",
+            description: `${records.length} 条记录`,
+            disabled: records.length === 0,
+            onSelect: () => exportAppReleaseCsv(records),
+          },
+        ]}
+        onOpenAdmin={() => router.push("/")}
+        onLogout={logout}
+      />
 
       {/* Main content */}
       <main className="mx-auto max-w-[1600px] min-w-0 px-3 py-4 space-y-4 sm:px-8 sm:py-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-[#172033] sm:text-2xl">App 更新</h2>
+            <p className="mt-1 text-xs text-[#667085]">汇总券商 App 版本变化、功能更新与体验改进。</p>
+          </div>
+          <button
+            type="button"
+            onClick={refreshData}
+            disabled={isBusy}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[#D0D5DD] bg-white px-3 text-xs font-semibold text-[#475467] transition-colors hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className={`size-3.5 ${isBusy ? "animate-spin" : ""}`} />
+            刷新数据
+          </button>
+        </div>
         {/* Status message */}
         {(dataStatus === "loading" || dataStatus === "empty" || dataStatus === "error") && (
           <div

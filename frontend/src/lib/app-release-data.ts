@@ -154,3 +154,55 @@ export function formatReleaseDate(value: Date | string | null): string {
   if (!date || Number.isNaN(date.getTime())) return "日期未识别";
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
+
+const APP_RELEASE_CSV_HEADERS = [
+  "券商",
+  "券商代码",
+  "App名称",
+  "版本号",
+  "平台",
+  "发布日期",
+  "更新类型",
+  "更新摘要",
+  "功能标签",
+  "更新要点",
+  "来源链接",
+  "采集时间",
+  "处理时间",
+] as const;
+
+function escapeCsvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function formatAppReleasePublishDate(record: AppReleaseRecord): string {
+  const formattedDate = formatReleaseDate(record.publishDate);
+  return formattedDate === "日期未识别" ? record.publishDateRaw || formattedDate : formattedDate;
+}
+
+export function exportAppReleaseCsv(records: AppReleaseRecord[]): void {
+  const rows = records.map((record) => [
+    record.brokerName || record.rawBrokerName || record.brokerCode || "未知券商",
+    record.brokerCode || "未提供",
+    record.appName || "未知应用",
+    record.appVersion || "未识别",
+    record.platform || "未知",
+    formatAppReleasePublishDate(record),
+    record.updateType || "其他",
+    record.updateSummary || "未提供",
+    record.featureTags.length > 0 ? record.featureTags.join("、") : "无",
+    record.highlights.length > 0 ? record.highlights.join("；") : "无",
+    record.sourceUrl || "未提供",
+    record.crawlTime || "未提供",
+    record.processedAt || "未提供",
+  ]);
+  const content = [APP_RELEASE_CSV_HEADERS, ...rows]
+    .map((row) => row.map(escapeCsvCell).join(","))
+    .join("\n");
+  const url = URL.createObjectURL(new Blob(["\uFEFF" + content], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `券商App更新_${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
