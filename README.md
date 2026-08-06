@@ -50,11 +50,12 @@ python scripts/export_dashboard_data.py --zip
 backend/api/                 FastAPI、认证、任务、数据包导出
 backend/data/                正式 CSV/JSON 和导出的 dashboard-data
 backend/broker_sources/      券商官网来源选择与采集
+backend/matching/            采购/结果公告匹配与复核
 backend/broker_app_watch/    券商 App 更新采集与结构化
 backend/config/broker_app_watch/  App 来源与分类配置
 backend/data/broker_app_watch/    App raw/processed/exports 运行数据
 backend/python-*/            金采网公告爬虫
-frontend/src/features/       正式前端业务模块
+frontend/src/features/       正式前端业务模块（procurement / app-watch / admin / custom-intelligence）
 shared/dashboard-data/       标准数据包 Schema
 ```
 
@@ -68,6 +69,8 @@ App 更新模块从仓库根目录手动检查或 dry-run：
 ```
 
 Windows 使用 `.venv\Scripts\python.exe` 替换解释器路径。正式刷新仍由主 FastAPI 任务入口调用；可选定时入口复用 `python -m backend.api.scheduler`。
+
+AI 自定义情报中心提供即时搜索、主题管理与后台执行，默认复用 `USER_DB_PATH` 数据库；百度千帆密钥仅配置在后端环境变量（详见 [docs/operations.md](docs/operations.md)）。
 
 ## 常用验证
 

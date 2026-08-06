@@ -16,7 +16,7 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 
 ## 结构约定
 
-- `src/features/`：采购看板、App Watch 和管理员控制台入口。
+- `src/features/`：采购看板、App Watch、管理员控制台和 AI 自定义情报中心入口。
 - `src/lib/api/`：集中管理 FastAPI、SSE、契约和数据包请求。
 - `src/components/`：看板表格、图表、筛选器和详情抽屉。
 - `../shared/dashboard-data/`：标准数据包 Schema，与后端导出层字段保持一致。

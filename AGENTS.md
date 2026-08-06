@@ -71,6 +71,7 @@ D:\broker-announcement-system-demo
 - 读取 SSE
 - 展示任务状态和日志
 - 请求看板数据
+- 提供采购看板、App 更新与 AI 自定义情报中心页面
 - 展示图表、表格和 AI 分析结果
 - 仅在开发和构建阶段运行 Node.js；生产由 FastAPI 托管静态产物
 
@@ -109,38 +110,46 @@ D:\broker-announcement-system-demo
 ```text
 frontend/
 ├── src/app/
-│   ├── page.tsx              # 看板主页面 (包含用户及管理员面板入口)
+│   ├── page.tsx              # 主看板页面（采购看板）
+│   ├── app-updates/page.tsx  # App 更新页面
+│   ├── custom-intelligence/page.tsx # AI 自定义情报中心页面
 │   ├── globals.css           # 全局样式
 │   └── layout.tsx            # 全局布局
 ├── src/components/
-│   ├── admin-dashboard.tsx       # 管理员任务调度与配置控制台
-│   ├── admin-task-progress.tsx   # 任务统一进度条组件
-│   ├── admin-task-log-dialog.tsx # 详细日志弹窗组件
-│   ├── user-approval-manager.tsx # 用户审批及权限管理组件
-│   ├── login-page-with-apply.tsx # 登录与资格申请组件
-│   ├── charts.tsx                # 图表组件 (数据看板)
-│   ├── project-table.tsx         # 招采项目表格展示
-│   ├── ai-summary.tsx            # AI 智能摘要展示
-│   └── executive-summary.tsx     # 核心指标与高管摘要
+│   ├── admin-task-progress.tsx / admin-task-log-dialog.tsx # 任务进度与日志弹窗
+│   ├── ai-summary.tsx / charts.tsx / project-table.tsx     # 看板图表、摘要与表格
+│   ├── app-watch/            # App 更新筛选、图表与表格组件
+│   ├── procurement/          # 招采页签与筛选组件
+│   └── ui/                   # 通用展示组件
+├── src/features/
+│   ├── admin/                # 管理员控制台、useJobRunner 任务管理
+│   ├── app-watch/            # App Watch 页面模块
+│   ├── custom-intelligence/  # AI 自定义情报中心页面模块
+│   └── procurement/          # 采购看板页面模块
 ├── src/lib/
-│   ├── api/
-│   │   └── backend-client.ts # 集中式 FastAPI 客户端封装
-│   ├── announcement-data.ts  # 数据模型定义与转换逻辑
+│   ├── api/                  # 集中式 FastAPI/SSE 客户端与领域 API
+│   ├── announcement-data.ts  # 招采数据模型与转换逻辑
 │   └── utils.ts              # 通用辅助工具
-├── src/store/
-│   ├── auth-store.ts         # 登录会话与 Token 状态管理
-│   └── filter-store.ts       # 筛选条件状态管理
+├── src/store/                # 登录会话与筛选条件状态
+├── src/hooks/                # 通用 React Hooks
 └── .env.example              # 前端环境变量模板
 
 backend/
 ├── api/
-│   ├── main.py               # FastAPI 后端入口及核心 API 路由
+│   ├── main.py               # FastAPI 入口：应用装配、中间件与静态托管
+│   ├── routes/               # 领域路由（accounts/datasets/jobs/ai/dashboard-data/custom-intelligence）
 │   ├── job_manager.py        # 子进程任务调度与状态管理锁
+│   ├── job_commands.py       # 可信子进程固定命令
 │   ├── scheduler.py          # 独立定时任务调度进程 (APScheduler)
 │   ├── ai_analysis.py        # AI 智能情报分析处理逻辑
-│   ├── user_store.py         # 用户账号存储及 SQLite 数据库接口
+│   ├── dashboard_package.py / dashboard_data.py # dashboard-data 数据包与公告响应缓存
+│   ├── custom_intelligence_service.py / qianfan_search.py # 自定义情报服务与百度千帆搜索
+│   ├── auth.py / session_store.py / user_store.py / audit_store.py # 认证、会话、账号与审计
 │   └── requirements.txt      # 后端 Python 依赖清单
 ├── broker_app_watch/         # 券商 App 更新采集、解析、LLM、存储与 CLI
+├── broker_sources/           # 券商官网来源选择与直连采集
+├── matching/                 # 采购/结果公告规则匹配与复核
+├── llm_table/                # LLM 结构化表格提取与解析
 ├── config/
 │   ├── broker_app_watch/     # App 来源与分类配置
 │   ├── llm_api_config.json   # 外部 LLM API 密钥与配置 (不提交)
@@ -148,18 +157,18 @@ backend/
 ├── data/
 │   ├── announcement_table.csv  # 正式结构化招采数据 CSV (原子替换)
 │   ├── ai-analysis.json        # AI 情报分析结果缓存 JSON (原子替换)
+│   ├── dashboard-data/         # 标准数据包导出目录
 │   ├── broker_app_watch/       # App raw/processed/exports 运行数据
-│   ├── users.db                # 用户账号 SQLite 数据库
-│   └── staging/
-│       └── announcement_table.csv # LLM 结构化提取候选临时数据
-├── llm_table/
-│   └── llm_markdown_table_builder.py # LLM 结构化表格提取与解析脚本
-└── python-http-www-cfcpn-com-jcw/
-    ├── cfcpn_scraper.py      # 爬虫抓取脚本
-    └── output/notices/       # 爬虫抓取输出 notices 目录 (.md 格式)
+│   ├── users.db / audit.db     # 用户账号与审计 SQLite 数据库
+│   ├── supplemental/           # 可选持久补充数据目录
+│   └── staging/                # LLM 候选、匹配与汇总临时数据
+
+shared/dashboard-data/        # 标准数据包 Schema（前后端共享）
+scripts/                      # Windows 发布脚本与无界面数据导出
+docs/                         # 架构与运维文档
 ```
 
-旧运行时数据源 `frontend/public/data/announcement_table.csv` 不再作为正式数据源。正式结构化数据默认位于 `backend/data/announcement_table.csv`。
+正式结构化数据默认位于 `backend/data/announcement_table.csv`，前端不直接读取原始 CSV。
 
 ---
 
@@ -216,7 +225,7 @@ announcement_table.csv
 
 实际字段必须以代码为准。
 
-当前核心接口：
+当前核心接口（以代码为准，领域路由见 `backend/api/routes/`）：
 
 ```text
 POST /api/login
@@ -224,7 +233,9 @@ GET  /api/health
 
 POST /api/jobs/scraper
 POST /api/jobs/llm
+POST /api/jobs/llm-external
 POST /api/jobs/pipeline
+POST /api/jobs/app-watch
 POST /api/internal/scheduled-pipeline
 POST /api/internal/scheduled-app-watch
 GET  /api/jobs/{job_id}
@@ -233,13 +244,37 @@ GET  /api/jobs/{job_id}/events
 
 GET  /api/data/announcements
 POST /api/data/announcements/publish
+GET  /api/app-releases
 
 GET  /api/ai-analysis
 POST /api/ai-analysis
 
-GET    /api/admin/users
-POST   /api/admin/users
-DELETE /api/admin/users/{user_id}
+GET  /api/dashboard-data/manifest
+GET  /api/dashboard-data/files/{dataset}
+GET  /api/dashboard-data/export-status
+POST /api/dashboard-data/export
+GET  /api/dashboard-data/export.zip
+
+GET  /api/custom-intelligence/options
+POST /api/custom-intelligence/keyword-suggestions
+GET/POST /api/custom-intelligence/topics
+GET/POST /api/custom-intelligence/topics/{topic_id}
+POST /api/custom-intelligence/topics/{topic_id}/enabled
+POST /api/custom-intelligence/topics/{topic_id}/execute
+GET/POST /api/custom-intelligence/executions
+GET /api/custom-intelligence/executions/{execution_id}
+POST /api/custom-intelligence/executions/{execution_id}/rerun
+
+GET/POST/DELETE /api/admin/users
+GET  /api/admin/audit/summary
+GET  /api/admin/audit/events
+GET  /api/admin/feedback
+POST /api/admin/feedback/{feedback_id}/status
+POST /api/admin/verify-password
+POST /api/users/apply
+POST /api/audit/qr-visit
+POST /api/audit/dashboard-view
+POST /api/feedback
 ```
 
 ---
@@ -567,10 +602,23 @@ ANNOUNCEMENT_STAGING_CSV_PATH=backend/data/staging/announcement_table.csv
 ANNOUNCEMENT_CSV_PATH=backend/data/announcement_table.csv
 ANNOUNCEMENT_BACKUP_RETENTION=3
 USER_DB_PATH=backend/data/users.db
+AUDIT_DB_PATH=backend/data/audit.db
 
 AI_ANALYSIS_CACHE_PATH=backend/data/ai-analysis.json
 AI_ANALYSIS_WINDOW_DAYS=30
 AI_ANALYSIS_TIMEOUT_SECONDS=120
+
+# AI 自定义情报中心（密钥仅配置在后端环境，不使用 NEXT_PUBLIC_ 前缀）
+CUSTOM_INTELLIGENCE_DB_PATH=
+CUSTOM_INTELLIGENCE_MAX_WORKERS=2
+BAIDU_QIANFAN_API_KEY=
+BAIDU_QIANFAN_MODEL=
+BAIDU_QIANFAN_ENDPOINT=https://qianfan.baidubce.com/v2/ai_search/chat/completions
+BAIDU_QIANFAN_AUTH_HEADER=Authorization
+BAIDU_QIANFAN_TIMEOUT_SECONDS=120
+
+# dashboard-data 标准数据包导出目录
+DASHBOARD_DATA_EXPORT_DIR=backend/data/dashboard-data
 
 # 流水线阶段 AI 分析配置
 PIPELINE_ANALYSIS_ENABLED=true
@@ -787,71 +835,11 @@ Codex 必须遵守：
 
 ## 22. 当前项目状态
 
-截至本次更新，已完成：
+当前正式链路已就绪：
 
-- FastAPI 服务
-- 管理员登录
-- Bearer Session Token
-- 爬虫任务及 SSE 日志
-- LLM 结构化任务及 SSE 日志
-- 爬虫与 LLM 互斥
-- `GET /api/data/announcements`
-- 前端真实登录
-- 前端运行爬虫和 LLM
-- 前端实时日志
-- 前端通过 FastAPI 加载看板
-- CSV 原子写入
-- 管理员用户资格审批录入
-- `GET/POST/DELETE /api/admin/users`
-- 审批用户登录看板
-- FastAPI AI 情报分析接口 (`GET/POST /api/ai-analysis`)
-- `ai-analysis.json` 后端缓存（原子写入）
-- 前端 AI 情报分析已迁移至 FastAPI
-- LLM 输出候选 CSV（`backend/data/staging/announcement_table.csv`）
-- 推送接口 (`POST /api/data/announcements/publish`) 实现原子替换
-- 全局互斥（爬虫、LLM、推送、AI 分析、流水线操作同一时间只允许一个执行）
-- 统一任务进度条（`AdminTaskProgress`）
-- 详细日志弹窗（`AdminTaskLogDialog`，点击图标查看，不直接展开在页面上）
-- SSE 首事件超时后的状态轮询回退，避免前端永久停留在运行中
-- 任务状态接口返回 `pid/log_count/last_event_at/process_alive/events` 诊断字段
-- 三张任务卡片统一排版，按钮固定在底部，高度对齐
-- LLM 成功后不刷新看板，仅推送成功后刷新
-- 推送失败时正式 CSV 保持不变（原子替换保证）
-- `backend/data/staging/.gitkeep` 已提交，运行时 CSV 通过 `.gitignore` 排除
-- 自动化流水线（Pipeline）一键运行功能（串联 scraper -> llm -> analysis）与 API 触发
-- Pipeline 已扩展为采购/结果双公告爬取、双 LLM 结构化、规则候选匹配、LLM 双重复核和保守汇总；匹配产物仅写入 staging，仍需人工审核后发布
-- 未匹配结果公告可作为独立“结果公示”记录追加到最终看板数据，已匹配结果仍合并到采购公告记录
-- 独立定时任务调度进程（Scheduler），基于 APScheduler 实现 CRON 调度，持有 `X-Scheduler-Token` 安全头进行内部验证触发
-- 任务取消机制：通过 `POST /api/jobs/{job_id}/cancel` 支持中止运行中的子进程或流水线
-- 采购公告与结果公告规则匹配器（`backend/matching/project_matcher.py`），输出匹配、候选分数、未匹配结果和运行摘要
-- 用户访问与登录审计（二维码访问、资格申请、成功登录、进入看板及管理员查看）
-- 世纪证券品牌 Logo、浏览器图标与页面标题接入
-- 看板、登录页和项目明细的移动端可读性优化
-- Next.js 静态导出并由单 worker FastAPI 同端口托管，生产无需常驻 Node.js
-- 公告响应单进程缓存、gzip 压缩与 ETag/304 条件请求
-- 前端搜索延迟计算、搜索文本预计算与重复基准扫描消除
-- 爬虫公告元数据单次扫描、LLM 客户端延迟加载及正式 CSV 备份保留上限
-- 公告与 App Release CSV 流式 gzip 响应缓存、公告 `view=dashboard` 字段投影及最多两条缓存保留
-- Session 与已完成任务有界保留（默认 1000/100），任务事件单次入队
-- 主前端按 procurement、app-watch、admin 业务域组织，API 客户端按领域拆分并保留兼容入口
-- Windows 四服务发布增加 App Watch 数据目录、Compose 挂载和镜像内 CLI 导入预检
-- 数据、任务/SSE、AI 分析路由已从 `main.py` 拆入 `backend/api/routes/`
-- 公告与 App Watch 筛选统计由访问端单次扫描完成，重复数据请求使用浏览器 ETag/304 协商
-- 账号、审批、反馈和审计路由已迁入领域路由，`main.py` 仅保留应用装配
-- 管理员任务执行、SSE、轮询恢复、取消及资源清理统一由 `useJobRunner` 管理
-- 顶层 `broker-app-watch` 已整合为 `backend/broker_app_watch`，复用后端依赖、配置、数据挂载和单一 FastAPI
-
-- 券商官网直连采集已完成 Windows TLS 兼容验收；中信、华西均可两页完整采集，来源选择与 LLM 双重复核统一读取 `output/selected`
-- LLM 增量处理兼容旧版扁平 `notices` 与新版券商子目录，避免目录迁移触发历史公告重复调用
-- 平台名称已调整为“世纪证券业务信息平台”，覆盖招采公告与券商 App 更新数据
-- 双通道采集日志使用等高、顶部对齐且独立滚动的金采网与官网直采终端
-- 公告采集阶段已支持金采网双公告与券商官网直采双路并行，管理端日志按两路分栏展示
-- 管理端日志复制已兼容局域网 HTTP 非安全上下文；App Watch Docker 运行时已包含华泰、中信所需 OCR 依赖
-- 已建立统一 `dashboard-data` 标准数据包（Manifest、版本、统计、SHA-256），FastAPI 提供受保护读取接口（`GET /api/dashboard-data/*`）和管理员 ZIP 导出入口，正式前端通过 API 读取
-- 数据包导出层已预计算基础统计与筛选元数据并支持 ETag/304 协商；导出内容不包含用户数据库、密码、Token、服务器路径或 LLM 配置
-- 已增加 `scripts/export_dashboard_data.py` 供无界面导出；正式前端按招采、App 更新和数据控制台按需加载数据，项目明细和 App 明细保留分页/分段展示
-- 独立纯前端版本（`frontend-coze`）已废弃并删除，不再维护两套前端
-- AI 自定义情报中心一期：即时搜索、主题管理与启停、关键词建议、后台执行与轮询恢复、历史重跑、结构化报告和来源引用；按稳定整数用户 ID 私有隔离，默认复用用户数据库，所有深度关闭百度深搜索
+- `frontend/` 是唯一正式前端（采购看板、App 更新、管理员控制台、AI 自定义情报中心）；独立纯前端版本（`frontend-coze`）已废弃并删除，不再维护两套前端。
+- 后端按领域路由拆分（账号、数据、任务/SSE、AI 分析、dashboard-data、自定义情报），任务生命周期与互斥统一由 `job_manager.py` 和前端 `useJobRunner` 管理。
+- 正式看板数据通过 `dashboard-data` 标准数据包由 FastAPI 提供；Windows 发布由 `scripts/deploy-release.ps1` 与部署目录 Compose（backend-api、backend-scheduler、frontend、gateway 四服务）执行。
 
 待完成或待最终验收：
 
@@ -860,8 +848,6 @@ Codex 必须遵守：
 - 百度千帆智能搜索真实鉴权头与简洁搜索链路验证（需在服务端安全注入 API Key 和模型）
 - 真实结果公告数据匹配质量验收（当前本地 `result_table.csv` 仅有表头）
 - Windows 实机生产部署最终验收
-
-状态变化后应更新本节。
 
 ---
 
