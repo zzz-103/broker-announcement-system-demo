@@ -17,7 +17,7 @@ cp .env.example .env
 .venv/bin/python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-启动完整前端：
+启动前端：
 
 ```bash
 cd frontend
@@ -56,19 +56,6 @@ CUSTOM_INTELLIGENCE_MAX_WORKERS=2
 
 登录后访问 `http://localhost:3000/custom-intelligence`。建议先执行一条“简洁”即时搜索，再检查执行记录中的 request ID、来源和报告；所有分析深度均关闭百度深搜索。
 
-## 纯前端静态部署
-
-```bash
-cd frontend-coze
-pnpm install
-pnpm data:check
-pnpm build
-```
-
-将 `frontend-coze/out/` 发布到任意静态服务器。数据包更新时，把完整目录复制到
-`frontend-coze/public/dashboard-data/`，再执行 `pnpm data:check` 和 `pnpm build`。
-页面使用 Hash 路由，部署在子路径时设置 `NEXT_PUBLIC_BASE_PATH=/your-path`。
-
 ## Windows 本地验证
 
 Windows 使用与锁文件一致的 Corepack pnpm 9：
@@ -76,12 +63,6 @@ Windows 使用与锁文件一致的 Corepack pnpm 9：
 ```powershell
 cd <源码目录>\frontend
 corepack pnpm@9.0.0 install --frozen-lockfile
-.\node_modules\.bin\tsc.cmd -p tsconfig.json
-.\node_modules\.bin\next.cmd build
-
-cd ..\frontend-coze
-corepack pnpm@9.0.0 install --frozen-lockfile
-corepack pnpm@9.0.0 data:check
 .\node_modules\.bin\tsc.cmd -p tsconfig.json
 .\node_modules\.bin\next.cmd build
 ```
@@ -119,13 +100,13 @@ cd D:\broker-system
 
 ## 数据包导出
 
-管理员可以在完整前端导出 ZIP；无界面时在仓库根目录运行：
+管理员可以在管理控制台“前端数据包”导出 ZIP；无界面时在仓库根目录运行：
 
 ```bash
 python scripts/export_dashboard_data.py --zip
 ```
 
-默认输出 `backend/data/dashboard-data/` 和同级 ZIP。复制整个目录到纯前端后无需手工修改 JSON。
+默认输出 `backend/data/dashboard-data/` 和同级 ZIP，正式前端通过 API 读取该目录内容。
 
 ## 关键验证
 
@@ -133,7 +114,6 @@ python scripts/export_dashboard_data.py --zip
 ./.venv/bin/python -m unittest discover -s backend/api -p 'test*.py'
 cd frontend && pnpm run ts-check && pnpm run lint:build
 NEXT_PUBLIC_API_BASE_URL= pnpm build
-cd ../frontend-coze && pnpm data:check && pnpm ts-check && pnpm lint && pnpm build
 ```
 
 真实爬虫、LLM、外部网站和 Docker 发布必须在具备相应配置的环境单独验收；本机没有生产数据时不要声称已完成真实链路验证。
@@ -145,5 +125,4 @@ cd ../frontend-coze && pnpm data:check && pnpm ts-check && pnpm lint && pnpm bui
 - 409：已有互斥任务或导出操作运行中。
 - 自定义情报 409：同一用户已有 pending/running 执行，等待完成后再提交。
 - 自定义情报 503：后端未配置百度 API Key 或模型；504 表示上游超时。
-- 纯前端数据错误：先执行 `pnpm data:check`，确认整个 `dashboard-data` 目录完整复制。
 - 修改 `.env` 或前端环境变量后：重启对应服务；修改正式前端后重新生成 `out/`。

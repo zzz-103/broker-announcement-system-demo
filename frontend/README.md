@@ -1,4 +1,4 @@
-# 完整前端
+# 正式前端
 
 Next.js 16、React 19、TypeScript 和 Tailwind CSS 4 的正式看板。开发阶段使用 Next dev，生产阶段输出 `out/`，由 FastAPI 同端口托管。
 
@@ -19,7 +19,7 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 - `src/features/`：采购看板、App Watch 和管理员控制台入口。
 - `src/lib/api/`：集中管理 FastAPI、SSE、契约和数据包请求。
 - `src/components/`：看板表格、图表、筛选器和详情抽屉。
-- `../shared/dashboard-data/`：与 `frontend-coze` 共用的 Schema。
+- `../shared/dashboard-data/`：标准数据包 Schema，与后端导出层字段保持一致。
 
 页面只接收标准化数据结构；清洗、去重、归一化、分类、统计和排序字段在后端导出层完成。
 

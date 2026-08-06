@@ -787,7 +787,7 @@ class JobManager(JobCommandFactory):
             "pipeline": "自动化 Pipeline",
             "publish": "推送",
             "ai_analysis": "AI 情报分析",
-            "dashboard_export": "纯前端数据包导出",
+            "dashboard_export": "前端数据包导出",
             "app-watch": "券商App更新",
         }
         return labels.get(operation_type, operation_type)

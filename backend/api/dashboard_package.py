@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """Build and export the public dashboard data package.
 
-The package is the only data contract shared by the API dashboard and the
-standalone static dashboard.  Raw CSV files remain the crawler/LLM boundary;
-all display-oriented normalization happens here once.
+The package is the data contract served to the formal frontend through the
+protected /api/dashboard-data endpoints.  Raw CSV files remain the
+crawler/LLM boundary; all display-oriented normalization happens here once.
 """
 
 import csv

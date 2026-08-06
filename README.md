@@ -1,9 +1,9 @@
 # 券商招采智能分析系统
 
-一个由 FastAPI、Next.js 和 Python 采集流水线组成的内部看板系统。仓库同时包含两个前端：
+一个由 FastAPI、Next.js 和 Python 采集流水线组成的内部看板系统。
 
-- `frontend/`：完整版本，连接 FastAPI，提供登录、任务控制、实时日志和管理功能。
-- `frontend-coze/`：纯前端版本，只读取静态 `dashboard-data`，可独立部署到外网。
+- `frontend/`：唯一正式前端，连接 FastAPI，提供登录、任务控制、实时日志、看板和管理功能。
+- `backend/`：FastAPI 后端，负责认证、任务与 SSE、数据接口和静态托管。
 
 ## 先做什么
 
@@ -16,7 +16,7 @@ cd frontend && pnpm install && cd ..
 cp .env.example .env
 ```
 
-终端一启动后端，终端二启动完整前端：
+终端一启动后端，终端二启动前端：
 
 ```bash
 .venv/bin/python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
@@ -32,28 +32,17 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 
 打开 `http://localhost:3000`。真实爬虫、LLM 和 App Watch 任务需要相应私密配置；只看页面时可使用已有样例数据。
 
-### 纯前端看板
-
-```bash
-cd frontend-coze
-pnpm install
-pnpm data:check
-pnpm dev
-```
-
-它不需要后端、数据库或登录。`pnpm build` 生成可静态部署的 `out/`，`pnpm start` 仅用于本地预览。
-
 ## 标准数据包
 
-完整版本管理员可在“管理控制台 → 纯前端数据包”导出，也可在仓库根目录执行：
+后端把正式 CSV/JSON 一次转换为标准化 `dashboard-data` 数据包（Manifest、统计、SHA-256 校验），正式前端通过受保护的 `/api/dashboard-data/*` 接口读取，不再直接解析原始 CSV。管理员可在“管理控制台 → 前端数据包”导出 ZIP，也可在仓库根目录执行：
 
 ```bash
 python scripts/export_dashboard_data.py --zip
 ```
 
-生成的 `dashboard-data/` 包含 `manifest.json`、`overview.json`、`filters.json`、
-`tender_projects.json`、`app_updates.json` 和 `ai_analysis.json`。将整个目录复制到
-`frontend-coze/public/dashboard-data/` 后即可使用，不需要改代码或转换字段。
+数据包包含 `manifest.json`、`overview.json`、`filters.json`、
+`tender_projects.json`、`app_updates.json` 和 `ai_analysis.json`，不包含用户表、
+密码、Token、服务器路径或 LLM 配置。
 
 ## 代码与数据边界
 
@@ -65,9 +54,8 @@ backend/broker_app_watch/    券商 App 更新采集与结构化
 backend/config/broker_app_watch/  App 来源与分类配置
 backend/data/broker_app_watch/    App raw/processed/exports 运行数据
 backend/python-*/            金采网公告爬虫
-frontend/src/features/       完整前端业务模块
-frontend-coze/src/           纯前端静态看板
-shared/dashboard-data/       两个前端共用的 Schema
+frontend/src/features/       正式前端业务模块
+shared/dashboard-data/       标准数据包 Schema
 ```
 
 复杂清洗、去重、归一化、分类、统计和排序字段在后端导出层完成；前端只做筛选、简单排序、分页和展示。
@@ -86,7 +74,6 @@ Windows 使用 `.venv\Scripts\python.exe` 替换解释器路径。正式刷新�
 ```bash
 ./.venv/bin/python -m unittest discover -s backend/api -p 'test*.py'
 cd frontend && pnpm run ts-check && pnpm run lint:build
-cd ../frontend-coze && pnpm data:check && pnpm ts-check && pnpm lint
 ```
 
 生产静态构建：
@@ -98,10 +85,9 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 
 ## 文档导航
 
-- [运行与发布](docs/operations.md)：本地启动、静态部署、Windows 发布和排障。
+- [运行与发布](docs/operations.md)：本地启动、Windows 发布和排障。
 - [架构边界](docs/architecture.md)：模块职责和标准数据包流程。
-- [完整前端](frontend/README.md)：正式看板开发与样式约束。
-- [纯前端](frontend-coze/README.md)：数据包复制、校验和静态部署。
+- [正式前端](frontend/README.md)：看板开发与样式约束。
 - [官网来源采集](backend/broker_sources/README.md)：券商官网与金采网的来源选择。
 - [金采网爬虫](backend/python-http-www-cfcpn-com-jcw/README.md)：公告抓取命令和输出目录。
 - [App Watch](backend/broker_app_watch/README.md)：券商 App 更新采集与刷新。

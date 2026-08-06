@@ -1,12 +1,12 @@
-"""Export the shared static dashboard data package.
+"""Export the standardized dashboard data package.
 
 Examples (run from the repository root)::
 
     python scripts/export_dashboard_data.py
-    python scripts/export_dashboard_data.py --output frontend-coze/public/dashboard-data
+    python scripts/export_dashboard_data.py --zip
 
-The command reads the same processed files used by FastAPI and writes a
-directory that can be copied as-is to the standalone static dashboard.
+The command reads the same processed files used by FastAPI and writes the
+standardized dashboard-data directory consumed by the frontend API.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from backend.api.dashboard_package import dashboard_package_builder  # noqa: E40
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="导出世纪证券纯前端看板数据包")
+    parser = argparse.ArgumentParser(description="导出世纪证券标准看板数据包")
     parser.add_argument(
         "--output",
         type=Path,

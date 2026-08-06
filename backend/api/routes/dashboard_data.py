@@ -69,9 +69,9 @@ def export_dashboard_data() -> dict[str, object]:
             package = dashboard_package_builder.build(force=True)
             dashboard_package_builder.export(package)
         except PACKAGE_ERRORS as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="纯前端数据包生成失败，请检查正式数据文件") from exc
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="前端数据包生成失败，请检查正式数据文件") from exc
         return {
-            "message": "纯前端数据包导出成功",
+            "message": "前端数据包导出成功",
             "manifest": package.manifest,
             "download_url": "/api/dashboard-data/export.zip",
         }
@@ -90,7 +90,7 @@ def download_dashboard_data() -> Response:
             package = dashboard_package_builder.build()
             dashboard_package_builder.export(package)
         except PACKAGE_ERRORS as exc:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="纯前端数据包生成失败，请检查正式数据文件") from exc
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="前端数据包生成失败，请检查正式数据文件") from exc
         return Response(
             content=package_zip_bytes(package),
             media_type="application/zip",
