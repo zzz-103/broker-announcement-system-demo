@@ -2,10 +2,15 @@
 
 import {
   AlertCircle,
+  Bookmark,
   ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  FileText,
   Loader2,
   Play,
   RefreshCw,
+  Search,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -25,6 +30,7 @@ import {
   fetchCustomIntelligenceOptions,
   fetchCustomIntelligenceTopic,
   fetchCustomIntelligenceTopics,
+  reanalyzeCustomIntelligenceExecution,
   rerunCustomIntelligenceExecution,
   setCustomIntelligenceTopicEnabled,
   suggestCustomIntelligenceKeywords,
@@ -37,7 +43,6 @@ import type {
   IntelligenceTopic,
   InstantSearchRequest,
   IntelligenceAnalysisDepth,
-  IntelligenceFocusSection,
   IntelligenceReport,
   IntelligenceReportType,
   IntelligenceSource,
@@ -53,6 +58,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import {
   CustomIntelligenceTabs,
   ExecutionList,
@@ -109,7 +115,11 @@ const FALLBACK_OPTIONS: CustomIntelligenceOptionsResponse = {
   ],
   preset_questions: [],
   service_configured: true,
+  service_enabled: true,
+  service_status: "enabled",
   deep_search_enabled: false,
+  analysis_configured: true,
+  analysis_service_status: "configured",
 };
 
 const FIELD_INPUT_CLASS = "w-full rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98A2B3] focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15";
@@ -256,6 +266,7 @@ function ConfigFields({
         <div>
           <FieldLabel hint="必填">业务问题</FieldLabel>
           <textarea
+            id="custom-intelligence-question"
             value={value.question}
             onChange={(event) => update("question", event.target.value)}
             rows={3}
@@ -377,20 +388,269 @@ function TextList({ items, empty = "暂无" }: { items: string[] | undefined; em
   return <ul className="space-y-1.5">{values.map((item, index) => <li key={`${item}-${index}`} className="flex gap-2 text-sm leading-6 text-[#344054]"><span className="mt-2 size-1.5 shrink-0 rounded-full bg-[#7699D7]" /> <span className="whitespace-pre-wrap break-words">{item}</span></li>)}</ul>;
 }
 
-function SourceLink({ source }: { source: IntelligenceSource }) {
+function SourceCard({ source, index }: { source: IntelligenceSource; index: number }) {
+  const [expanded, setExpanded] = useState(false);
   const url = safeHttpUrl(source.url);
+  const snippet = source.snippet?.trim();
   return (
-    <div className="rounded-lg border border-[#E4EAF2] bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="break-words text-sm font-semibold leading-5 text-[#243B61]">{source.title || "未命名来源"}</p>
-          <p className="mt-1 text-[11px] text-[#667085]">{source.site_name || "未知站点"}{source.date ? ` · ${source.date}` : ""}</p>
+    <article id={`report-source-${source.id}`} className="scroll-mt-24 rounded-lg border border-[#E4EAF2] bg-white p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-start gap-2">
+            <span className="shrink-0 rounded bg-[#F2F4F7] px-1.5 py-0.5 text-[10px] font-semibold text-[#667085]">{index}</span>
+            <h4 className="min-w-0 break-words text-sm font-semibold leading-6 text-[#243B61]">{source.title || "未命名来源"}</h4>
+          </div>
+          <p className="mt-1 text-[11px] leading-5 text-[#667085]">{source.site_name || "未知站点"}{source.date ? ` · ${source.date}` : ""}</p>
         </div>
-        {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-md border border-[#C8D7F0] px-2 py-1 text-[11px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF]">打开来源</a> : <span className="shrink-0 text-[10px] text-[#98A2B3]">链接不可用</span>}
+        {url ? (
+          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF]">
+            <ExternalLink className="size-3.5" aria-hidden="true" />打开原文
+          </a>
+        ) : (
+          <span className="shrink-0 text-[10px] text-[#98A2B3]">链接不可用</span>
+        )}
       </div>
-      {source.snippet && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[#667085]">{source.snippet}</p>}
-      {source.provider_reference_ids?.length ? <p className="mt-2 break-words text-[10px] text-[#98A2B3]">引用 ID：{source.provider_reference_ids.join("、")}</p> : null}
-    </div>
+      {snippet && (
+        <div className="mt-3">
+          <p className={`whitespace-pre-wrap break-words text-sm leading-6 text-[#667085] ${expanded ? "" : "line-clamp-3"}`}>{snippet}</p>
+          <button type="button" onClick={() => setExpanded((current) => !current)} className="mt-1.5 inline-flex items-center gap-1 rounded-md text-[11px] font-semibold text-[#315EA8] hover:text-[#1D4ED8]">
+            {expanded ? <ChevronUp className="size-3.5" aria-hidden="true" /> : <ChevronDown className="size-3.5" aria-hidden="true" />}
+            {expanded ? "收起摘要" : "展开摘要"}
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function SourceBadge({
+  sourceId,
+  source,
+  index,
+}: {
+  sourceId: string;
+  source?: IntelligenceSource;
+  index?: number;
+}) {
+  if (!source) {
+    return <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">来源 {index ?? "?"}（未匹配）</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => document.getElementById(`report-source-${sourceId}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+      title={`定位到来源：${source.title || "未命名来源"}`}
+      className="max-w-full min-w-0 truncate rounded border border-[#C8D7F0] bg-white px-1.5 py-0.5 text-[10px] text-[#315EA8] hover:bg-[#EEF4FF]"
+    >
+      来源 {index ?? "?"} · {source.title || "来源"}
+    </button>
+  );
+}
+
+function DynamicCard({
+  dynamic,
+  index,
+  sourceMap,
+  sourceIndexes,
+}: {
+  dynamic: IntelligenceReport["key_dynamics"][number];
+  index: number;
+  sourceMap: Map<string, IntelligenceSource>;
+  sourceIndexes: Map<string, number>;
+}) {
+  const sourceIds = dynamic.source_ids ?? [];
+  return (
+    <article className="min-w-0 rounded-lg border border-[#E4EAF2] bg-[#FBFCFE] p-4">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        <h4 className="min-w-0 break-words text-sm font-bold leading-6 text-[#243B61]">{dynamic.title || `动态 ${index + 1}`}</h4>
+        {dynamic.information_time ? <span className="shrink-0 text-[11px] leading-5 text-[#98A2B3]">{dynamic.information_time}</span> : null}
+      </div>
+      {dynamic.institutions?.length ? (
+        <p className="mt-1.5 text-xs leading-5 text-[#667085]">涉及机构：{dynamic.institutions.join("、")}</p>
+      ) : null}
+      {dynamic.event_tags?.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {dynamic.event_tags.map((tag) => (
+            <span key={tag} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[10px] text-[#315EA8]">{tag}</span>
+          ))}
+        </div>
+      ) : null}
+      {dynamic.summary ? (
+        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-[#344054]">{dynamic.summary}</p>
+      ) : null}
+      {dynamic.impact_analysis ? (
+        <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-[#667085]">
+          <span className="font-semibold text-[#344054]">影响分析：</span>{dynamic.impact_analysis}
+        </p>
+      ) : null}
+      {sourceIds.length ? (
+        <div className="mt-3 border-t border-[#E4E9F0] pt-2">
+          <p className="mb-1 text-[10px] font-semibold text-[#667085]">来源角标</p>
+          <div className="flex flex-wrap gap-1.5">
+            {sourceIds.map((sourceId) => (
+              <SourceBadge key={sourceId} sourceId={sourceId} source={sourceMap.get(sourceId)} index={sourceIndexes.get(sourceId)} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function ReportSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="min-w-0">
+      <h3 className={REPORT_HEADING_CLASS}>{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function ReportOverview({
+  execution,
+  options,
+  onOpenReport,
+  onSaveTopic,
+  onRerun,
+  onReanalyze,
+  onNewSearch,
+  analysisAvailable,
+  serviceAvailable,
+  activeExecutionId,
+}: {
+  execution: CustomIntelligenceExecution | null;
+  options: CustomIntelligenceOptionsResponse;
+  onOpenReport: (execution: CustomIntelligenceExecution) => void;
+  onSaveTopic: (execution: CustomIntelligenceExecution) => void;
+  onRerun: (execution: CustomIntelligenceExecution) => void;
+  onReanalyze?: (execution: CustomIntelligenceExecution) => void;
+  onNewSearch: () => void;
+  analysisAvailable: boolean;
+  serviceAvailable: boolean;
+  activeExecutionId: number | null;
+}) {
+  if (!execution || execution.search_status !== "succeeded") return null;
+
+  const report = execution.report ?? {};
+  const isGenerating = execution.status === "pending" || execution.status === "running";
+  const analysisFailed = execution.analysis_status === "failed";
+  const dynamics = (report.key_dynamics ?? []).slice(0, 3);
+  const sourceCount = report.valid_source_count ?? execution.sources.length;
+  const title = report.title || execution.topic_name || execution.original_query || "即时情报报告";
+  const statusLabel = analysisFailed
+    ? "分析失败"
+    : execution.status === "succeeded"
+      ? "报告已生成"
+      : isGenerating
+        ? "报告生成中"
+        : execution.status === "empty"
+          ? "无结果"
+          : "已完成";
+
+  return (
+    <section id="instant-report-overview" aria-label="即时搜索报告概览" className="mt-5 scroll-mt-5 rounded-lg border border-[#C8D7F0] bg-[#F8FAFD] p-4 sm:p-5">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-semibold text-[#315EA8]">报告概览</span>
+            <span className={`rounded px-2 py-0.5 text-[10px] font-semibold ${analysisFailed ? "bg-red-50 text-red-700" : isGenerating ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>{statusLabel}</span>
+          </div>
+          <h4 className="mt-2 min-w-0 break-words text-base font-bold leading-7 text-[#172033]">{title}</h4>
+          <p className="mt-1 text-[11px] leading-5 text-[#667085]">
+            {execution.original_query || execution.snapshot.question || "—"}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => onOpenReport(execution)}>
+            <FileText className="size-3.5" aria-hidden="true" />查看完整报告
+          </Button>
+          {execution.status === "succeeded" && execution.topic_id === null && execution.trigger_type !== "topic" && (
+            <Button variant="outline" size="sm" onClick={() => onSaveTopic(execution)}>
+              <Bookmark className="size-3.5" aria-hidden="true" />保存为主题
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-lg border border-[#E4EAF2] bg-white px-3 py-2.5">
+          <p className="text-[10px] font-semibold text-[#98A2B3]">完成时间</p>
+          <p className="mt-1 text-xs leading-5 text-[#344054]">{isGenerating ? "生成中" : formatDate(execution.completed_at || execution.created_at)}</p>
+        </div>
+        <div className="rounded-lg border border-[#E4EAF2] bg-white px-3 py-2.5">
+          <p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p>
+          <p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.time_ranges, report.time_range || execution.snapshot.time_range)}</p>
+        </div>
+        <div className="rounded-lg border border-[#E4EAF2] bg-white px-3 py-2.5">
+          <p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p>
+          <p className="mt-1 text-xs leading-5 text-[#344054]">{sourceCount} 条</p>
+        </div>
+        <div className="rounded-lg border border-[#E4EAF2] bg-white px-3 py-2.5">
+          <p className="text-[10px] font-semibold text-[#98A2B3]">报告类型</p>
+          <p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.report_types, report.report_type || execution.snapshot.report_type)}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-5">
+        <ReportSection title="核心结论">
+          {analysisFailed ? (
+            <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+              百度搜索已完成，DeepSeek 分析失败。可查看来源、重新分析或重新执行。
+            </div>
+          ) : report.core_conclusion ? (
+            <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#344054]">{report.core_conclusion}</p>
+          ) : isGenerating ? (
+            <div role="status" className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />完整报告正在生成…
+            </div>
+          ) : (
+            <p className="text-sm leading-7 text-[#98A2B3]">暂无核心结论。</p>
+          )}
+        </ReportSection>
+
+        {dynamics.length > 0 && (
+          <ReportSection title="重点动态">
+            <div className="space-y-3">
+              {dynamics.map((dynamic, index) => (
+                <article key={`${dynamic.title}-${index}`} className="min-w-0 rounded-lg border border-[#E4EAF2] bg-white p-3">
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <h5 className="min-w-0 break-words text-sm font-semibold leading-6 text-[#243B61]">{dynamic.title || `动态 ${index + 1}`}</h5>
+                    {dynamic.information_time ? <span className="shrink-0 text-[11px] text-[#98A2B3]">{dynamic.information_time}</span> : null}
+                  </div>
+                  {dynamic.institutions?.length ? (
+                    <p className="mt-1 text-xs leading-5 text-[#667085]">涉及机构：{dynamic.institutions.join("、")}</p>
+                  ) : null}
+                  {dynamic.event_tags?.length ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {dynamic.event_tags.map((tag) => (
+                        <span key={tag} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[10px] text-[#315EA8]">{tag}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {dynamic.summary ? (
+                    <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-[#667085] line-clamp-2">{dynamic.summary}</p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </ReportSection>
+        )}
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#E4EAF2] pt-4">
+        {analysisFailed && onReanalyze && (
+          <Button variant="outline" size="sm" onClick={() => onReanalyze(execution)} disabled={!analysisAvailable || activeExecutionId !== null}>
+            <RefreshCw className="size-3.5" aria-hidden="true" />重新分析
+          </Button>
+        )}
+        <Button variant="outline" size="sm" onClick={() => onRerun(execution)} disabled={!serviceAvailable || activeExecutionId !== null}>
+          <RefreshCw className="size-3.5" aria-hidden="true" />重新执行
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onNewSearch}>
+          <Search className="size-3.5" aria-hidden="true" />重新搜索
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -450,6 +710,9 @@ function ReportDialog({
   options,
   onOpenChange,
   onRerun,
+  onSaveTopic,
+  onReanalyze,
+  analysisAvailable,
 }: {
   execution: CustomIntelligenceExecution | null;
   open: boolean;
@@ -457,64 +720,153 @@ function ReportDialog({
   options: CustomIntelligenceOptionsResponse;
   onOpenChange: (open: boolean) => void;
   onRerun?: (execution: CustomIntelligenceExecution) => void;
+  onSaveTopic?: (execution: CustomIntelligenceExecution) => void;
+  onReanalyze?: (execution: CustomIntelligenceExecution) => void;
+  analysisAvailable?: boolean;
 }) {
   const report = (execution?.report ?? null) as Partial<IntelligenceReport> | null;
   const sources = useMemo(() => execution?.sources ?? [], [execution?.sources]);
   const sourceMap = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
-  const focusSections = (report?.focus_sections ?? []) as IntelligenceFocusSection[];
+  const sourceIndexes = useMemo(
+    () => new Map(sources.map((source, index) => [source.id, index + 1])),
+    [sources],
+  );
+  const currentExecution = execution;
+  const focusSections = (report?.focus_sections ?? []).filter(
+    (section) => section.title?.trim() && section.items?.length,
+  );
+  const dynamics = report?.key_dynamics ?? [];
+  const opportunities = report?.opportunities ?? [];
+  const risks = report?.risks ?? [];
+  const watchItems = report?.watch_items ?? [];
+  const recommendedFollowups = report?.recommended_followups ?? [];
+  const searchSucceeded = currentExecution?.search_status === "succeeded";
+  const analysisFailed = searchSucceeded && currentExecution?.analysis_status === "failed";
+  const executionActive = currentExecution?.status === "pending" || currentExecution?.status === "running";
+  const canSaveTopic = currentExecution?.status === "succeeded" && currentExecution.topic_id === null && currentExecution.trigger_type !== "topic";
+  const scrollToSources = () => {
+    document.getElementById("report-sources")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const title = report?.title || currentExecution?.topic_name || currentExecution?.original_query || "情报报告";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-[1120px] flex-col gap-0 overflow-hidden border-[#D9E2EC] bg-white p-0">
-        <DialogHeader className="shrink-0 border-b border-[#E4EAF2] bg-[#F8FAFD] px-6 py-5 pr-12">
-          <DialogTitle className="text-lg text-[#172033]">{report?.title || execution?.topic_name || "情报报告"}</DialogTitle>
-          <DialogDescription className="text-[#667085]">{execution ? (execution.status === "failed" ? "执行失败，详情见下方" : `${formatDate(execution.completed_at || execution.created_at)} · ${execution.sources.length} 条有效来源`) : "正在加载完整报告…"}</DialogDescription>
+      <DialogContent className="flex h-dvh w-full flex-col gap-0 overflow-hidden rounded-none border-0 bg-white p-0 sm:h-[min(92dvh,880px)] sm:w-[min(1120px,92vw)] sm:max-h-[calc(100dvh-2rem)] sm:max-w-[1120px] sm:rounded-lg sm:border sm:border-[#D9E2EC] sm:p-0">
+        <DialogHeader className="shrink-0 border-b border-[#E4EAF2] bg-[#F8FAFD] px-4 py-4 pr-12 sm:px-6 sm:py-5">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="min-w-0 break-words text-lg leading-7 text-[#172033] sm:text-xl sm:leading-8">{title}</DialogTitle>
+              <DialogDescription className="mt-1 text-xs leading-5 text-[#667085]">
+                {currentExecution
+                  ? analysisFailed
+                    ? "搜索完成，分析失败，可查看原始来源或重新分析"
+                    : currentExecution.search_status !== "succeeded"
+                      ? "执行失败，详情见下方"
+                      : `已完成 · ${formatDate(currentExecution.completed_at || currentExecution.created_at)} · ${currentExecution.sources.length} 条有效来源`
+                  : "正在加载完整报告…"}
+              </DialogDescription>
+            </div>
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {canSaveTopic && currentExecution && (
+                <Button variant="outline" size="sm" onClick={() => onSaveTopic?.(currentExecution)}>
+                  <Bookmark className="size-3.5" aria-hidden="true" />保存为主题
+                </Button>
+              )}
+              {analysisFailed && currentExecution && (
+                <Button variant="outline" size="sm" onClick={() => onReanalyze?.(currentExecution)} disabled={!analysisAvailable}>
+                  <RefreshCw className="size-3.5" aria-hidden="true" />重新分析
+                </Button>
+              )}
+              {searchSucceeded && currentExecution && (
+                <Button variant="outline" size="sm" onClick={() => onRerun?.(currentExecution)} disabled={executionActive}>
+                  <RefreshCw className="size-3.5" aria-hidden="true" />重新执行
+                </Button>
+              )}
+              {searchSucceeded && sources.length > 0 && (
+                <Button variant="outline" size="sm" onClick={scrollToSources}>
+                  <ExternalLink className="size-3.5" aria-hidden="true" />查看全部来源
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                <X className="size-3.5" aria-hidden="true" />关闭
+              </Button>
+            </div>
+          </div>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="mx-auto min-w-0 max-w-[840px] px-4 py-5 sm:px-8 sm:py-7">
           {loading && <div className="mb-4 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700"><Loader2 className="size-4 animate-spin" />正在加载完整报告…</div>}
-          {!execution ? <p className="text-sm text-[#667085]">暂无报告内容。</p> : execution.status === "failed" ? (
-            <ExecutionErrorDetail execution={execution} options={options} onRerun={onRerun} />
+          {!currentExecution ? <p className="text-sm text-[#667085]">暂无报告内容。</p> : currentExecution.search_status !== "succeeded" ? (
+            <ExecutionErrorDetail execution={currentExecution} options={options} onRerun={onRerun} />
           ) : (
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <div className="min-w-0 space-y-6">
-                <section className="grid gap-3 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-3 sm:grid-cols-3">
-                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">执行时间</p><p className="mt-1 text-xs text-[#344054]">{report?.executed_at || formatDate(execution.completed_at || execution.created_at)}</p></div>
-                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs text-[#344054]">{report?.time_range || "—"}</p></div>
-                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p><p className="mt-1 text-xs text-[#344054]">{report?.valid_source_count ?? sources.length}</p></div>
-                </section>
-                <section>
-                  <h3 className={REPORT_HEADING_CLASS}>核心结论</h3>
-                  <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#344054]">{report?.core_conclusion || "暂无核心结论。"}</p>
-                </section>
-                <section className="grid gap-4 sm:grid-cols-2">
-                  <div><h3 className={REPORT_HEADING_CLASS}>影响分析</h3><p className="whitespace-pre-wrap break-words text-sm leading-6 text-[#344054]">{report?.impact_analysis || "暂无影响分析。"}</p></div>
-                  <div><h3 className={REPORT_HEADING_CLASS}>分析问题</h3><p className="whitespace-pre-wrap break-words text-sm leading-6 text-[#344054]">{report?.question || execution.original_query || "—"}</p></div>
-                </section>
-                {focusSections.map((section) => <section key={section.title}><h3 className={REPORT_HEADING_CLASS}>{section.title}</h3><TextList items={section.items} /></section>)}
-                <section>
-                  <h3 className={REPORT_HEADING_CLASS}>重点动态</h3>
-                  <div className="space-y-3">
-                    {(report?.key_dynamics ?? []).length ? (report?.key_dynamics ?? []).map((dynamic, index) => (
-                      <article key={`${dynamic.title}-${index}`} className="rounded-lg border border-[#E4EAF2] bg-[#FBFCFE] p-4">
-                        <div className="flex flex-wrap items-start justify-between gap-2"><h4 className="text-sm font-bold text-[#243B61]">{dynamic.title || `动态 ${index + 1}`}</h4>{dynamic.information_time && <span className="text-[11px] text-[#98A2B3]">{dynamic.information_time}</span>}</div>
-                        {dynamic.institutions?.length ? <p className="mt-1 text-xs text-[#667085]">涉及主体：{dynamic.institutions.join("、")}</p> : null}
-                        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-[#344054]">{dynamic.summary || "暂无摘要。"}</p>
-                        {dynamic.impact_analysis && <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-[#667085]">影响：{dynamic.impact_analysis}</p>}
-                        {dynamic.event_tags?.length ? <div className="mt-2 flex flex-wrap gap-1.5">{dynamic.event_tags.map((tag) => <span key={tag} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[10px] text-[#315EA8]">{tag}</span>)}</div> : null}
-                        {dynamic.source_ids?.length ? <div className="mt-3 border-t border-[#E4E9F0] pt-2"><p className="mb-1 text-[10px] font-semibold text-[#667085]">关联来源</p><div className="flex flex-wrap gap-1.5">{dynamic.source_ids.map((sourceId) => { const source = sourceMap.get(sourceId); const sourceUrl = source ? safeHttpUrl(source.url) : null; return source && sourceUrl ? <a key={sourceId} href={sourceUrl} target="_blank" rel="noopener noreferrer" className="max-w-full truncate rounded border border-[#C8D7F0] px-1.5 py-0.5 text-[10px] text-[#315EA8] hover:bg-[#EEF4FF]">{sourceId} · {source.title || "来源"}</a> : <span key={sourceId} className="max-w-full truncate rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{source ? `${sourceId} · ${source.title || "来源"}（链接不可用）` : `${sourceId}（未匹配）`}</span>; })}</div></div> : null}
-                      </article>
-                    )) : <p className="text-sm text-[#98A2B3]">暂无重点动态。</p>}
+            <div className="min-w-0 space-y-8">
+                {analysisFailed && (
+                  <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    百度搜索已完成，DeepSeek 分析失败。当前可查看原始来源，也可以重新分析。
                   </div>
+                )}
+                {report?.is_fallback && (
+                  <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    本次报告使用基础格式展示。
+                  </div>
+                )}
+                <section className="grid gap-3 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">完成时间</p><p className="mt-1 text-xs leading-5 text-[#344054]">{report?.executed_at || formatDate(currentExecution.completed_at || currentExecution.created_at)}</p></div>
+                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.time_ranges, report?.time_range || currentExecution.snapshot.time_range)}</p></div>
+                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">报告类型</p><p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.report_types, report?.report_type || currentExecution.snapshot.report_type)}</p></div>
+                  <div><p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p><p className="mt-1 text-xs leading-5 text-[#344054]">{report?.valid_source_count ?? sources.length}</p></div>
                 </section>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <section><h3 className={REPORT_HEADING_CLASS}>机会</h3><TextList items={report?.opportunities} /></section>
-                  <section><h3 className={REPORT_HEADING_CLASS}>风险</h3><TextList items={report?.risks} /></section>
-                  <section><h3 className={REPORT_HEADING_CLASS}>关注事项</h3><TextList items={report?.watch_items} /></section>
-                  <section><h3 className={REPORT_HEADING_CLASS}>建议跟进</h3><TextList items={report?.recommended_followups} /></section>
-                </div>
-              </div>
-              <aside className="min-w-0 xl:border-l xl:border-[#E4E9F0] xl:pl-5"><h3 className={REPORT_HEADING_CLASS}>完整来源（{sources.length}）</h3><div className="space-y-3">{sources.length ? sources.map((source) => <SourceLink key={source.id} source={source} />) : <p className="text-sm text-[#98A2B3]">暂无有效来源。</p>}</div></aside>
+                <ReportSection title="核心结论">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#344054]">{report?.core_conclusion || "暂无核心结论。"}</p>
+                </ReportSection>
+                {focusSections.length > 0 && (
+                  <ReportSection title="报告重点章节">
+                    <div className="space-y-4">
+                      {focusSections.map((section) => (
+                        <div key={section.title} className="min-w-0 rounded-lg border border-[#E4EAF2] bg-[#FBFCFE] p-4">
+                          <h4 className="text-sm font-bold text-[#243B61]">{section.title}</h4>
+                          <div className="mt-2"><TextList items={section.items} /></div>
+                        </div>
+                      ))}
+                    </div>
+                  </ReportSection>
+                )}
+                {dynamics.length > 0 && (
+                  <ReportSection title="重点动态">
+                    <div className="space-y-3">
+                      {dynamics.map((dynamic, index) => (
+                        <DynamicCard key={`${dynamic.title}-${index}`} dynamic={dynamic} index={index} sourceMap={sourceMap} sourceIndexes={sourceIndexes} />
+                      ))}
+                    </div>
+                  </ReportSection>
+                )}
+                {report?.impact_analysis?.trim() ? (
+                  <ReportSection title="影响分析">
+                    <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[#344054]">{report.impact_analysis}</p>
+                  </ReportSection>
+                ) : null}
+                {(opportunities.length > 0 || risks.length > 0 || watchItems.length > 0) && (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {opportunities.length > 0 && <ReportSection title="机会"><TextList items={opportunities} /></ReportSection>}
+                    {risks.length > 0 && <ReportSection title="风险"><TextList items={risks} /></ReportSection>}
+                    {watchItems.length > 0 && <ReportSection title="关注事项"><TextList items={watchItems} /></ReportSection>}
+                  </div>
+                )}
+                {recommendedFollowups.length > 0 && (
+                  <ReportSection title="推荐追问">
+                    <TextList items={recommendedFollowups} />
+                  </ReportSection>
+                )}
+                {sources.length > 0 && (
+                  <section id="report-sources" className="scroll-mt-24 border-t border-[#E4EAF2] pt-6">
+                    <h3 className={REPORT_HEADING_CLASS}>本次报告参考来源（{sources.length}）</h3>
+                    <div className="mt-3 space-y-3">
+                      {sources.map((source, index) => <SourceCard key={source.id} source={source} index={index + 1} />)}
+                    </div>
+                  </section>
+                )}
             </div>
           )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -549,8 +901,11 @@ export default function CustomIntelligencePage() {
   const [selectedTopicSuggestions, setSelectedTopicSuggestions] = useState<string[]>([]);
   const [topicUpdatingId, setTopicUpdatingId] = useState<number | null>(null);
   const [selectedExecution, setSelectedExecution] = useState<CustomIntelligenceExecution | null>(null);
+  const [instantOverviewExecution, setInstantOverviewExecution] = useState<CustomIntelligenceExecution | null>(null);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
+  const serviceAvailable = !optionsLoading && options.service_status === "enabled";
+  const analysisAvailable = !optionsLoading && options.analysis_configured;
 
   useEffect(() => {
     restoreSession();
@@ -580,6 +935,18 @@ export default function CustomIntelligencePage() {
       if (!signal?.aborted) setLoadingExecutions(false);
     }
   }, [handleError, token]);
+
+  const recentExecutionsByTopic = useMemo(() => {
+    const latest = new Map<number, CustomIntelligenceExecution>();
+    for (const execution of executions) {
+      if (execution.topic_id === null) continue;
+      const current = latest.get(execution.topic_id);
+      if (!current || new Date(execution.created_at).getTime() > new Date(current.created_at).getTime()) {
+        latest.set(execution.topic_id, execution);
+      }
+    }
+    return latest;
+  }, [executions]);
 
   useEffect(() => {
     if (!token) return;
@@ -615,11 +982,12 @@ export default function CustomIntelligencePage() {
         const execution = response.execution;
         setExecutions((current) => mergeExecution(current, execution));
         setSelectedExecution((current) => current?.id === execution.id ? execution : current);
+        setInstantOverviewExecution((current) => current?.id === execution.id ? execution : current);
         if (isActiveExecution(execution.status)) {
           timer = setTimeout(poll, 2000);
         } else {
           setActiveExecutionId(null);
-          setNotice(execution.status === "succeeded" ? "情报报告已生成，可在执行记录中查看。" : execution.error_message || "本次情报执行已结束。 ");
+          setNotice(execution.status === "succeeded" ? "情报报告已生成。" : execution.error_message || "本次情报执行已结束。 ");
           void loadExecutions();
         }
       } catch (error) {
@@ -647,8 +1015,9 @@ export default function CustomIntelligencePage() {
   }, []);
 
   const submitInstant = async () => {
-    if (!token || activeExecutionId !== null || !form.question.trim()) {
+    if (!token || !serviceAvailable || activeExecutionId !== null || !form.question.trim()) {
       if (!form.question.trim()) setPageError("请先填写业务问题。");
+      else if (!serviceAvailable) setPageError("当前情报搜索服务暂不可用，请联系管理员。");
       return;
     }
     setPageError("");
@@ -656,14 +1025,19 @@ export default function CustomIntelligencePage() {
     try {
       const response = await createCustomIntelligenceExecution(token, { ...form, question: form.question.trim() });
       startPolling(response.execution);
-      setActiveTab("executions");
+      setSelectedExecution(response.execution);
+      setInstantOverviewExecution(response.execution);
+      setNotice("搜索已提交，报告概览将显示在下方。");
     } catch (error) {
       handleError(error, "无法启动即时情报搜索");
     }
   };
 
   const requestKeywordSuggestions = async () => {
-    if (!token || suggesting) return;
+    if (!token || suggesting || !serviceAvailable) {
+      if (!serviceAvailable) setPageError("当前情报搜索服务暂不可用，请联系管理员。");
+      return;
+    }
     setSuggesting(true);
     setPageError("");
     try {
@@ -689,6 +1063,13 @@ export default function CustomIntelligencePage() {
     setKeywordSuggestions([]);
     setSelectedSuggestions([]);
     setNotice("已将确认的关键词合并到当前配置。");
+  };
+
+  const resetInstantOverview = () => {
+    setInstantOverviewExecution(null);
+    setPageError("");
+    setNotice("");
+    document.getElementById("custom-intelligence-question")?.focus();
   };
 
   const openCreateTopic = () => {
@@ -747,7 +1128,10 @@ export default function CustomIntelligencePage() {
   };
 
   const requestTopicKeywordSuggestions = async () => {
-    if (!token || topicSuggesting || activeExecutionId !== null) return;
+    if (!token || topicSuggesting || activeExecutionId !== null || !serviceAvailable) {
+      if (!serviceAvailable) setPageError("当前情报搜索服务暂不可用，请联系管理员。");
+      return;
+    }
     setTopicSuggesting(true);
     setPageError("");
     try {
@@ -829,12 +1213,16 @@ export default function CustomIntelligencePage() {
   };
 
   const executeTopic = async (topic: IntelligenceTopic) => {
-    if (!token || activeExecutionId !== null) return;
+    if (!token || !serviceAvailable || activeExecutionId !== null) {
+      if (!serviceAvailable) setPageError("当前情报搜索服务暂不可用，请联系管理员。");
+      return;
+    }
     setPageError("");
     try {
       const response = await executeCustomIntelligenceTopic(token, topic.id);
       startPolling(response.execution);
-      setActiveTab("executions");
+      setSelectedExecution(response.execution);
+      setReportDialogOpen(true);
     } catch (error) {
       handleError(error, "无法启动主题执行");
     }
@@ -857,14 +1245,45 @@ export default function CustomIntelligencePage() {
     }
   };
 
-  const rerun = async (execution: CustomIntelligenceExecution) => {
-    if (!token || activeExecutionId !== null) return;
+  const rerun = async (
+    execution: CustomIntelligenceExecution,
+    openReportAfterStart = true,
+    keepInstantOverview = false,
+  ) => {
+    if (!token || !serviceAvailable || activeExecutionId !== null) {
+      if (!serviceAvailable) setPageError("当前情报搜索服务暂不可用，请联系管理员。");
+      return;
+    }
     setPageError("");
     try {
       const response = await rerunCustomIntelligenceExecution(token, execution.id);
       startPolling(response.execution);
+      setSelectedExecution(response.execution);
+      if (keepInstantOverview) setInstantOverviewExecution(response.execution);
+      if (openReportAfterStart) setReportDialogOpen(true);
     } catch (error) {
       handleError(error, "无法重新执行情报记录");
+    }
+  };
+
+  const reanalyze = async (
+    execution: CustomIntelligenceExecution,
+    openReportAfterStart = true,
+    keepInstantOverview = false,
+  ) => {
+    if (!token || activeExecutionId !== null || !options.analysis_configured) {
+      if (!options.analysis_configured) setPageError("DeepSeek 分析服务未配置，请先联系管理员。");
+      return;
+    }
+    setPageError("");
+    try {
+      const response = await reanalyzeCustomIntelligenceExecution(token, execution.id);
+      startPolling(response.execution);
+      setSelectedExecution(response.execution);
+      if (keepInstantOverview) setInstantOverviewExecution(response.execution);
+      if (openReportAfterStart) setReportDialogOpen(true);
+    } catch (error) {
+      handleError(error, "无法重新分析情报记录");
     }
   };
 
@@ -884,17 +1303,17 @@ export default function CustomIntelligencePage() {
             ? "执行中"
             : optionsLoading
               ? "加载中"
-              : options.service_configured
+              : serviceAvailable
                 ? "服务正常"
-                : "待配置"
+                : "服务不可用"
         }
-        statusTone={activeExecutionId !== null || optionsLoading ? "loading" : options.service_configured ? "ready" : "unavailable"}
+        statusTone={activeExecutionId !== null || optionsLoading ? "loading" : serviceAvailable ? "ready" : "unavailable"}
         statusDescription={
           activeExecutionId !== null
             ? "当前有一条自定义情报正在执行"
-            : options.service_configured
-              ? "自定义情报搜索服务已配置"
-              : "搜索服务尚未配置"
+            : serviceAvailable
+              ? "自定义情报搜索服务可用"
+              : "当前情报搜索服务暂不可用"
         }
         exportOptions={[
           {
@@ -912,13 +1331,13 @@ export default function CustomIntelligencePage() {
             onSelect: () => exportCustomIntelligenceJson(executions),
           },
         ]}
-        onOpenAdmin={() => router.push("/")}
+        onOpenAdmin={() => router.push("/admin")}
         onLogout={logout}
       />
 
       <main className="mx-auto max-w-[1600px] min-w-0 space-y-4 px-3 py-4 sm:px-8 sm:py-5">
         {(pageError || notice) && <div role={pageError ? "alert" : "status"} aria-live={pageError ? "assertive" : "polite"} className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${pageError ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700"}`}><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span className="min-w-0 whitespace-pre-wrap break-words">{pageError || notice}</span><button type="button" className="ml-auto shrink-0 opacity-60 hover:opacity-100" onClick={() => { setPageError(""); setNotice(""); }} aria-label="关闭提示"><X className="size-4" aria-hidden="true" /></button></div>}
-        {!optionsLoading && !options.service_configured && <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">搜索服务尚未配置。可先编辑和保存主题，执行时再联系管理员完成服务端配置。</div>}
+        {!optionsLoading && !serviceAvailable && <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">当前情报搜索服务暂不可用，请联系管理员。</div>}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-[#172033] sm:text-[26px]">自定义情报</h2>
@@ -941,10 +1360,10 @@ export default function CustomIntelligencePage() {
             </div>
             <div className="mb-5"><ConfigFields value={form} onChange={setForm} options={visibleOptions} /></div>
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#E4EAF2] pt-4">
-              <button onClick={requestKeywordSuggestions} disabled={suggesting || activeExecutionId !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-[#F8FAFD] px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={requestKeywordSuggestions} disabled={suggesting || activeExecutionId !== null || !serviceAvailable} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-[#F8FAFD] px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
                 {suggesting ? "正在生成…" : "补充关键词"}
               </button>
-              <button onClick={submitInstant} disabled={activeExecutionId !== null || !form.question.trim() || optionsLoading} className="inline-flex items-center gap-2 rounded-md bg-[#2563EB] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={submitInstant} disabled={activeExecutionId !== null || !form.question.trim() || optionsLoading || !serviceAvailable} className="inline-flex items-center gap-2 rounded-md bg-[#2563EB] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
                 <Play className="size-4" />开始搜索
               </button>
             </div>
@@ -957,6 +1376,18 @@ export default function CustomIntelligencePage() {
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{keywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4EAF2] bg-white px-3 py-2 text-xs text-[#344054] hover:border-[#9FB9E8]"><input type="checkbox" checked={selectedSuggestions.includes(suggestion)} onChange={(event) => setSelectedSuggestions((current) => event.target.checked ? [...current, suggestion] : current.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
               </div>
             )}
+            <ReportOverview
+              execution={instantOverviewExecution}
+              options={visibleOptions}
+              onOpenReport={(execution) => void openReport(execution)}
+              onSaveTopic={openCreateTopicFromExecution}
+              onRerun={(execution) => void rerun(execution, false, true)}
+              onReanalyze={(execution) => void reanalyze(execution, false, true)}
+              onNewSearch={resetInstantOverview}
+              analysisAvailable={analysisAvailable}
+              serviceAvailable={serviceAvailable}
+              activeExecutionId={activeExecutionId}
+            />
           </section>
         )}
 
@@ -969,13 +1400,13 @@ export default function CustomIntelligencePage() {
               </div>
               <button type="button" onClick={openCreateTopic} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]"><span aria-hidden="true">＋</span>新建主题</button>
             </div>
-            <TopicList topics={topics} loading={optionsLoading} options={visibleOptions} activeExecutionId={activeExecutionId} topicUpdatingId={topicUpdatingId} onCreate={openCreateTopic} onToggle={toggleTopic} onEdit={openEditTopic} onExecute={executeTopic} />
+            <TopicList topics={topics} loading={optionsLoading} options={visibleOptions} serviceAvailable={serviceAvailable} activeExecutionId={activeExecutionId} topicUpdatingId={topicUpdatingId} recentExecutionsByTopic={recentExecutionsByTopic} onCreate={openCreateTopic} onToggle={toggleTopic} onEdit={openEditTopic} onExecute={executeTopic} onOpenReport={(execution) => void openReport(execution)} />
           </section>
         )}
 
         {activeTab === "executions" && (
           <section id="custom-intelligence-panel-executions" role="tabpanel" aria-label="执行记录" className="surface-panel px-3 py-4 sm:px-4">
-            <ExecutionList executions={executions} loading={loadingExecutions} onRefresh={() => void loadExecutions()} onStartSearch={() => setActiveTab("instant")} onSaveTopic={openCreateTopicFromExecution} onOpenReport={(execution) => void openReport(execution)} onRerun={(execution) => void rerun(execution)} activeExecutionId={activeExecutionId} />
+            <ExecutionList executions={executions} loading={loadingExecutions} serviceAvailable={serviceAvailable} analysisAvailable={analysisAvailable} onRefresh={() => void loadExecutions()} onStartSearch={() => setActiveTab("instant")} onSaveTopic={openCreateTopicFromExecution} onOpenReport={(execution) => void openReport(execution)} onRerun={(execution) => void rerun(execution)} onReanalyze={(execution) => void reanalyze(execution)} activeExecutionId={activeExecutionId} />
           </section>
         )}
       </main>
@@ -998,7 +1429,7 @@ export default function CustomIntelligencePage() {
                   <h4 className="text-sm font-bold text-[#243B61]">生成的关键词</h4>
                   <p className="mt-1 text-[11px] text-[#667085]">根据主题描述、已有关键词和关注对象生成，确认后才合并。</p>
                 </div>
-                <button type="button" onClick={() => void requestTopicKeywordSuggestions()} disabled={topicSuggesting || activeExecutionId !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] disabled:opacity-50">{topicSuggesting ? "生成中…" : "补充关键词"}</button>
+                <button type="button" onClick={() => void requestTopicKeywordSuggestions()} disabled={topicSuggesting || activeExecutionId !== null || !serviceAvailable} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] disabled:opacity-50">{topicSuggesting ? "生成中…" : "补充关键词"}</button>
               </div>
               {topicKeywordSuggestions.length > 0 && <>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{topicKeywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4EAF2] bg-white px-3 py-2 text-xs text-[#344054]"><input type="checkbox" checked={selectedTopicSuggestions.includes(suggestion)} onChange={(event) => setSelectedTopicSuggestions((current) => event.target.checked ? [...current, suggestion] : current.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
@@ -1022,6 +1453,15 @@ export default function CustomIntelligencePage() {
           setReportDialogOpen(false);
           void rerun(execution);
         }}
+        onSaveTopic={(execution) => {
+          setReportDialogOpen(false);
+          openCreateTopicFromExecution(execution);
+        }}
+        onReanalyze={(execution) => {
+          setReportDialogOpen(false);
+          void reanalyze(execution);
+        }}
+        analysisAvailable={analysisAvailable}
       />
     </div>
   );

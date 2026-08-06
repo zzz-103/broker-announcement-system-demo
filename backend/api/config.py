@@ -164,7 +164,7 @@ class Settings:
     def baidu_qianfan_endpoint(self) -> str:
         return os.getenv(
             "BAIDU_QIANFAN_ENDPOINT",
-            "https://qianfan.baidubce.com/v2/ai_search/chat/completions",
+            "https://qianfan.baidubce.com/v2/ai_search/web_search",
         ).strip().rstrip("/")
 
     @property

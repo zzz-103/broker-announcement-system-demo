@@ -15,12 +15,15 @@ from backend.api.custom_intelligence_store import ActiveExecutionError, Intellig
 from backend.api.qianfan_search import (
     QianfanReference,
     QianfanConfigurationError,
+    QianfanDisabledError,
     QianfanSearchClient,
     QianfanSearchResult,
     QianfanTimeoutError,
     build_search_payload,
+    effective_search_config,
     parse_search_response,
     probe_auth_headers,
+    validate_configuration,
 )
 
 
@@ -69,24 +72,93 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
     def test_deep_analysis_only_changes_top_k(self) -> None:
         for depth, top_k in (("concise", 6), ("standard", 8), ("deep", 10)):
             payload = build_search_payload("test", top_k=top_k)
-            self.assertFalse(payload["enable_deep_search"])
             self.assertEqual(payload["resource_type_filter"][0]["top_k"], top_k)
-            self.assertNotIn("max_search_query_num", payload)
             self.assertEqual(payload["search_source"], "baidu_search_v2")
-            self.assertEqual(payload["search_mode"], "required")
+            self.assertNotIn("model", payload)
+            self.assertNotIn("search_mode", payload)
+            self.assertEqual(payload["search_recency_filter"], "month")
 
-    def test_search_payload_uses_top_level_instruction_and_v2_site_filter(self) -> None:
+    def test_search_payload_uses_concise_query_and_v2_site_filter(self) -> None:
         payload = build_search_payload(
             "test",
-            instruction="return text",
             specified_sites=["example.com", "news.example.com"],
         )
         self.assertEqual(payload["messages"], [{"role": "user", "content": "test"}])
-        self.assertEqual(payload["instruction"], "return text")
+        self.assertNotIn("instruction", payload)
         self.assertEqual(
             payload["search_filter"],
             {"match": {"site": ["example.com", "news.example.com"]}},
         )
+
+    def test_admin_config_wins_and_disabled_overrides_env(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "BAIDU_QIANFAN_API_KEY": "env-key",
+                "BAIDU_QIANFAN_MODEL": "env-model",
+                "BAIDU_QIANFAN_ENDPOINT": "https://env.example.com",
+            },
+        ):
+            self.assertEqual(effective_search_config().config_source, "env")
+            self.store.save_search_config(
+                enabled=False,
+                api_key="db-key",
+                model="db-model",
+                endpoint="https://db.example.com",
+                auth_header="X-Appbuilder-Authorization",
+                timeout_seconds=30,
+                updated_by_user_id=0,
+            )
+            config = effective_search_config()
+            self.assertEqual(config.config_source, "admin")
+            self.assertFalse(config.enabled)
+            self.assertEqual(config.api_key, "db-key")
+            self.assertEqual(config.model, "db-model")
+            self.assertEqual(config.auth_header, "X-Appbuilder-Authorization")
+            with self.assertRaises(QianfanDisabledError):
+                validate_configuration()
+
+    def test_options_payload_reflects_service_status(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "BAIDU_QIANFAN_API_KEY": "env-key",
+                "BAIDU_QIANFAN_MODEL": "env-model",
+                "BAIDU_QIANFAN_ENDPOINT": "https://env.example.com",
+            },
+        ):
+            options = service.options_payload()
+            self.assertTrue(options["service_enabled"])
+            self.assertEqual(options["service_status"], "enabled")
+
+    def test_disabled_service_blocks_execution_before_creation(self) -> None:
+        self.store.save_search_config(
+            enabled=False,
+            api_key="db-key",
+            model="db-model",
+            endpoint="https://db.example.com",
+            auth_header="Authorization",
+            timeout_seconds=30,
+            updated_by_user_id=0,
+        )
+        before = self.store.list_executions(5)[0]
+        snapshot = {
+            "question": "近期证券行业变化",
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "report_type": "industry_trends",
+            "analysis_depth": "concise",
+        }
+        with self.assertRaises(QianfanDisabledError):
+            service.submit_execution(
+                5,
+                snapshot,
+                5,
+                trigger_type="instant",
+            )
+        after = self.store.list_executions(5)[0]
+        self.assertEqual(len(after), len(before))
 
     def test_auth_probe_and_official_response_fields(self) -> None:
         self.assertEqual(probe_auth_headers(lambda header: 400 if header == "Authorization" else 401), "Authorization")
@@ -162,9 +234,62 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
 
     def test_report_text_is_cleaned_and_invalid_json_falls_back(self) -> None:
         sources = [{"id": "r1", "provider_reference_ids": ["r1"], "title": "T", "url": "https://example.com"}]
-        report = normalize_report("<script>alert(1)</script>plain", {"question": "q", "time_range": "month"}, sources, {"r1": "r1"}, [], "now")
+        report = normalize_report(
+            "<script>alert(1)</script>plain",
+            {"question": "q", "time_range": "month", "report_type": "industry_trends"},
+            sources,
+            {"r1": "r1"},
+            [],
+            "now",
+            "request-fallback",
+        )
         self.assertNotIn("<script>", json.dumps(report, ensure_ascii=False))
         self.assertEqual(report["valid_source_count"], 1)
+        self.assertTrue(report["is_fallback"])
+        self.assertEqual(report["report_type"], "industry_trends")
+        self.assertEqual(report["request_id"], "request-fallback")
+        self.assertEqual(report["core_conclusion"], "alert(1)plain")
+
+    def test_deterministic_report_fields_override_model_values(self) -> None:
+        snapshot = {
+            "question": "原始问题",
+            "time_range": "month",
+            "report_type": "industry_trends",
+        }
+        sources = [{"id": "r1", "provider_reference_ids": ["r1"], "title": "T", "url": "https://example.com"}]
+        answer = json.dumps(
+            {
+                "title": "模型标题",
+                "question": "模型问题",
+                "executed_at": "模型时间",
+                "time_range": "year",
+                "valid_source_count": 99,
+                "report_type": "risk_monitoring",
+                "service": "other",
+                "request_id": "模型ID",
+                "core_conclusion": "结论",
+            },
+            ensure_ascii=False,
+        )
+        report = normalize_report(
+            answer,
+            snapshot,
+            sources,
+            {"r1": "r1"},
+            [],
+            "2026-08-06T00:00:00Z",
+            "request-real",
+        )
+        self.assertEqual(report["question"], "原始问题")
+        self.assertEqual(report["executed_at"], "2026-08-06T00:00:00Z")
+        self.assertEqual(report["time_range"], "month")
+        self.assertEqual(report["valid_source_count"], 1)
+        self.assertEqual(report["report_type"], "industry_trends")
+        self.assertEqual(report["service"], "baidu_web_search+deepseek")
+        self.assertEqual(report["search_service"], "baidu_web_search")
+        self.assertEqual(report["analysis_service"], "deepseek")
+        self.assertEqual(report["request_id"], "request-real")
+        self.assertFalse(report["is_fallback"])
 
     def test_html_entities_are_cleaned_before_persistence(self) -> None:
         report = normalize_report(
@@ -194,10 +319,24 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             references=[QianfanReference("ref-1", "来源", "https://example.com")],
             request_id="request-1",
         )
-        with patch.object(service.client, "search", return_value=fake_result):
+        fake_report = normalize_report(
+            '{"title":"测试报告","core_conclusion":"综合结论"}',
+            snapshot,
+            [{"id": "source-1", "provider_reference_ids": ["ref-1"], "title": "来源", "url": "https://example.com"}],
+            {"ref-1": "source-1"},
+            [],
+            "now",
+            "request-1",
+        )
+        with (
+            patch.object(service.client, "search", return_value=fake_result),
+            patch.object(service, "_request_analysis", return_value=fake_report),
+        ):
             service._run_execution(int(succeeded["id"]))
         stored = self.store.get_execution(5, int(succeeded["id"]))
         self.assertEqual(stored["status"], "succeeded")
+        self.assertEqual(stored["search_status"], "succeeded")
+        self.assertEqual(stored["analysis_status"], "succeeded")
         self.assertEqual(stored["request_id"], "request-1")
         self.assertEqual(len(stored["sources"]), 1)
 
@@ -207,6 +346,73 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         failed_stored = self.store.get_execution(5, int(failed["id"]))
         self.assertEqual(failed_stored["status"], "failed")
         self.assertNotIn("secret upstream detail", str(failed_stored["error_message"]))
+
+    def test_reanalyze_uses_existing_sources_without_new_search(self) -> None:
+        service.initialize_service()
+        snapshot = {
+            "question": "近期证券行业变化",
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "report_type": "industry_trends",
+            "analysis_depth": "concise",
+        }
+        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+        sources = [{"id": "source-1", "provider_reference_ids": ["ref-1"], "title": "来源", "url": "https://example.com"}]
+        self.store.update_execution(
+            int(execution["id"]),
+            search_status="succeeded",
+            analysis_status="failed",
+            sources_json=json.dumps(sources, ensure_ascii=False),
+            reference_aliases_json=json.dumps({"ref-1": "source-1"}, ensure_ascii=False),
+            request_id="request-1",
+        )
+        fake_report = normalize_report(
+            '{"title":"测试报告","core_conclusion":"结论"}',
+            snapshot,
+            sources,
+            {"ref-1": "source-1"},
+            [],
+            "now",
+            "request-1",
+        )
+        with (
+            patch.object(service.client, "search") as search,
+            patch.object(service, "_request_analysis", return_value=fake_report),
+            patch.object(service._executor, "submit", side_effect=lambda fn, *args: fn(*args)),
+        ):
+            service.reanalyze_execution(5, int(execution["id"]))
+            stored = self.store.get_execution(5, int(execution["id"]))
+            self.assertEqual(stored["status"], "succeeded")
+            self.assertEqual(stored["analysis_status"], "succeeded")
+            search.assert_not_called()
+
+    def test_search_success_analysis_failure_keeps_sources(self) -> None:
+        snapshot = {
+            "question": "近期证券行业变化",
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "report_type": "industry_trends",
+            "analysis_depth": "concise",
+        }
+        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+        fake_result = QianfanSearchResult(
+            answer="",
+            references=[QianfanReference("ref-1", "来源", "https://example.com")],
+            request_id="request-analysis-fail",
+        )
+        with (
+            patch.object(service.client, "search", return_value=fake_result),
+            patch.object(service, "_request_analysis", side_effect=RuntimeError("deepseek timeout")),
+        ):
+            service._run_execution(int(execution["id"]))
+        stored = self.store.get_execution(5, int(execution["id"]))
+        self.assertEqual(stored["status"], "failed")
+        self.assertEqual(stored["search_status"], "succeeded")
+        self.assertEqual(stored["analysis_status"], "failed")
+        self.assertEqual(len(stored["sources"]), 1)
+        self.assertTrue(stored["report"]["is_fallback"])
 
 
 if __name__ == "__main__":

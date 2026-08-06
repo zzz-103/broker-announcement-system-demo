@@ -1,22 +1,29 @@
 from __future__ import annotations
 
+import secrets
+from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
-from ..auth import get_session
+from ..auth import get_session, require_admin_token
+from ..config import settings
 from ..contracts import (
     InstantSearchRequest,
     IntelligenceTopicCreate,
     IntelligenceTopicEnabled,
     IntelligenceTopicUpdate,
     KeywordSuggestionRequest,
+    SearchServiceConfigUpdate,
+    VerifyPasswordRequest,
 )
 from ..custom_intelligence_service import (
     ActiveExecutionError,
     IntelligenceNotFoundError,
     IntelligenceStoreError,
+    analysis_service_configured,
     options_payload,
+    reanalyze_execution,
     store,
     submit_execution,
     suggest_keywords,
@@ -24,10 +31,13 @@ from ..custom_intelligence_service import (
 from ..custom_intelligence_store import TopicNameConflictError
 from ..qianfan_search import (
     QianfanConfigurationError,
+    QianfanDisabledError,
     QianfanError,
     QianfanTimeoutError,
+    effective_search_config,
     qianfan_error_message,
     qianfan_http_status,
+    test_search_configuration,
 )
 
 
@@ -50,7 +60,74 @@ def _public_topic(topic: dict[str, object]) -> dict[str, object]:
 
 
 def _public_execution(execution: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in execution.items() if key not in {"owner_user_id", "created_by_user_id", "executed_by_user_id"}}
+    public = {
+        key: value
+        for key, value in execution.items()
+        if key not in {
+            "owner_user_id",
+            "created_by_user_id",
+            "executed_by_user_id",
+            "request_payload",
+            "reference_aliases",
+        }
+    }
+    sources = public.get("sources")
+    if isinstance(sources, list):
+        public["sources"] = [
+            {key: value for key, value in item.items() if key != "provider_reference_ids"}
+            for item in sources
+            if isinstance(item, dict)
+        ]
+    return public
+
+
+def _mask_api_key(value: str) -> str:
+    if not value:
+        return ""
+    prefix = "bce-v3/" if value.startswith("bce-v3/") else ""
+    return f"{prefix}••••••••••••••••"
+
+
+def _admin_search_config_payload() -> dict[str, object]:
+    config = effective_search_config()
+    analysis_configured = analysis_service_configured()
+    try:
+        last_test = store.get_search_test()
+    except Exception:
+        last_test = None
+    return {
+        "enabled": config.enabled,
+        "endpoint": config.endpoint,
+        "auth_header": config.auth_header,
+        "timeout_seconds": config.timeout_seconds,
+        "api_key_mask": _mask_api_key(config.api_key),
+        "has_api_key": bool(config.api_key),
+        "config_source": config.config_source,
+        "last_test": last_test,
+        "analysis_configured": analysis_configured,
+        "analysis_service_status": "configured" if analysis_configured else "not_configured",
+    }
+
+
+def _test_error_message(exc: Exception) -> str:
+    if isinstance(exc, QianfanDisabledError):
+        return "搜索服务已停用。"
+    if isinstance(exc, QianfanConfigurationError):
+        return "搜索服务未配置，请先保存有效的 API Key 和模型。"
+    if isinstance(exc, QianfanTimeoutError):
+        return "网络超时，请检查 Endpoint、网络连接或增加超时时间。"
+    if isinstance(exc, QianfanError):
+        code = (exc.error_code or "").casefold()
+        if exc.status_code in {401, 403} or code in {"unauthorized", "forbidden", "permission_denied"}:
+            return "鉴权失败，请检查 API Key、模型权限和鉴权头。"
+        if code == "invalidappid" or "no permission to use the appid" in str(exc).casefold():
+            return "API Key 未授权当前模型或应用，请在千帆控制台检查 Key 权限和应用绑定。"
+        if exc.status_code in {400, 404} or "model" in code or "modelnotfound" in code:
+            return "模型不可用或参数错误，请检查模型名称与接口参数。"
+        if exc.status_code == 429 or code in {"overratelimit", "ratelimit", "too_many_requests"}:
+            return "额度不足或限流，请稍后重试。"
+        return "上游服务异常，请稍后重试。"
+    return "连接测试失败，请检查服务状态后重试。"
 
 
 def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务暂不可用") -> HTTPException:
@@ -60,6 +137,8 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
         return HTTPException(status_code=409, detail="当前已有情报执行正在进行，请稍后再试")
     if isinstance(exc, TopicNameConflictError):
         return HTTPException(status_code=409, detail="同名情报主题已存在")
+    if isinstance(exc, QianfanDisabledError):
+        return HTTPException(status_code=409, detail="百度智能搜索服务已停用")
     if isinstance(exc, QianfanConfigurationError):
         return HTTPException(status_code=503, detail="百度智能搜索服务尚未配置")
     if isinstance(exc, QianfanTimeoutError):
@@ -69,6 +148,88 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
     if isinstance(exc, IntelligenceStoreError):
         return HTTPException(status_code=500, detail=fallback)
     return HTTPException(status_code=500, detail=fallback)
+
+
+@router.get(
+    "/api/admin/custom-intelligence/search-config",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_search_config() -> dict[str, object]:
+    try:
+        return _admin_search_config_payload()
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法加载情报搜索服务配置") from exc
+
+
+@router.post(
+    "/api/admin/custom-intelligence/search-config",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_search_config(payload: SearchServiceConfigUpdate) -> dict[str, object]:
+    current = effective_search_config()
+    api_key = (payload.api_key or "").strip()
+    if not api_key or "••" in api_key:
+        api_key = current.api_key
+    try:
+        store.save_search_config(
+            enabled=payload.enabled,
+            api_key=api_key,
+            model=str(payload.model or ""),
+            endpoint=payload.endpoint,
+            auth_header=payload.auth_header,
+            timeout_seconds=payload.timeout_seconds,
+            updated_by_user_id=0,
+        )
+        return _admin_search_config_payload()
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法保存情报搜索服务配置") from exc
+
+
+@router.post(
+    "/api/admin/custom-intelligence/search-config/test",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_search_config_test() -> dict[str, object]:
+    tested_at = datetime.now(timezone.utc).isoformat()
+    try:
+        result = test_search_configuration()
+    except Exception as exc:
+        message = _test_error_message(exc)
+        try:
+            store.save_search_test(status="failed", message=message, tested_at=tested_at)
+        except Exception:
+            pass
+        return {
+            "status": "failed",
+            "message": message,
+            "tested_at": tested_at,
+        }
+    try:
+        store.save_search_test(
+            status="success",
+            message=str(result.get("message") or "连接测试成功，服务可用。"),
+            tested_at=tested_at,
+        )
+    except Exception:
+        pass
+    return {
+        "status": "success",
+        "message": str(result.get("message") or "连接测试成功，服务可用。"),
+        "tested_at": tested_at,
+        "request_id": result.get("request_id"),
+    }
+
+
+@router.post(
+    "/api/admin/custom-intelligence/search-config/reveal-key",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_search_config_reveal_key(payload: VerifyPasswordRequest) -> dict[str, str]:
+    expected_password = settings.admin_password
+    if expected_password and secrets.compare_digest(payload.password, expected_password):
+        config = effective_search_config()
+        return {"api_key": config.api_key}
+    raise HTTPException(status_code=401, detail="管理员密码不正确")
 
 
 @router.get("/api/custom-intelligence/options")
@@ -273,4 +434,21 @@ def post_execution_rerun(
         )
     except Exception as exc:
         raise _handle_store_error(exc, "无法重新执行情报记录") from exc
+    return {"execution": _public_execution(execution)}
+
+
+@router.post(
+    "/api/custom-intelligence/executions/{execution_id}/reanalyze",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def post_execution_reanalyze(
+    execution_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    session = get_session(authorization)
+    owner_id = _owner_user_id(session)
+    try:
+        execution = reanalyze_execution(owner_id, execution_id)
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法重新分析情报记录") from exc
     return {"execution": _public_execution(execution)}

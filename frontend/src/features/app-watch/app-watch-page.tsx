@@ -225,7 +225,7 @@ export default function AppUpdatesPage() {
             onSelect: () => exportAppReleaseCsv(records),
           },
         ]}
-        onOpenAdmin={() => router.push("/")}
+        onOpenAdmin={() => router.push("/admin")}
         onLogout={logout}
       />
 

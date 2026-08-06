@@ -152,7 +152,45 @@ export interface CustomIntelligenceOptionsResponse {
   source_preferences: CustomIntelligenceOption<IntelligenceSourcePreference>[];
   preset_questions: CustomIntelligencePresetQuestion[];
   service_configured: boolean;
+  service_enabled: boolean;
+  service_status: "enabled" | "disabled" | "not_configured";
   deep_search_enabled: boolean;
+  analysis_configured: boolean;
+  analysis_service_status: "configured" | "not_configured";
+}
+
+export interface IntelligenceSearchTestRecord {
+  status: string;
+  message: string;
+  tested_at: string | null;
+}
+
+export interface IntelligenceSearchConfigResponse {
+  enabled: boolean;
+  endpoint: string;
+  auth_header: string;
+  timeout_seconds: number;
+  api_key_mask: string;
+  has_api_key: boolean;
+  config_source: "admin" | "env";
+  last_test: IntelligenceSearchTestRecord | null;
+  analysis_configured: boolean;
+  analysis_service_status: "configured" | "not_configured";
+}
+
+export interface IntelligenceSearchConfigInput {
+  enabled: boolean;
+  endpoint: string;
+  auth_header: string;
+  timeout_seconds: number;
+  api_key?: string;
+}
+
+export interface IntelligenceSearchTestResponse {
+  status: "success" | "failed";
+  message: string;
+  tested_at: string;
+  request_id?: string | null;
 }
 
 export interface CustomIntelligenceConfig {
@@ -194,7 +232,6 @@ export interface KeywordSuggestionsResponse {
 
 export interface IntelligenceSource {
   id: string;
-  provider_reference_ids?: string[];
   title: string;
   url: string;
   site_name?: string;
@@ -223,6 +260,12 @@ export interface IntelligenceReport {
   executed_at: string;
   time_range: string;
   valid_source_count: number;
+  report_type: IntelligenceReportType;
+  service: string;
+  search_service: string;
+  analysis_service: string;
+  request_id: string;
+  is_fallback: boolean;
   core_conclusion: string;
   key_dynamics: IntelligenceDynamic[];
   impact_analysis: string;
@@ -245,12 +288,14 @@ export interface CustomIntelligenceExecution {
   snapshot: Partial<InstantSearchRequest>;
   original_query: string;
   final_query: string;
-  request_payload?: Record<string, unknown>;
   report: Partial<IntelligenceReport> | null;
   sources: IntelligenceSource[];
-  reference_aliases?: Record<string, string>;
   status: CustomIntelligenceExecutionStatus;
   error_message: string | null;
+  search_status: "pending" | "running" | "succeeded" | "failed" | "not_run";
+  analysis_status: "pending" | "running" | "succeeded" | "failed" | "not_run";
+  search_error_message: string | null;
+  analysis_error_message: string | null;
   request_id?: string | null;
   created_at: string;
   started_at: string | null;

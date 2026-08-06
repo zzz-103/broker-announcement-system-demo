@@ -92,6 +92,11 @@ class RouteOwnershipTests(unittest.TestCase):
             ("POST", "/api/custom-intelligence/executions"),
             ("GET", "/api/custom-intelligence/executions/{execution_id}"),
             ("POST", "/api/custom-intelligence/executions/{execution_id}/rerun"),
+            ("POST", "/api/custom-intelligence/executions/{execution_id}/reanalyze"),
+            ("GET", "/api/admin/custom-intelligence/search-config"),
+            ("POST", "/api/admin/custom-intelligence/search-config"),
+            ("POST", "/api/admin/custom-intelligence/search-config/test"),
+            ("POST", "/api/admin/custom-intelligence/search-config/reveal-key"),
         }
         self.assertTrue(expected.issubset(registered), expected - registered)
 
@@ -154,6 +159,23 @@ class RouteOwnershipTests(unittest.TestCase):
         with (
             patch.dict(os.environ, {"BAIDU_QIANFAN_API_KEY": "test-only", "BAIDU_QIANFAN_MODEL": "test-model"}),
             patch.object(custom_intelligence_service.client, "search", side_effect=fake_search),
+            patch.object(
+                custom_intelligence_service,
+                "_request_analysis",
+                return_value={
+                    "title": "路由测试报告",
+                    "core_conclusion": "综合结论",
+                    "question": "近期证券行业变化",
+                    "executed_at": "now",
+                    "time_range": "month",
+                    "valid_source_count": 1,
+                    "report_type": "industry_trends",
+                    "service": "baidu_web_search+deepseek",
+                    "search_service": "baidu_web_search",
+                    "analysis_service": "deepseek",
+                    "is_fallback": False,
+                },
+            ),
         ):
             created = self.client.post(
                 "/api/custom-intelligence/executions",
@@ -208,6 +230,68 @@ class RouteOwnershipTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["role"], "user")
+
+    def test_admin_search_config_requires_admin_and_redacts_key(self) -> None:
+        admin_headers = self._admin_headers()
+        self.assertEqual(
+            self.client.get("/api/admin/custom-intelligence/search-config").status_code,
+            401,
+        )
+        main.session_tokens["search-config-user"] = {
+            "username": "search-user",
+            "name": "Search User",
+            "role": "user",
+            "is_admin": False,
+            "user_id": 9,
+        }
+        user_headers = {"Authorization": "Bearer search-config-user"}
+        self.assertEqual(
+            self.client.get("/api/admin/custom-intelligence/search-config", headers=user_headers).status_code,
+            403,
+        )
+        with patch.dict(
+            os.environ,
+            {
+                "CUSTOM_INTELLIGENCE_DB_PATH": str(
+                    Path(_RUNTIME_DIR.name) / "route-search-config.db"
+                ),
+                "BAIDU_QIANFAN_API_KEY": "bce-v3/route-secret-key",
+                "BAIDU_QIANFAN_MODEL": "route-model",
+                "BAIDU_QIANFAN_ENDPOINT": "https://route.example.com",
+            },
+        ):
+            saved = self.client.post(
+                "/api/admin/custom-intelligence/search-config",
+                headers=admin_headers,
+                json={
+                    "enabled": True,
+                    "api_key": "bce-v3/route-secret-key",
+                    "model": "route-model",
+                    "endpoint": "https://route.example.com/",
+                    "auth_header": "X-Appbuilder-Authorization",
+                    "timeout_seconds": 30,
+                },
+            )
+            self.assertEqual(saved.status_code, 200)
+            body = saved.json()
+            self.assertNotIn("api_key", body)
+            self.assertEqual(body["api_key_mask"], "bce-v3/••••••••••••••••")
+            self.assertTrue(body["has_api_key"])
+            self.assertEqual(body["config_source"], "admin")
+
+            wrong_password = self.client.post(
+                "/api/admin/custom-intelligence/search-config/reveal-key",
+                headers=admin_headers,
+                json={"password": "wrong-password"},
+            )
+            self.assertEqual(wrong_password.status_code, 401)
+            revealed = self.client.post(
+                "/api/admin/custom-intelligence/search-config/reveal-key",
+                headers=admin_headers,
+                json={"password": "route-audit-password"},
+            )
+            self.assertEqual(revealed.status_code, 200)
+            self.assertEqual(revealed.json()["api_key"], "bce-v3/route-secret-key")
 
     def test_admin_user_and_audit_lists_support_search_and_pagination(self) -> None:
         headers = self._admin_headers()

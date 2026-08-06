@@ -25,6 +25,7 @@ import { UserApprovalManager } from "@/components/user-approval-manager";
 import { FeedbackManager } from "@/components/feedback-manager";
 import { AuditRecordsManager } from "@/components/audit-records-manager";
 import { Button } from "@/components/ui/button";
+import { SearchServiceSettings } from "./search-service-settings";
 import {
   Dialog,
   DialogContent,
@@ -188,7 +189,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const [fullRefreshError, setFullRefreshError] = useState<string | null>(null);
   const [dashboardExporting, setDashboardExporting] = useState(false);
   const [dashboardExportMessage, setDashboardExportMessage] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"tasks" | "users" | "records">("tasks");
+  const [activeSection, setActiveSection] = useState<"tasks" | "users" | "records" | "search">("tasks");
   const {
     activeOperation,
     cardStates,
@@ -368,6 +369,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             ["tasks", "任务运行"],
             ["users", "用户与审批"],
             ["records", "审计与反馈"],
+            ["search", "情报搜索"],
           ].map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={activeSection === id} onClick={() => setActiveSection(id as typeof activeSection)} className={cn("border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors", activeSection === id ? "border-[#2563EB] text-[#1F5BB5]" : "border-transparent text-[#667085] hover:text-[#344054]")}>{label}</button>
           ))}
@@ -506,6 +508,12 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
 
         {activeSection === "users" && <UserApprovalManager />}
         {activeSection === "records" && <><AuditRecordsManager /><FeedbackManager /></>}
+        {activeSection === "search" && (
+          <SearchServiceSettings
+            token={token}
+            onAuthError={() => clearAuth("登录已失效，请重新登录")}
+          />
+        )}
       </main>
 
       <AdminTaskLogDialog

@@ -2,6 +2,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useState, useMemo } from "react";
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { HelpCircle, MessageSquarePlus, RefreshCw } from "lucide-react";
 import {
   DataNotGeneratedError,
@@ -29,10 +30,6 @@ import type { FeedbackCategory } from "@/lib/api/backend-client";
 import type { DashboardFilters as DashboardFiltersData } from "@dashboard-data/contracts";
 
 // Dynamic imports for heavy components (code splitting)
-const AdminDashboard = dynamic(
-  () => import("@/features/admin/admin-dashboard").then((m) => m.AdminDashboard),
-  { ssr: false }
-);
 const AiSummary = dynamic(
   () => import("@/components/ai-summary").then((m) => m.AiSummary),
   { ssr: false, loading: () => <div className="surface-panel h-48 motion-reduce:animate-none" /> }
@@ -79,6 +76,7 @@ const DataDefinitionModal = dynamic(
 );
 
 export default function Dashboard() {
+  const router = useRouter();
   const [allData, setAllData] = useState<ProcessedRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dataStatus, setDataStatus] = useState<"loading" | "empty" | "ready" | "error">("loading");
@@ -87,7 +85,6 @@ export default function Dashboard() {
     useState<ProcessedRecord | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<"ai" | "overview" | "table">("overview");
-  const [showDashboard, setShowDashboard] = useState(false);
   const [dataVersion, setDataVersion] = useState(0);
   const [dataUpdatedAt, setDataUpdatedAt] = useState<string | null>(null);
   const [dataFilters, setDataFilters] = useState<DashboardFiltersData | null>(null);
@@ -109,18 +106,17 @@ export default function Dashboard() {
       setLandingResolved(false);
       return;
     }
-    setShowDashboard(false);
     setLandingResolved(true);
   }, [isLoggedIn]);
 
   useEffect(() => {
-    if (!isLoggedIn || !token || showDashboard || !landingResolved) return;
+    if (!isLoggedIn || !token || !landingResolved) return;
     void recordDashboardView(token, getAuditContext()).catch((error: unknown) => {
       if (error instanceof BackendApiError && error.status === 401) {
         clearAuth("登录已失效，请重新登录");
       }
     });
-  }, [clearAuth, isLoggedIn, landingResolved, showDashboard, token]);
+  }, [clearAuth, isLoggedIn, landingResolved, token]);
 
   // Broker tags: show a compact subset until explicitly expanded.
   const [showAllBrokers, setShowAllBrokers] = useState(false);
@@ -307,16 +303,6 @@ export default function Dashboard() {
     return <LoginPageWithApply />;
   }
 
-  // Show admin dashboard if admin requested it
-  if (showDashboard && isAdmin) {
-    return (
-      <AdminDashboard
-        onBack={() => setShowDashboard(false)}
-        onDataRefresh={refreshData}
-      />
-    );
-  }
-  
   return (
     <div className="min-h-screen min-w-0 max-w-full overflow-x-hidden bg-[#F4F7FB]">
       {/* ─── Top Navigation ─── */}
@@ -351,7 +337,7 @@ export default function Dashboard() {
             onSelect: () => exportCsv(allData),
           },
         ]}
-        onOpenAdmin={() => setShowDashboard(true)}
+        onOpenAdmin={() => router.push("/admin")}
         onLogout={logout}
       />
 

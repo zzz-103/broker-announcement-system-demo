@@ -6,6 +6,9 @@ import type {
   CustomIntelligenceTopicResponse,
   CustomIntelligenceTopicsResponse,
   InstantSearchRequest,
+  IntelligenceSearchConfigInput,
+  IntelligenceSearchConfigResponse,
+  IntelligenceSearchTestResponse,
   IntelligenceTopic,
   KeywordSuggestionRequest,
   KeywordSuggestionsResponse,
@@ -20,6 +23,52 @@ export function fetchCustomIntelligenceOptions(
   return requestJson<CustomIntelligenceOptionsResponse>(
     "/api/custom-intelligence/options",
     { signal },
+    token,
+  );
+}
+
+export function fetchAdminSearchConfig(
+  token: string,
+  signal?: AbortSignal,
+): Promise<IntelligenceSearchConfigResponse> {
+  return requestJson<IntelligenceSearchConfigResponse>(
+    "/api/admin/custom-intelligence/search-config",
+    { signal },
+    token,
+  );
+}
+
+export function saveAdminSearchConfig(
+  token: string,
+  payload: IntelligenceSearchConfigInput,
+  signal?: AbortSignal,
+): Promise<IntelligenceSearchConfigResponse> {
+  return requestJson<IntelligenceSearchConfigResponse>(
+    "/api/admin/custom-intelligence/search-config",
+    { method: "POST", body: JSON.stringify(payload), signal },
+    token,
+  );
+}
+
+export function testAdminSearchConfig(
+  token: string,
+  signal?: AbortSignal,
+): Promise<IntelligenceSearchTestResponse> {
+  return requestJson<IntelligenceSearchTestResponse>(
+    "/api/admin/custom-intelligence/search-config/test",
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function revealAdminSearchConfigKey(
+  token: string,
+  password: string,
+  signal?: AbortSignal,
+): Promise<{ api_key: string }> {
+  return requestJson<{ api_key: string }>(
+    "/api/admin/custom-intelligence/search-config/reveal-key",
+    { method: "POST", body: JSON.stringify({ password }), signal },
     token,
   );
 }
@@ -154,6 +203,18 @@ export function rerunCustomIntelligenceExecution(
 ): Promise<CustomIntelligenceExecutionResponse> {
   return requestJson<CustomIntelligenceExecutionResponse>(
     `/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/rerun`,
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function reanalyzeCustomIntelligenceExecution(
+  token: string,
+  executionId: number,
+  signal?: AbortSignal,
+): Promise<CustomIntelligenceExecutionResponse> {
+  return requestJson<CustomIntelligenceExecutionResponse>(
+    `/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/reanalyze`,
     { method: "POST", signal },
     token,
   );

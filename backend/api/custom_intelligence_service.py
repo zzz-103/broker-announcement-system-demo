@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import ValidationError
 
-from .config import settings
+from backend.llm_table.llm_client import LLMApiConfig, OpenAICompatibleClient
+
+from .config import PROJECT_ROOT, resolve_project_path, settings
 from .contracts import IntelligenceReport
 from .custom_intelligence_store import (
     ActiveExecutionError,
@@ -24,6 +28,7 @@ from .qianfan_search import (
     QianfanSearchResult,
     build_search_payload,
     client as qianfan_client,
+    effective_search_config,
     qianfan_error_message,
     validate_configuration,
 )
@@ -158,7 +163,42 @@ def initialize_service() -> None:
         _initialized = True
 
 
+def analysis_llm_config_path() -> Path:
+    return resolve_project_path(
+        os.getenv("LLM_CONFIG_PATH"),
+        PROJECT_ROOT / "backend" / "config" / "llm_api_config.json",
+    )
+
+
+def analysis_service_configured() -> bool:
+    try:
+        path = analysis_llm_config_path()
+        if not path.exists():
+            return False
+        config = LLMApiConfig.load(path)
+        config.validate()
+        return True
+    except Exception:
+        return False
+
+
+def _load_analysis_client() -> OpenAICompatibleClient:
+    path = analysis_llm_config_path()
+    if not path.exists():
+        raise ValueError("LLM 配置文件不存在")
+    config = LLMApiConfig.load(path)
+    config.validate()
+    return OpenAICompatibleClient(config)
+
+
 def options_payload() -> dict[str, object]:
+    config = effective_search_config()
+    configured = bool(config.api_key and config.endpoint)
+    if not config.enabled:
+        service_status = "disabled" if configured else "not_configured"
+    else:
+        service_status = "enabled" if configured else "not_configured"
+    analysis_configured = analysis_service_configured()
     return {
         "perspectives": [{"value": key, "label": value} for key, value in PERSPECTIVE_LABELS.items()],
         "time_ranges": [{"value": key, "label": value} for key, value in TIME_RANGE_LABELS.items()],
@@ -166,8 +206,12 @@ def options_payload() -> dict[str, object]:
         "analysis_depths": [{"value": key, "label": value} for key, value in DEPTH_LABELS.items()],
         "source_preferences": [{"value": key, "label": value} for key, value in SOURCE_PREFERENCE_LABELS.items()],
         "preset_questions": PRESET_QUESTIONS,
-        "service_configured": bool(settings.baidu_qianfan_api_key and settings.baidu_qianfan_model),
+        "service_configured": configured,
+        "service_enabled": config.enabled and configured,
+        "service_status": service_status,
         "deep_search_enabled": False,
+        "analysis_configured": analysis_configured,
+        "analysis_service_status": "configured" if analysis_configured else "not_configured",
     }
 
 
@@ -211,43 +255,66 @@ def normalize_snapshot(payload: dict[str, object]) -> dict[str, object]:
 
 
 def build_final_query(snapshot: dict[str, object]) -> str:
-    question = clean_text(snapshot.get("question"), 1_000)
-    clauses = [question]
-    description = clean_text(snapshot.get("description"), 2_000)
-    if description:
-        clauses.append(f"背景描述：{description}")
+    question = clean_text(snapshot.get("question"), 500)
+    clauses = [question] if question else []
     keywords = [clean_text(item, 200) for item in snapshot.get("keywords", []) if clean_text(item, 200)]
     focus = [clean_text(item, 200) for item in snapshot.get("focus_objects", []) if clean_text(item, 200)]
     if keywords:
-        clauses.append("重点关键词：" + "、".join(keywords))
+        clauses.append("关键词：" + "、".join(keywords[:5]))
     if focus:
-        clauses.append("关注对象：" + "、".join(focus))
-    perspective = PERSPECTIVE_LABELS.get(str(snapshot.get("analysis_perspective")), "行业研究视角")
-    source_preference = SOURCE_PREFERENCE_LABELS.get(str(snapshot.get("source_preference")), "综合平衡")
-    clauses.append(f"请以{perspective}分析，{source_preference}。")
-    sites = [clean_text(item, 253) for item in snapshot.get("specified_sites", []) if clean_text(item, 253)]
-    if sites:
-        clauses.append("指定网站：" + "、".join(sites[:20]))
-    return "\n".join(item for item in clauses if item).strip()
+        clauses.append("关注对象：" + "、".join(focus[:3]))
+    return " ".join(item for item in clauses if item).strip()[:1_000]
 
 
-def build_instruction(snapshot: dict[str, object], source_count: int) -> str:
+def build_analysis_messages(snapshot: dict[str, object], sources: list[dict[str, object]]) -> list[dict[str, str]]:
     report_type = REPORT_TYPE_LABELS.get(str(snapshot.get("report_type")), "行业动态")
     depth = DEPTH_LABELS.get(str(snapshot.get("analysis_depth")), "标准")
     extra = clean_text(snapshot.get("extra_requirements"), 2_000)
-    extra_clause = f"额外要求：{extra}\n" if extra else ""
-    return (
-        "你是证券行业情报分析师。仅基于联网检索到的事实和引用来源回答，不要编造。"
-        "请输出严格 JSON，不要输出 Markdown、HTML 或代码围栏。字段必须为："
-        "title, question, executed_at, time_range, valid_source_count, core_conclusion, "
-        "key_dynamics, impact_analysis, opportunities, risks, watch_items, recommended_followups。"
-        "key_dynamics 是数组，每项包含 title、institutions（字符串数组）、information_time、"
-        "summary、impact_analysis、event_tags（字符串数组）、source_ids（引用原始 ID 数组）。"
-        "focus_sections 是数组，每项包含 title 和 items（字符串数组）；"
-        f"必须按报告类型补充以下重点章节：{'、'.join(REPORT_FOCUS_LABELS.get(str(snapshot.get('report_type')), []))}。"
-        f"报告类型为{report_type}，分析深度为{depth}，最多使用 {source_count} 条来源。"
-        f"{extra_clause}所有字符串使用纯文本。"
+    perspective = PERSPECTIVE_LABELS.get(str(snapshot.get("analysis_perspective")), "行业研究视角")
+    source_preference = SOURCE_PREFERENCE_LABELS.get(str(snapshot.get("source_preference")), "综合平衡")
+    question = clean_text(snapshot.get("question"), 1_000)
+    description = clean_text(snapshot.get("description"), 2_000)
+    keywords = clean_list(snapshot.get("keywords"), 20)
+    focus = clean_list(snapshot.get("focus_objects"), 20)
+    source_items = [
+        {
+            "id": str(item.get("id") or ""),
+            "title": str(item.get("title") or ""),
+            "site_name": str(item.get("site_name") or ""),
+            "date": str(item.get("date") or ""),
+            "snippet": str(item.get("snippet") or ""),
+            "url": str(item.get("url") or ""),
+        }
+        for item in sources
+        if isinstance(item, dict) and item.get("id")
+    ]
+    system = (
+        "你是证券行业情报分析师。只能依据用户提供的来源内容分析，不得编造事实、不得生成任何新链接。"
+        "只输出严格 JSON，不要输出 Markdown、HTML 或代码围栏。"
+        "字段必须为：title, core_conclusion, key_dynamics, focus_sections, impact_analysis, "
+        "opportunities, risks, watch_items, recommended_followups。"
+        "key_dynamics 是数组，每项包含 title、institutions（字符串数组）、information_time、summary、"
+        "impact_analysis、event_tags（字符串数组）、source_ids（字符串数组）。"
+        "source_ids 只能使用给定来源的 id，不得使用来源之外的编号或 URL。"
+        "focus_sections 是数组，每项包含 title 和 items（字符串数组）。"
     )
+    user = (
+        f"业务问题：{question or '未提供'}\n"
+        f"业务背景：{description or '未提供'}\n"
+        f"检索关键词：{'、'.join(keywords) or '未提供'}\n"
+        f"关注对象：{'、'.join(focus) or '未提供'}\n"
+        f"分析视角：{perspective}\n"
+        f"来源偏好：{source_preference}\n"
+        f"报告类型：{report_type}\n"
+        f"分析深度：{depth}\n"
+        f"额外要求：{extra or '无'}\n"
+        f"必须按报告类型补充重点章节：{'、'.join(REPORT_FOCUS_LABELS.get(str(snapshot.get('report_type')), []))}\n"
+        f"可用来源（共 {len(source_items)} 条）：\n{json.dumps(source_items, ensure_ascii=False)}"
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
 
 
 def _extract_json_object(answer: str) -> dict[str, object] | None:
@@ -313,13 +380,25 @@ def normalize_sources(result: QianfanSearchResult) -> tuple[list[dict[str, objec
     return canonical, aliases
 
 
-def _fallback_report(snapshot: dict[str, object], answer: str, sources: list[dict[str, object]], executed_at: str) -> dict[str, object]:
+def _fallback_report(
+    snapshot: dict[str, object],
+    answer: str,
+    sources: list[dict[str, object]],
+    executed_at: str,
+    request_id: str | None = None,
+) -> dict[str, object]:
     return {
         "title": f"{REPORT_TYPE_LABELS.get(str(snapshot.get('report_type')), '行业动态')}：{clean_text(snapshot.get('question'), 160)}",
         "question": clean_text(snapshot.get("question"), 1_000),
         "executed_at": executed_at,
         "time_range": str(snapshot.get("time_range") or "month"),
         "valid_source_count": len(sources),
+        "report_type": str(snapshot.get("report_type") or "industry_trends"),
+        "service": "baidu_web_search+deepseek",
+        "search_service": "baidu_web_search",
+        "analysis_service": "deepseek",
+        "request_id": request_id or "",
+        "is_fallback": True,
         "core_conclusion": clean_text(answer, 4_000) or "本次检索未返回可整理的综合回答。",
         "key_dynamics": [],
         "impact_analysis": "请结合来源原文进一步核验影响范围。" if sources else "暂无可核验来源。",
@@ -341,15 +420,22 @@ def normalize_report(
     aliases: dict[str, str],
     followups: list[str],
     executed_at: str,
+    request_id: str | None = None,
 ) -> dict[str, object]:
     raw = _extract_json_object(answer)
     if raw is None:
-        return _fallback_report(snapshot, answer, sources, executed_at)
+        return _fallback_report(snapshot, answer, sources, executed_at, request_id)
     raw = dict(raw)
-    raw.setdefault("question", snapshot.get("question", ""))
-    raw.setdefault("executed_at", executed_at)
-    raw.setdefault("time_range", snapshot.get("time_range", "month"))
-    raw.setdefault("valid_source_count", len(sources))
+    raw["question"] = snapshot.get("question", "")
+    raw["executed_at"] = executed_at
+    raw["time_range"] = snapshot.get("time_range", "month")
+    raw["valid_source_count"] = len(sources)
+    raw["report_type"] = snapshot.get("report_type", "industry_trends")
+    raw["service"] = "baidu_web_search+deepseek"
+    raw["search_service"] = "baidu_web_search"
+    raw["analysis_service"] = "deepseek"
+    raw["request_id"] = request_id or ""
+    raw["is_fallback"] = False
     raw["title"] = clean_text(raw.get("title"), 500)
     for key in ("question", "executed_at", "time_range", "core_conclusion", "impact_analysis"):
         raw[key] = clean_text(raw.get(key), 4_000 if key in {"core_conclusion", "impact_analysis"} else 1_000)
@@ -394,7 +480,7 @@ def normalize_report(
     try:
         report = IntelligenceReport.model_validate(raw)
     except ValidationError:
-        return _fallback_report(snapshot, answer, sources, executed_at)
+        return _fallback_report(snapshot, answer, sources, executed_at, request_id)
     result = report.model_dump(mode="json")
     result["valid_source_count"] = len(sources)
     if invalid_reference_ids:
@@ -408,47 +494,164 @@ def _error_message(exc: Exception) -> str:
     return "情报执行失败，请稍后重试。"
 
 
+def _analysis_error_message(exc: Exception) -> str:
+    text = f"{exc.__class__.__name__} {exc}".casefold()
+    if "timeout" in text:
+        return "DeepSeek 分析请求超时，请重新分析。"
+    if "apiconnectionerror" in text or "connection error" in text or "connectionerror" in text:
+        return "DeepSeek 服务连接失败，请检查 LLM 服务网络或配置。"
+    if "unable to parse json" in text:
+        return "DeepSeek 分析结果解析失败，请重新分析。"
+    if "api_key" in text or "配置文件" in text or "llm 配置" in text:
+        return "DeepSeek 分析服务未配置或密钥缺失，请联系管理员。"
+    return "DeepSeek 分析失败，请重新分析。"
+
+
+def _request_analysis(
+    snapshot: dict[str, object],
+    sources: list[dict[str, object]],
+    aliases: dict[str, str],
+    search_request_id: str | None,
+) -> dict[str, object]:
+    client = _load_analysis_client()
+    messages = build_analysis_messages(snapshot, sources)
+    config = client.config
+    request_kwargs: dict[str, Any] = {
+        "model": config.model,
+        "messages": messages,
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "max_tokens": config.max_tokens,
+        "frequency_penalty": config.frequency_penalty,
+        "presence_penalty": config.presence_penalty,
+    }
+    if config.use_json_object:
+        request_kwargs["response_format"] = {"type": "json_object"}
+    raw = client._request_json(request_kwargs)
+    answer = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+    return normalize_report(
+        answer,
+        snapshot,
+        sources,
+        aliases,
+        [],
+        datetime.now(timezone.utc).isoformat(),
+        request_id=search_request_id,
+    )
+
+
+def _run_analysis(
+    execution_id: int,
+    sources: list[dict[str, object]],
+    aliases: dict[str, str],
+    search_request_id: str | None,
+) -> None:
+    try:
+        execution = store.get_execution_by_id(execution_id)
+        snapshot = normalize_snapshot(execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {})
+        report = _request_analysis(snapshot, sources, aliases, search_request_id)
+        store.update_execution(
+            execution_id,
+            status="succeeded",
+            analysis_status="succeeded",
+            analysis_error_message=None,
+            error_message=None,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            report_json=json.dumps(report, ensure_ascii=False),
+        )
+    except Exception as exc:
+        message = _analysis_error_message(exc)
+        snapshot = normalize_snapshot({})
+        try:
+            execution = store.get_execution_by_id(execution_id)
+            stored_snapshot = execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {}
+            snapshot = normalize_snapshot(stored_snapshot)
+        except IntelligenceStoreError:
+            pass
+        fallback = _fallback_report(
+            snapshot,
+            "百度网页检索已完成，但 DeepSeek 结构化分析失败。可以查看原始检索结果，或点击“重新分析”。",
+            sources,
+            datetime.now(timezone.utc).isoformat(),
+            search_request_id,
+        )
+        try:
+            store.update_execution(
+                execution_id,
+                status="failed",
+                analysis_status="failed",
+                analysis_error_message=message,
+                error_message=f"搜索成功，但分析失败：{message}",
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                report_json=json.dumps(fallback, ensure_ascii=False),
+            )
+        except IntelligenceStoreError:
+            pass
+
+
 def _run_execution(execution_id: int) -> None:
     try:
         execution = store.get_execution_by_id(execution_id)
         started = datetime.now(timezone.utc).isoformat()
-        store.update_execution(execution_id, status="running", started_at=started)
+        store.update_execution(
+            execution_id,
+            status="running",
+            search_status="running",
+            analysis_status="pending",
+            started_at=started,
+        )
         snapshot = normalize_snapshot(execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {})
         final_query = build_final_query(snapshot)
         top_k = TOP_K_BY_DEPTH.get(str(snapshot.get("analysis_depth")), 8)
-        instruction = build_instruction(snapshot, top_k)
         request_payload = build_search_payload(
             final_query,
             time_range=str(snapshot.get("time_range") or "month"),
             top_k=top_k,
             specified_sites=[str(item) for item in snapshot.get("specified_sites", [])],
-            instruction=instruction,
         )
-        # Store only a secret-free payload for diagnostics.
-        store.update_execution(execution_id, final_query=final_query, request_payload_json=json.dumps(request_payload, ensure_ascii=False))
-        result = client.search(request_payload)
-        completed = datetime.now(timezone.utc).isoformat()
-        sources, aliases = normalize_sources(result)
-        report = normalize_report(result.answer, snapshot, sources, aliases, result.followups, completed)
-        status = "succeeded" if result.answer.strip() or sources else "empty"
         store.update_execution(
             execution_id,
-            status=status,
-            completed_at=completed,
-            report_json=json.dumps(report, ensure_ascii=False),
+            final_query=final_query,
+            request_payload_json=json.dumps(request_payload, ensure_ascii=False),
+        )
+        result = client.search(request_payload)
+        sources, aliases = normalize_sources(result)
+        if not sources:
+            store.update_execution(
+                execution_id,
+                status="empty",
+                search_status="succeeded",
+                analysis_status="not_run",
+                search_error_message=None,
+                error_message="未返回有效网页来源",
+                completed_at=datetime.now(timezone.utc).isoformat(),
+                sources_json=json.dumps([], ensure_ascii=False),
+                reference_aliases_json=json.dumps({}, ensure_ascii=False),
+                request_id=result.request_id,
+            )
+            return
+        store.update_execution(
+            execution_id,
+            search_status="succeeded",
+            analysis_status="running",
+            search_error_message=None,
+            error_message=None,
             sources_json=json.dumps(sources, ensure_ascii=False),
             reference_aliases_json=json.dumps(aliases, ensure_ascii=False),
             request_id=result.request_id,
-            error_message=None,
         )
-    except Exception as exc:  # never let worker exceptions escape without state
+        _run_analysis(execution_id, sources, aliases, result.request_id)
+    except Exception as exc:
         try:
             request_id = getattr(exc, "request_id", None)
             store.update_execution(
                 execution_id,
                 status="failed",
-                completed_at=datetime.now(timezone.utc).isoformat(),
+                search_status="failed",
+                analysis_status="not_run",
+                search_error_message=_error_message(exc),
                 error_message=_error_message(exc),
+                completed_at=datetime.now(timezone.utc).isoformat(),
                 request_id=request_id if isinstance(request_id, str) and request_id else None,
             )
         except IntelligenceStoreError:
@@ -492,27 +695,72 @@ def submit_execution(
     return execution
 
 
+def reanalyze_execution(owner_user_id: int, execution_id: int) -> dict[str, object]:
+    initialize_service()
+    execution = store.get_execution(owner_user_id, execution_id)
+    if execution.get("search_status") != "succeeded" or not execution.get("sources"):
+        raise IntelligenceNotFoundError("execution has no search results to reanalyze")
+    active = next(
+        (
+            item
+            for item in store.list_executions(owner_user_id, 1, 100)[0]
+            if item.get("id") != execution_id
+            and item.get("status") in {"pending", "running"}
+        ),
+        None,
+    )
+    if active is not None:
+        raise ActiveExecutionError("an intelligence execution is already active")
+    sources = [item for item in execution.get("sources", []) if isinstance(item, dict)]
+    aliases = execution.get("reference_aliases") if isinstance(execution.get("reference_aliases"), dict) else {}
+    search_request_id = str(execution.get("request_id") or "") or None
+    updated = store.update_execution(
+        execution_id,
+        status="running",
+        analysis_status="running",
+        analysis_error_message=None,
+        error_message=None,
+    )
+    assert _executor is not None
+    _executor.submit(_run_analysis, execution_id, sources, aliases, search_request_id)
+    return updated
+
+
 def suggest_keywords(payload: dict[str, object], max_suggestions: int = 8) -> list[str]:
     validate_configuration()
     description = clean_text(payload.get("description"), 2_000)
     keywords = clean_list(payload.get("keywords"), 30)
     focus_objects = clean_list(payload.get("focus_objects"), 20)
     perspective = PERSPECTIVE_LABELS.get(str(payload.get("analysis_perspective")), "行业研究视角")
-    query = "请为以下证券行业情报主题补充检索关键词，只返回 JSON 数组字符串，不要 HTML。"
-    query += f"\n描述：{description}\n已有关键词：{'、'.join(keywords)}\n关注对象：{'、'.join(focus_objects)}\n分析视角：{perspective}"
-    request_payload = build_search_payload(
-        query,
-        time_range="month",
-        top_k=1,
-        instruction="只输出最多 8 个简短关键词组成的 JSON 数组。",
-        search_mode="disabled",
-    )
-    result = client.search(request_payload)
-    parsed: object
-    try:
-        parsed = json.loads(clean_text(result.answer, 4_000))
-    except (TypeError, ValueError, json.JSONDecodeError):
-        parsed = re.findall(r"[\u4e00-\u9fffA-Za-z0-9][^,，;；\n\]]{1,40}", clean_text(result.answer, 4_000))
+    messages = [
+        {
+            "role": "system",
+            "content": "你是证券行业情报检索助手。只输出 JSON 对象，对象包含 keywords 数组，数组元素为不超过 40 字的检索关键词，不要 Markdown、HTML 或代码围栏。",
+        },
+        {
+            "role": "user",
+            "content": (
+                f"业务描述：{description}\n"
+                f"已有关键词：{'、'.join(keywords)}\n"
+                f"关注对象：{'、'.join(focus_objects)}\n"
+                f"分析视角：{perspective}\n"
+                f"请补充最多 {max(1, min(8, max_suggestions))} 个关键词，并放入 keywords 数组。"
+            ),
+        },
+    ]
+    analysis_client = _load_analysis_client()
+    request_kwargs: dict[str, Any] = {
+        "model": analysis_client.config.model,
+        "messages": messages,
+        "temperature": 0.1,
+        "max_tokens": 1024,
+    }
+    if analysis_client.config.use_json_object:
+        request_kwargs["response_format"] = {"type": "json_object"}
+    raw = analysis_client._request_json(request_kwargs)
+    parsed: object = raw if isinstance(raw, list) else None
+    if parsed is None and isinstance(raw, dict):
+        parsed = raw.get("keywords") or raw.get("suggestions") or []
     candidates = parsed if isinstance(parsed, list) else []
     existing = set(keywords)
     suggestions: list[str] = []
@@ -535,6 +783,7 @@ __all__ = [
     "normalize_report",
     "normalize_sources",
     "options_payload",
+    "reanalyze_execution",
     "store",
     "submit_execution",
     "suggest_keywords",

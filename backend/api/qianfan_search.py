@@ -8,6 +8,7 @@ from typing import Any, Callable
 import httpx
 
 from .config import settings
+from .custom_intelligence_store import store
 
 
 class QianfanError(Exception):
@@ -26,6 +27,10 @@ class QianfanError(Exception):
 
 
 class QianfanConfigurationError(QianfanError):
+    pass
+
+
+class QianfanDisabledError(QianfanConfigurationError):
     pass
 
 
@@ -54,6 +59,17 @@ class QianfanSearchResult:
     followups: list[str] = field(default_factory=list)
     request_id: str | None = None
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class EffectiveSearchConfig:
+    enabled: bool
+    api_key: str
+    model: str
+    endpoint: str
+    auth_header: str
+    timeout_seconds: float
+    config_source: str
 
 
 def _coerce_text(value: object) -> str:
@@ -121,7 +137,11 @@ def _parse_reference(item: dict[str, Any], index: int) -> QianfanReference | Non
         title=title,
         url=url,
         site_name=_coerce_text(
-            item.get("site_name") or item.get("website") or item.get("site") or item.get("domain")
+            item.get("site_name")
+            or item.get("website")
+            or item.get("site")
+            or item.get("domain")
+            or item.get("web_anchor")
         ).strip(),
         date=_coerce_text(item.get("date") or item.get("publish_time") or item.get("published_at")).strip(),
         snippet=_coerce_text(item.get("snippet") or item.get("summary") or item.get("content")).strip(),
@@ -165,6 +185,8 @@ def _response_error_code(payload: dict[str, Any]) -> str | None:
 def qianfan_error_message(error: QianfanError) -> str:
     """Return a safe, actionable message without exposing upstream response text."""
     if isinstance(error, QianfanConfigurationError):
+        if isinstance(error, QianfanDisabledError):
+            return "百度智能搜索服务已停用，请联系管理员启用。"
         return "百度智能搜索服务尚未配置。"
     if isinstance(error, QianfanTimeoutError):
         return "百度智能搜索请求超时，请稍后重试。"
@@ -177,6 +199,8 @@ def qianfan_error_message(error: QianfanError) -> str:
         return "百度智能搜索鉴权失败，请检查服务端密钥、模型权限和鉴权头。"
     if error.status_code == 400 or code in {"invalidargument", "invalid_argument", "bad_request"}:
         return "百度智能搜索请求参数无效，请检查模型和搜索参数。"
+    if code == "invalidappid" or "no permission to use the appid" in str(error).casefold():
+        return "百度智能搜索 API Key 无权调用当前模型或应用，请在千帆控制台检查 Key 权限和应用绑定。"
     return "百度智能搜索服务暂不可用，请稍后重试。"
 
 
@@ -196,38 +220,63 @@ def build_search_payload(
     time_range: str = "month",
     top_k: int = 8,
     specified_sites: list[str] | None = None,
-    instruction: str = "",
-    search_mode: str = "required",
 ) -> dict[str, Any]:
-    """Build a stable, testable request without ever including an API key."""
+    """Build a stable, testable Baidu web_search request without an API key."""
     payload: dict[str, Any] = {
-        "model": settings.baidu_qianfan_model,
         "messages": [{"role": "user", "content": query}],
-        "stream": False,
         "search_source": "baidu_search_v2",
-        "search_mode": search_mode,
-        "response_format": "text",
-        "enable_followup_queries": True,
-        "enable_deep_search": False,
         "search_recency_filter": time_range,
-        "resource_type_filter": [{"type": "web", "top_k": max(1, min(20, int(top_k)))}],
+        "resource_type_filter": [{"type": "web", "top_k": max(6, min(10, int(top_k)))}],
     }
-    if instruction.strip():
-        payload["instruction"] = instruction.strip()
     domains = [str(item).strip().lower() for item in (specified_sites or []) if str(item).strip()]
     if domains:
-        payload["search_filter"] = {"match": {"site": domains[:20]}}
+        payload["search_filter"] = {"match": {"site": domains[:5]}}
     return payload
 
 
+def effective_search_config() -> EffectiveSearchConfig:
+    """Return the effective Baidu config for each request.
+
+    A saved administrator row is authoritative even when it is disabled or has
+    empty fields. Environment values are only a fallback before a row exists.
+    """
+    row = store.get_search_config_row()
+    if row is not None:
+        endpoint = str(row.get("endpoint") or "").strip().rstrip("/")
+        model = str(row.get("model") or "").strip()
+        auth_header = str(row.get("auth_header") or "Authorization").strip()
+        return EffectiveSearchConfig(
+            enabled=bool(row.get("enabled")),
+            api_key=str(row.get("api_key") or ""),
+            model=model,
+            endpoint=endpoint,
+            auth_header=auth_header,
+            timeout_seconds=max(1.0, min(600.0, float(row.get("timeout_seconds") or 0))),
+            config_source="admin",
+        )
+    api_key = settings.baidu_qianfan_api_key
+    model = settings.baidu_qianfan_model
+    endpoint = settings.baidu_qianfan_endpoint
+    return EffectiveSearchConfig(
+        enabled=bool(api_key and endpoint),
+        api_key=api_key,
+        model=model,
+        endpoint=endpoint,
+        auth_header=settings.baidu_qianfan_auth_header,
+        timeout_seconds=settings.baidu_qianfan_timeout_seconds,
+        config_source="env",
+    )
+
+
 def validate_configuration() -> None:
+    config = effective_search_config()
+    if not config.enabled:
+        raise QianfanDisabledError("百度智能搜索服务已停用")
     missing: list[str] = []
-    if not settings.baidu_qianfan_api_key:
-        missing.append("BAIDU_QIANFAN_API_KEY")
-    if not settings.baidu_qianfan_model:
-        missing.append("BAIDU_QIANFAN_MODEL")
-    if not settings.baidu_qianfan_endpoint:
-        missing.append("BAIDU_QIANFAN_ENDPOINT")
+    if not config.api_key:
+        missing.append("API Key")
+    if not config.endpoint:
+        missing.append("Endpoint")
     if missing:
         raise QianfanConfigurationError(f"百度智能搜索配置缺失：{', '.join(missing)}")
 
@@ -260,21 +309,22 @@ def probe_auth_headers(
 
 class QianfanSearchClient:
     def __init__(self) -> None:
-        self.endpoint = settings.baidu_qianfan_endpoint
+        pass
 
     def search(self, payload: dict[str, Any]) -> QianfanSearchResult:
+        config = effective_search_config()
         validate_configuration()
         headers = {
-            settings.baidu_qianfan_auth_header: _authorization_value(
-                settings.baidu_qianfan_api_key,
-                settings.baidu_qianfan_auth_header,
+            config.auth_header: _authorization_value(
+                config.api_key,
+                config.auth_header,
             ),
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
         try:
-            with httpx.Client(timeout=settings.baidu_qianfan_timeout_seconds) as client:
-                response = client.post(settings.baidu_qianfan_endpoint, headers=headers, json=payload)
+            with httpx.Client(timeout=config.timeout_seconds) as client:
+                response = client.post(config.endpoint, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
             raise QianfanTimeoutError("百度智能搜索请求超时") from exc
         except httpx.HTTPError as exc:
@@ -327,3 +377,21 @@ class QianfanSearchClient:
 
 
 client = QianfanSearchClient()
+
+
+def test_search_configuration() -> dict[str, object]:
+    """Run a minimal, secret-free connectivity check against the current config."""
+    config = effective_search_config()
+    if not config.enabled:
+        raise QianfanDisabledError("百度智能搜索服务已停用")
+    payload = build_search_payload(
+        "百度千帆最新产品信息",
+        time_range="month",
+        top_k=6,
+    )
+    result = client.search(payload)
+    return {
+        "ok": True,
+        "request_id": result.request_id,
+        "message": "连接测试成功，服务可用。",
+    }

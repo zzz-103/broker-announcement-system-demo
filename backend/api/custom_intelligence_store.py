@@ -112,6 +112,10 @@ class IntelligenceStore:
                     reference_aliases_json TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL,
                     error_message TEXT,
+                    search_status TEXT NOT NULL DEFAULT 'pending',
+                    analysis_status TEXT NOT NULL DEFAULT 'pending',
+                    search_error_message TEXT,
+                    analysis_error_message TEXT,
                     request_id TEXT,
                     created_by_user_id INTEGER NOT NULL,
                     executed_by_user_id INTEGER NOT NULL,
@@ -126,8 +130,45 @@ class IntelligenceStore:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_intelligence_executions_owner_active
                     ON intelligence_executions(owner_user_id)
                     WHERE status IN ('pending', 'running');
+                CREATE TABLE IF NOT EXISTS intelligence_search_config (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    api_key TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL DEFAULT '',
+                    endpoint TEXT NOT NULL DEFAULT 'https://qianfan.baidubce.com/v2/ai_search/chat/completions',
+                    auth_header TEXT NOT NULL DEFAULT 'Authorization',
+                    timeout_seconds REAL NOT NULL DEFAULT 120,
+                    updated_at TEXT NOT NULL,
+                    updated_by_user_id INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS intelligence_search_test (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    status TEXT NOT NULL DEFAULT 'unknown',
+                    message TEXT NOT NULL DEFAULT '',
+                    tested_at TEXT
+                );
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(intelligence_executions)").fetchall()
+            }
+            if "search_status" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN search_status TEXT NOT NULL DEFAULT 'pending'"
+                )
+            if "analysis_status" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN analysis_status TEXT NOT NULL DEFAULT 'pending'"
+                )
+            if "search_error_message" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN search_error_message TEXT"
+                )
+            if "analysis_error_message" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN analysis_error_message TEXT"
+                )
             connection.commit()
         if owns_connection:
             connection.close()
@@ -196,6 +237,10 @@ class IntelligenceStore:
             "reference_aliases": _decode(row["reference_aliases_json"], {}),
             "status": str(row["status"]),
             "error_message": str(row["error_message"]) if row["error_message"] else None,
+            "search_status": str(row["search_status"] or "pending"),
+            "analysis_status": str(row["analysis_status"] or "pending"),
+            "search_error_message": str(row["search_error_message"]) if row["search_error_message"] else None,
+            "analysis_error_message": str(row["analysis_error_message"]) if row["analysis_error_message"] else None,
             "request_id": str(row["request_id"]) if row["request_id"] else None,
             "created_by_user_id": int(row["created_by_user_id"]),
             "executed_by_user_id": int(row["executed_by_user_id"]),
@@ -345,6 +390,129 @@ class IntelligenceStore:
             raise IntelligenceNotFoundError("topic not found")
         return self._topic_from_row(row)
 
+    @staticmethod
+    def _search_config_from_row(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": int(row["id"]),
+            "enabled": bool(row["enabled"]),
+            "api_key": str(row["api_key"] or ""),
+            "model": str(row["model"] or ""),
+            "endpoint": str(row["endpoint"] or ""),
+            "auth_header": str(row["auth_header"] or ""),
+            "timeout_seconds": float(row["timeout_seconds"] or 0),
+            "updated_at": str(row["updated_at"] or ""),
+            "updated_by_user_id": int(row["updated_by_user_id"] or 0),
+        }
+
+    def get_search_config_row(self) -> dict[str, object] | None:
+        try:
+            with self._connect() as connection:
+                self.ensure_schema(connection)
+                row = connection.execute(
+                    "SELECT * FROM intelligence_search_config WHERE id = 1"
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to load intelligence search config") from exc
+        return self._search_config_from_row(row) if row is not None else None
+
+    def save_search_config(
+        self,
+        *,
+        enabled: bool,
+        api_key: str,
+        model: str,
+        endpoint: str,
+        auth_header: str,
+        timeout_seconds: float,
+        updated_by_user_id: int,
+    ) -> dict[str, object]:
+        now = utc_now()
+        try:
+            with self._connect() as connection:
+                self.ensure_schema(connection)
+                connection.execute(
+                    """
+                    INSERT INTO intelligence_search_config
+                        (id, enabled, api_key, model, endpoint, auth_header,
+                         timeout_seconds, updated_at, updated_by_user_id)
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        enabled = excluded.enabled,
+                        api_key = excluded.api_key,
+                        model = excluded.model,
+                        endpoint = excluded.endpoint,
+                        auth_header = excluded.auth_header,
+                        timeout_seconds = excluded.timeout_seconds,
+                        updated_at = excluded.updated_at,
+                        updated_by_user_id = excluded.updated_by_user_id
+                    """,
+                    (
+                        1 if enabled else 0,
+                        api_key,
+                        model,
+                        endpoint,
+                        auth_header,
+                        timeout_seconds,
+                        now,
+                        updated_by_user_id,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM intelligence_search_config WHERE id = 1"
+                ).fetchone()
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to save intelligence search config") from exc
+        if row is None:
+            raise IntelligenceStoreError("failed to save intelligence search config")
+        return self._search_config_from_row(row)
+
+    def get_search_test(self) -> dict[str, object] | None:
+        try:
+            with self._connect() as connection:
+                self.ensure_schema(connection)
+                row = connection.execute(
+                    "SELECT * FROM intelligence_search_test WHERE id = 1"
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to load intelligence search test") from exc
+        if row is None:
+            return None
+        return {
+            "status": str(row["status"] or ""),
+            "message": str(row["message"] or ""),
+            "tested_at": str(row["tested_at"]) if row["tested_at"] else None,
+        }
+
+    def save_search_test(self, *, status: str, message: str, tested_at: str) -> dict[str, object]:
+        try:
+            with self._connect() as connection:
+                self.ensure_schema(connection)
+                connection.execute(
+                    """
+                    INSERT INTO intelligence_search_test (id, status, message, tested_at)
+                    VALUES (1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        status = excluded.status,
+                        message = excluded.message,
+                        tested_at = excluded.tested_at
+                    """,
+                    (status, message, tested_at),
+                )
+                row = connection.execute(
+                    "SELECT * FROM intelligence_search_test WHERE id = 1"
+                ).fetchone()
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to save intelligence search test") from exc
+        if row is None:
+            raise IntelligenceStoreError("failed to save intelligence search test")
+        return {
+            "status": str(row["status"] or ""),
+            "message": str(row["message"] or ""),
+            "tested_at": str(row["tested_at"]) if row["tested_at"] else None,
+        }
+
     def create_execution(
         self,
         owner_user_id: int,
@@ -448,6 +616,10 @@ class IntelligenceStore:
             "sources_json",
             "reference_aliases_json",
             "error_message",
+            "search_status",
+            "analysis_status",
+            "search_error_message",
+            "analysis_error_message",
             "request_id",
             "final_query",
             "request_payload_json",

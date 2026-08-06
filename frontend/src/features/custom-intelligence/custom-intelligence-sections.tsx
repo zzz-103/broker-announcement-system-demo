@@ -91,24 +91,30 @@ interface TopicListProps {
   topics: IntelligenceTopic[];
   loading: boolean;
   options: CustomIntelligenceOptionsResponse;
+  serviceAvailable: boolean;
   activeExecutionId: number | null;
   topicUpdatingId: number | null;
+  recentExecutionsByTopic?: Map<number, CustomIntelligenceExecution>;
   onCreate: () => void;
   onToggle: (topic: IntelligenceTopic) => void;
   onEdit: (topic: IntelligenceTopic) => void;
   onExecute: (topic: IntelligenceTopic) => void;
+  onOpenReport?: (execution: CustomIntelligenceExecution) => void;
 }
 
 export function TopicList({
   topics,
   loading,
   options,
+  serviceAvailable,
   activeExecutionId,
   topicUpdatingId,
+  recentExecutionsByTopic,
   onCreate,
   onToggle,
   onEdit,
   onExecute,
+  onOpenReport,
 }: TopicListProps) {
   if (loading && topics.length === 0) {
     return (
@@ -134,7 +140,9 @@ export function TopicList({
 
   return (
     <div className="divide-y divide-[#E4EAF2]" aria-busy={loading}>
-      {topics.map((topic) => (
+      {topics.map((topic) => {
+        const recent = recentExecutionsByTopic?.get(topic.id);
+        return (
         <article key={topic.id} className={`grid gap-3 px-3 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${topic.enabled ? "bg-white" : "bg-[#FAFBFC]"}`}>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -150,6 +158,14 @@ export function TopicList({
               <span>{optionLabel(options.time_ranges, topic.time_range)}</span>
               <span aria-hidden="true">·</span>
               <span>更新于 {topic.updated_at ? formatDateOnly(topic.updated_at) : "—"}</span>
+              {recent && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span className={recent.status === "succeeded" ? "text-emerald-600" : recent.status === "failed" ? "text-red-600" : "text-amber-600"}>
+                    {recent.status === "succeeded" ? "最近成功" : recent.status === "failed" && recent.search_status === "succeeded" ? "分析失败" : recent.status === "failed" ? "最近失败" : "最近执行中"}
+                  </span>
+                </>
+              )}
               {topic.keywords.slice(0, 4).map((keyword) => (
                 <span key={keyword} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[#315EA8]" title={keyword}>{keyword}</span>
               ))}
@@ -157,18 +173,24 @@ export function TopicList({
             </div>
           </div>
           <div className="flex flex-wrap gap-2 border-t border-[#F0F2F5] pt-2 lg:border-t-0 lg:pt-0">
+            {recent?.search_status === "succeeded" && (
+              <button type="button" onClick={() => onOpenReport?.(recent)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF]">
+                <FileText className="size-3" aria-hidden="true" />{recent.analysis_status === "succeeded" ? "查看最近报告" : "查看原始结果"}
+              </button>
+            )}
             <button type="button" onClick={() => onToggle(topic)} disabled={topicUpdatingId === topic.id || activeExecutionId !== null} className="rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50">
               {topicUpdatingId === topic.id ? "保存中…" : topic.enabled ? "停用" : "启用"}
             </button>
             <button type="button" onClick={() => onEdit(topic)} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]">
               <Pencil className="size-3" aria-hidden="true" />编辑
             </button>
-            <button type="button" onClick={() => onExecute(topic)} disabled={!topic.enabled || activeExecutionId !== null} className="inline-flex items-center gap-1 rounded-md bg-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-45 lg:ml-auto">
+            <button type="button" onClick={() => onExecute(topic)} disabled={!topic.enabled || activeExecutionId !== null || !serviceAvailable} className="inline-flex items-center gap-1 rounded-md bg-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-45 lg:ml-auto">
               <Play className="size-3" aria-hidden="true" />立即执行
             </button>
           </div>
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -237,22 +259,28 @@ function serviceErrorNotice(errors: (string | null | undefined)[]): string | nul
 interface ExecutionListProps {
   executions: CustomIntelligenceExecution[];
   loading: boolean;
+  serviceAvailable: boolean;
+  analysisAvailable: boolean;
   onRefresh: () => void;
   onStartSearch: () => void;
   onSaveTopic: (execution: CustomIntelligenceExecution) => void;
   onOpenReport: (execution: CustomIntelligenceExecution) => void;
   onRerun: (execution: CustomIntelligenceExecution) => void;
+  onReanalyze: (execution: CustomIntelligenceExecution) => void;
   activeExecutionId: number | null;
 }
 
 export function ExecutionList({
   executions,
   loading,
+  serviceAvailable,
+  analysisAvailable,
   onRefresh,
   onStartSearch,
   onSaveTopic,
   onOpenReport,
   onRerun,
+  onReanalyze,
   activeExecutionId,
 }: ExecutionListProps) {
   const serviceError = serviceErrorNotice(executions.map((execution) => execution.error_message));
@@ -309,7 +337,10 @@ export function ExecutionList({
                 const active = isActiveExecution(execution.status);
                 const title = execution.topic_name || (execution.trigger_type === "instant" ? "即时搜索" : "自定义情报执行");
                 const query = execution.original_query || execution.snapshot.question || "未记录问题";
-                const rowError = execution.error_message ? `错误：${errorSummary(execution.error_message)}` : `报告：${execution.report?.title || "待生成"}`;
+                const rowError = execution.error_message
+                  ? `错误：${errorSummary(execution.error_message)}`
+                  : `结论：${execution.report?.core_conclusion || execution.report?.title || "待生成"}`;
+                const analysisFailed = execution.search_status === "succeeded" && execution.analysis_status === "failed";
                 return (
                   <tr key={execution.id} className={active ? "bg-amber-50/30" : "bg-white"}>
                     <td className="max-w-0 px-3 py-3 align-top">
@@ -322,14 +353,15 @@ export function ExecutionList({
                     <td className="px-3 py-3 align-top"><StatusPill status={execution.status} /></td>
                     <td className="px-3 py-3 align-top text-[11px] tabular-nums text-[#667085]">{formatExecutionDate(execution.created_at)}</td>
                     <td className="max-w-0 px-3 py-3 align-top text-[11px] text-[#667085]">
-                      <span className="block truncate" title={rowError}><span className={execution.error_message ? "text-red-600" : ""}>{rowError}</span></span>
+                      <span className="block truncate" title={rowError}><span className={execution.error_message ? "text-red-600" : ""}>{analysisFailed ? "搜索完成，分析失败" : rowError}</span></span>
                       <span className="mt-1 block text-[10px] text-[#98A2B3]">来源 {execution.sources.length} 条 · 完成 {formatExecutionDate(execution.completed_at)}</span>
                     </td>
                     <td className="px-3 py-3 align-top">
                       <div className="flex flex-wrap justify-end gap-1.5">
                         {execution.status === "succeeded" && execution.trigger_type === "instant" && <button type="button" onClick={() => onSaveTopic(execution)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2 py-1 text-[10px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF]" title="保存为主题"><Plus className="size-3" aria-hidden="true" />保存</button>}
-                        <button type="button" onClick={() => onOpenReport(execution)} disabled={!execution.report && active} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2 py-1 text-[10px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50"><FileText className="size-3" aria-hidden="true" />{active ? "执行中" : execution.status === "succeeded" ? "查看报告" : "查看详情"}</button>
-                        <button type="button" onClick={() => onRerun(execution)} disabled={activeExecutionId !== null || active} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2 py-1 text-[10px] font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className="size-3" aria-hidden="true" />重新执行</button>
+                        <button type="button" onClick={() => onOpenReport(execution)} disabled={!execution.report && active} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2 py-1 text-[10px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50"><FileText className="size-3" aria-hidden="true" />{active ? "执行中" : execution.analysis_status === "succeeded" ? "查看报告" : execution.search_status === "succeeded" ? "查看原始结果" : "查看详情"}</button>
+                        {analysisFailed && <button type="button" onClick={() => onReanalyze(execution)} disabled={activeExecutionId !== null || active || !analysisAvailable} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2 py-1 text-[10px] font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className="size-3" aria-hidden="true" />重新分析</button>}
+                        <button type="button" onClick={() => onRerun(execution)} disabled={activeExecutionId !== null || active || !serviceAvailable} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2 py-1 text-[10px] font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50"><RefreshCw className="size-3" aria-hidden="true" />重新执行</button>
                       </div>
                     </td>
                   </tr>

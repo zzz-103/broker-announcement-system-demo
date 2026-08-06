@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -134,6 +135,33 @@ class IntelligenceTopicEnabled(BaseModel):
     enabled: bool
 
 
+class SearchServiceConfigUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    enabled: bool
+    model: str | None = Field(default=None, max_length=200)
+    endpoint: str = Field(min_length=1, max_length=500)
+    auth_header: str = Field(min_length=1, max_length=64)
+    timeout_seconds: float = Field(default=120, ge=1, le=600)
+    api_key: str | None = Field(default=None, max_length=1_000)
+
+    @field_validator("endpoint")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not re.match(r"^https?://[^\s]+$", value, flags=re.IGNORECASE):
+            raise ValueError("endpoint must be an HTTP or HTTPS URL")
+        return value
+
+    @field_validator("auth_header")
+    @classmethod
+    def validate_auth_header(cls, value: str) -> str:
+        value = value.strip()
+        if not value or re.search(r"[\r\n:]", value):
+            raise ValueError("auth_header contains an invalid character")
+        return value
+
+
 class InstantSearchRequest(IntelligenceConfigBase):
     question: str = Field(default="", max_length=1_000)
     search_question: str | None = Field(default=None, max_length=1_000)
@@ -194,6 +222,12 @@ class IntelligenceReport(BaseModel):
     executed_at: str = ""
     time_range: str = "month"
     valid_source_count: int = Field(default=0, ge=0)
+    report_type: ReportType = "industry_trends"
+    service: str = "baidu_qianfan"
+    search_service: str = "baidu_web_search"
+    analysis_service: str = "deepseek"
+    request_id: str = ""
+    is_fallback: bool = False
     core_conclusion: str = ""
     key_dynamics: list[IntelligenceDynamic] = Field(default_factory=list, max_length=30)
     impact_analysis: str = ""
