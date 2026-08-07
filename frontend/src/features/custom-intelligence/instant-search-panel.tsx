@@ -7,6 +7,7 @@ import type {
   InstantSearchRequest,
 } from "@/lib/api/contracts";
 import { ConfigFields, SavedConfigPicker } from "./config-fields";
+import { KeywordSuggestionPicker } from "./keyword-suggestion-picker";
 
 export interface InstantSearchPanelProps {
   children?: React.ReactNode;
@@ -93,13 +94,14 @@ export function InstantSearchPanel({
             </div>
           </div>
           {keywordSuggestions.length > 0 && (
-            <div className="mt-4 rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div><h4 className="text-sm font-bold text-[#243B61]">生成的关键词</h4><p className="mt-1 text-[11px] text-[#667085]">勾选需要的词，确认后加入当前配置。</p></div>
-                <div className="flex gap-2"><button onClick={() => onSelectedSuggestionsChange(selectedSuggestions.length === keywordSuggestions.length ? [] : keywordSuggestions)} className="rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] text-[#475467]">{selectedSuggestions.length === keywordSuggestions.length ? "取消全选" : "全选"}</button><button onClick={onMergeKeywords} disabled={!selectedSuggestions.length} className="rounded-md bg-[#315EA8] px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50">确认合并</button></div>
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">{keywordSuggestions.map((suggestion) => <label key={suggestion} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[#E4EAF2] bg-white px-3 py-2 text-xs text-[#344054] hover:border-[#9FB9E8]"><input type="checkbox" checked={selectedSuggestions.includes(suggestion)} onChange={(event) => onSelectedSuggestionsChange(event.target.checked ? [...selectedSuggestions, suggestion] : selectedSuggestions.filter((item) => item !== suggestion))} className="size-3.5 accent-[#315EA8]" />{suggestion}</label>)}</div>
-            </div>
+            <KeywordSuggestionPicker
+              title="生成的关键词"
+              description="勾选需要的词，确认后加入当前配置。"
+              suggestions={keywordSuggestions}
+              selected={selectedSuggestions}
+              onSelectionChange={onSelectedSuggestionsChange}
+              onMerge={onMergeKeywords}
+            />
           )}
         </div>
       </div>

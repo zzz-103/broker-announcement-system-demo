@@ -8,7 +8,7 @@ import {
   CustomIntelligenceTabs,
   ExecutionList,
   SavedConfigList,
-} from "./custom-intelligence-sections";
+} from "./custom-intelligence-components";
 import { TOPIC_LIMIT } from "./custom-intelligence-constants";
 import { InstantSearchPanel } from "./instant-search-panel";
 import { ReportPanel } from "./report-panel";
@@ -218,6 +218,8 @@ export default function CustomIntelligencePage() {
         loading={page.reportLoading}
         options={page.visibleOptions}
         pdfExporting={page.pdfExporting}
+        activeExecutionId={page.activeExecutionId}
+        serviceAvailable={page.serviceAvailable}
         onOpenChange={page.setReportDialogOpen}
         onExportPdf={(execution) => void page.exportReportPdf(execution)}
         onRerun={(execution) => {

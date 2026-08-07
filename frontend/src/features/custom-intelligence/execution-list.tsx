@@ -5,11 +5,12 @@ import type {
   CustomIntelligenceExecution,
   CustomIntelligenceExecutionStatus,
 } from "@/lib/api/contracts";
+import {
+  canSaveExecutionAsConfig,
+  formatExecutionDate,
+  isActiveExecution,
+} from "./custom-intelligence-utils";
 import { RowMenu } from "./row-menu";
-
-function isActiveExecution(status: CustomIntelligenceExecutionStatus): boolean {
-  return status === "pending" || status === "running";
-}
 
 function statusText(status: CustomIntelligenceExecutionStatus, analysisFailed: boolean): string {
   if (isActiveExecution(status)) return "执行中";
@@ -24,14 +25,6 @@ function statusColor(status: CustomIntelligenceExecutionStatus, analysisFailed: 
   if (status === "succeeded") return analysisFailed ? "text-amber-600" : "text-emerald-600";
   if (status === "failed") return "text-red-600";
   return "text-[#667085]";
-}
-
-function formatExecutionDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value.replace("T", " ").slice(0, 16);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /**
@@ -179,7 +172,7 @@ export function ExecutionList({
                 const title = execution.topic_name || (execution.trigger_type === "instant" ? "即时搜索" : "自定义情报执行");
                 const query = execution.original_query || execution.snapshot.question || "未记录问题";
                 const triggerLabel = execution.trigger_type === "topic" ? "配置" : execution.trigger_type === "rerun" ? "重新执行" : "即时";
-                const canSaveConfig = execution.status === "succeeded" && execution.trigger_type === "instant";
+                const canSaveConfig = canSaveExecutionAsConfig(execution);
                 return (
                   <tr key={execution.id} className={active ? "bg-amber-50/30" : "bg-white"}>
                     <td className="max-w-0 px-3 py-3 align-top">

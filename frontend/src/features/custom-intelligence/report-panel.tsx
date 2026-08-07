@@ -2,12 +2,9 @@
 
 import {
   AlertCircle,
-  Bookmark,
   BookOpen,
   Check,
-  Download,
   Loader2,
-  RefreshCw,
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +13,7 @@ import type {
   CustomIntelligenceOptionsResponse,
 } from "@/lib/api/contracts";
 import { ReportBody, SourceCard } from "./report-content";
+import { ReportActions } from "./report-actions";
 import {
   formatDate,
   getReportPhase,
@@ -92,7 +90,6 @@ export function ReportPanel({
   const sources = execution.sources;
   const searchSucceeded = execution.search_status === "succeeded";
   const analysisFailed = phase === "analysis_failed";
-  const canSaveConfig = execution.status === "succeeded" && execution.topic_id === null && execution.trigger_type !== "topic";
   const title = execution.report?.title || execution.original_query || execution.snapshot.question || "即时情报报告";
   const question = execution.original_query || execution.snapshot.question || "";
 
@@ -154,29 +151,20 @@ export function ReportPanel({
           )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {searchSucceeded && (
-            <Button variant="outline" size="sm" onClick={() => onExportPdf(execution)} disabled={pdfExporting}>
-              {pdfExporting ? <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}导出 PDF
-            </Button>
-          )}
+          <ReportActions
+            execution={execution}
+            analysisAvailable={analysisAvailable}
+            serviceAvailable={serviceAvailable}
+            activeExecutionId={activeExecutionId}
+            pdfExporting={pdfExporting}
+            onExportPdf={onExportPdf}
+            onSaveConfig={onSaveConfig}
+            onReanalyze={onReanalyze}
+            onRerun={onRerun}
+          />
           {searchSucceeded && (
             <Button variant="outline" size="sm" onClick={() => onExpand(execution)}>
               <BookOpen className="size-3.5" aria-hidden="true" />展开阅读
-            </Button>
-          )}
-          {canSaveConfig && (
-            <Button variant="outline" size="sm" onClick={() => onSaveConfig(execution)}>
-              <Bookmark className="size-3.5" aria-hidden="true" />保存为配置
-            </Button>
-          )}
-          {analysisFailed && (
-            <Button variant="outline" size="sm" onClick={() => onReanalyze(execution)} disabled={!analysisAvailable || activeExecutionId !== null}>
-              <RefreshCw className="size-3.5" aria-hidden="true" />重新分析
-            </Button>
-          )}
-          {searchSucceeded && (
-            <Button variant="outline" size="sm" onClick={() => onRerun(execution)} disabled={!serviceAvailable || activeExecutionId !== null}>
-              <RefreshCw className="size-3.5" aria-hidden="true" />重新执行
             </Button>
           )}
           <Button variant="ghost" size="sm" onClick={onNewSearch}>

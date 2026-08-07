@@ -30,6 +30,7 @@ import type {
 import {
   DEFAULT_FORM,
   EXECUTIONS_PAGE_SIZE,
+  EXPORT_PAGE_SIZE,
   FALLBACK_OPTIONS,
   TOPIC_LIMIT,
 } from "./custom-intelligence-constants";
@@ -124,6 +125,11 @@ export interface CustomIntelligencePageController {
     keepWorkspace?: boolean,
   ) => Promise<void>;
 }
+
+type KeywordSuggestionSource = Pick<
+  InstantSearchRequest,
+  "question" | "description" | "keywords" | "focus_objects" | "analysis_perspective"
+>;
 
 export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const { isLoggedIn, token, username, isAdmin, logout, clearAuth, restoreSession } = useAuthStore();
@@ -280,6 +286,61 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     setNotice("已提交执行，正在检索并整理来源（约每 2 秒更新一次）…");
   }, []);
 
+  const runKeywordSuggestions = async (
+    source: KeywordSuggestionSource,
+    isBusy: boolean,
+    setBusy: (busy: boolean) => void,
+    applySuggestions: (suggestions: string[]) => void,
+    emptyMessage: string,
+    fallback: string,
+    requireQuestionOrDescription: boolean,
+  ) => {
+    if (!token || isBusy) return;
+    if (!analysisAvailable) {
+      setPageError("DeepSeek 分析服务未配置，请先联系管理员。");
+      return;
+    }
+    if (requireQuestionOrDescription && !source.question.trim() && !source.description.trim()) {
+      setPageError("请先填写业务问题或业务背景，再补充关键词。");
+      return;
+    }
+    setBusy(true);
+    setPageError("");
+    try {
+      const response = await suggestCustomIntelligenceKeywords(token, {
+        question: source.question.trim(),
+        description: source.description,
+        keywords: source.keywords,
+        focus_objects: source.focus_objects,
+        analysis_perspective: source.analysis_perspective,
+        max_suggestions: 8,
+      });
+      applySuggestions(response.suggestions);
+      if (!response.suggestions.length) setNotice(emptyMessage);
+    } catch (error) {
+      handleError(error, fallback);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const mergeKeywordsInto = (
+    updateDraft: (updater: (current: InstantSearchRequest) => InstantSearchRequest) => void,
+    selected: string[],
+    clearSuggestions: () => void,
+    message: string,
+  ) => {
+    updateDraft((current) => ({
+      ...current,
+      keywords: [
+        ...current.keywords,
+        ...selected.filter((item) => !current.keywords.includes(item)),
+      ],
+    }));
+    clearSuggestions();
+    if (message) setNotice(message);
+  };
+
   const submitInstant = async () => {
     if (!token || !serviceAvailable || activeExecutionId !== null || !form.question.trim()) {
       if (!form.question.trim()) setPageError("请先填写业务问题。");
@@ -301,41 +362,30 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   };
 
   const requestKeywordSuggestions = async () => {
-    if (!token || suggesting) return;
-    if (!analysisAvailable) {
-      setPageError("DeepSeek 分析服务未配置，请先联系管理员。");
-      return;
-    }
-    if (!form.question.trim() && !form.description.trim()) {
-      setPageError("请先填写业务问题或业务背景，再补充关键词。");
-      return;
-    }
-    setSuggesting(true);
-    setPageError("");
-    try {
-      const response = await suggestCustomIntelligenceKeywords(token, {
-        question: form.question.trim(),
-        description: form.description,
-        keywords: form.keywords,
-        focus_objects: form.focus_objects,
-        analysis_perspective: form.analysis_perspective,
-        max_suggestions: 8,
-      });
-      setKeywordSuggestions(response.suggestions);
-      setSelectedSuggestions(response.suggestions);
-      if (!response.suggestions.length) setNotice("暂未生成新的关键词，可调整问题或关注对象后重试。");
-    } catch (error) {
-      handleError(error, "补充关键词失败");
-    } finally {
-      setSuggesting(false);
-    }
+    await runKeywordSuggestions(
+      form,
+      suggesting,
+      setSuggesting,
+      (suggestions) => {
+        setKeywordSuggestions(suggestions);
+        setSelectedSuggestions(suggestions);
+      },
+      "暂未生成新的关键词，可调整问题或关注对象后重试。",
+      "补充关键词失败",
+      true,
+    );
   };
 
   const mergeKeywordSuggestions = () => {
-    setForm((current) => ({ ...current, keywords: [...current.keywords, ...selectedSuggestions.filter((item) => !current.keywords.includes(item))] }));
-    setKeywordSuggestions([]);
-    setSelectedSuggestions([]);
-    setNotice("已将确认的关键词合并到当前配置。");
+    mergeKeywordsInto(
+      setForm,
+      selectedSuggestions,
+      () => {
+        setKeywordSuggestions([]);
+        setSelectedSuggestions([]);
+      },
+      "已将确认的关键词合并到当前配置。",
+    );
   };
 
   const resetWorkspace = () => {
@@ -371,9 +421,14 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const exportAllExecutions = async (kind: "csv" | "json") => {
     if (!token) return;
     try {
-      const response = await fetchCustomIntelligenceExecutions(token, 1, 50);
-      if (kind === "csv") exportCustomIntelligenceCsv(response.executions);
-      else exportCustomIntelligenceJson(response.executions);
+      const firstPage = await fetchCustomIntelligenceExecutions(token, 1, EXPORT_PAGE_SIZE);
+      const executions = [...firstPage.executions];
+      for (let page = 2; page <= firstPage.meta.total_pages && executions.length < firstPage.meta.total; page += 1) {
+        const response = await fetchCustomIntelligenceExecutions(token, page, EXPORT_PAGE_SIZE);
+        executions.push(...response.executions);
+      }
+      if (kind === "csv") exportCustomIntelligenceCsv(executions);
+      else exportCustomIntelligenceJson(executions);
     } catch (error) {
       handleError(error, "导出执行记录失败");
     }
@@ -450,7 +505,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   };
 
   const openSaveConfigFromExecution = (execution: CustomIntelligenceExecution) => {
-    if (!selectedConfig && configsLimitReached) {
+    if (configsLimitReached) {
       setPageError(`已保存配置最多 ${TOPIC_LIMIT} 个，请先删除或修改已有配置。`);
       return;
     }
@@ -496,42 +551,30 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   };
 
   const requestConfigKeywordSuggestions = async () => {
-    if (!token || configSuggesting) return;
-    if (!analysisAvailable) {
-      setPageError("DeepSeek 分析服务未配置，请先联系管理员。");
-      return;
-    }
-    setConfigSuggesting(true);
-    setPageError("");
-    try {
-      const response = await suggestCustomIntelligenceKeywords(token, {
-        question: configDraft.question.trim(),
-        description: configDraft.description,
-        keywords: configDraft.keywords,
-        focus_objects: configDraft.focus_objects,
-        analysis_perspective: configDraft.analysis_perspective,
-        max_suggestions: 8,
-      });
-      setConfigKeywordSuggestions(response.suggestions);
-      setSelectedConfigSuggestions(response.suggestions);
-      if (!response.suggestions.length) setNotice("暂未生成新的配置关键词。");
-    } catch (error) {
-      handleError(error, "配置关键词生成失败");
-    } finally {
-      setConfigSuggesting(false);
-    }
+    await runKeywordSuggestions(
+      configDraft,
+      configSuggesting,
+      setConfigSuggesting,
+      (suggestions) => {
+        setConfigKeywordSuggestions(suggestions);
+        setSelectedConfigSuggestions(suggestions);
+      },
+      "暂未生成新的配置关键词。",
+      "配置关键词生成失败",
+      false,
+    );
   };
 
   const mergeConfigKeywordSuggestions = () => {
-    setConfigDraft((current) => ({
-      ...current,
-      keywords: [
-        ...current.keywords,
-        ...selectedConfigSuggestions.filter((item) => !current.keywords.includes(item)),
-      ],
-    }));
-    setConfigKeywordSuggestions([]);
-    setSelectedConfigSuggestions([]);
+    mergeKeywordsInto(
+      setConfigDraft,
+      selectedConfigSuggestions,
+      () => {
+        setConfigKeywordSuggestions([]);
+        setSelectedConfigSuggestions([]);
+      },
+      "",
+    );
   };
 
   const saveConfig = async () => {

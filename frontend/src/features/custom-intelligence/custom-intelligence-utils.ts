@@ -11,12 +11,26 @@ export function isActiveExecution(status: CustomIntelligenceExecutionStatus): bo
   return status === "pending" || status === "running";
 }
 
+export function canSaveExecutionAsConfig(execution: CustomIntelligenceExecution): boolean {
+  return execution.status === "succeeded"
+    && execution.topic_id === null
+    && execution.trigger_type !== "topic";
+}
+
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.replace("T", " ").slice(0, 16);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+export function formatExecutionDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.replace("T", " ").slice(0, 16);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export function errorMessage(error: unknown, fallback = "操作失败，请稍后重试"): string {
@@ -110,5 +124,3 @@ export const PHASE_CHIP: Record<ReportPhase, { label: string; className: string 
 };
 
 export type StepState = "done" | "active" | "pending" | "failed";
-
-export type OptionGroup = CustomIntelligenceOptionsResponse["perspectives"];

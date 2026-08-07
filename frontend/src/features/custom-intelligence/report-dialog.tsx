@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, Download, ExternalLink, Loader2, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw, X } from "lucide-react";
 import { useMemo } from "react";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import type {
   CustomIntelligenceOptionsResponse,
 } from "@/lib/api/contracts";
 import { ReportBody } from "./report-content";
+import { ReportActions } from "./report-actions";
 import { formatDate, optionLabel } from "./custom-intelligence-utils";
 
 function ExecutionErrorDetail({
@@ -65,6 +66,8 @@ export function ReportDialog({
   loading,
   options,
   pdfExporting,
+  activeExecutionId,
+  serviceAvailable,
   onOpenChange,
   onExportPdf,
   onRerun,
@@ -77,6 +80,8 @@ export function ReportDialog({
   loading: boolean;
   options: CustomIntelligenceOptionsResponse;
   pdfExporting: boolean;
+  activeExecutionId: number | null;
+  serviceAvailable: boolean;
   onOpenChange: (open: boolean) => void;
   onExportPdf?: (execution: CustomIntelligenceExecution) => void;
   onRerun?: (execution: CustomIntelligenceExecution) => void;
@@ -88,8 +93,6 @@ export function ReportDialog({
   const currentExecution = execution;
   const searchSucceeded = currentExecution?.search_status === "succeeded";
   const analysisFailed = searchSucceeded && currentExecution?.analysis_status === "failed";
-  const executionActive = currentExecution?.status === "pending" || currentExecution?.status === "running";
-  const canSaveConfig = currentExecution?.status === "succeeded" && currentExecution.topic_id === null && currentExecution.trigger_type !== "topic";
   const scrollToSources = () => {
     document.getElementById("report-sources")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -112,25 +115,18 @@ export function ReportDialog({
               </DialogDescription>
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {searchSucceeded && currentExecution && (
-                <Button variant="outline" size="sm" onClick={() => onExportPdf?.(currentExecution)} disabled={pdfExporting}>
-                  {pdfExporting ? <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}导出 PDF
-                </Button>
-              )}
-              {canSaveConfig && currentExecution && (
-                <Button variant="outline" size="sm" onClick={() => onSaveConfig?.(currentExecution)}>
-                  <Bookmark className="size-3.5" aria-hidden="true" />保存为配置
-                </Button>
-              )}
-              {analysisFailed && currentExecution && (
-                <Button variant="outline" size="sm" onClick={() => onReanalyze?.(currentExecution)} disabled={!analysisAvailable}>
-                  <RefreshCw className="size-3.5" aria-hidden="true" />重新分析
-                </Button>
-              )}
-              {searchSucceeded && currentExecution && (
-                <Button variant="outline" size="sm" onClick={() => onRerun?.(currentExecution)} disabled={executionActive}>
-                  <RefreshCw className="size-3.5" aria-hidden="true" />重新执行
-                </Button>
+              {currentExecution && (
+                <ReportActions
+                  execution={currentExecution}
+                  analysisAvailable={Boolean(analysisAvailable)}
+                  serviceAvailable={serviceAvailable}
+                  activeExecutionId={activeExecutionId}
+                  pdfExporting={pdfExporting}
+                  onExportPdf={(execution) => onExportPdf?.(execution)}
+                  onSaveConfig={(execution) => onSaveConfig?.(execution)}
+                  onReanalyze={(execution) => onReanalyze?.(execution)}
+                  onRerun={(execution) => onRerun?.(execution)}
+                />
               )}
               {searchSucceeded && sources.length > 0 && (
                 <Button variant="outline" size="sm" onClick={scrollToSources}>

@@ -5,6 +5,7 @@ import type {
 
 export const TOPIC_LIMIT = 10;
 export const EXECUTIONS_PAGE_SIZE = 10;
+export const EXPORT_PAGE_SIZE = 50;
 
 export const DEFAULT_FORM: InstantSearchRequest = {
   question: "",
