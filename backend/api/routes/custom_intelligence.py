@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import secrets
+from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi.responses import Response as RawResponse
 
 from ..auth import get_session, require_admin_token
 from ..config import settings
@@ -19,6 +21,7 @@ from ..contracts import (
 )
 from ..custom_intelligence_service import (
     ActiveExecutionError,
+    AnalysisConfigurationError,
     IntelligenceNotFoundError,
     IntelligenceStoreError,
     analysis_service_configured,
@@ -28,7 +31,8 @@ from ..custom_intelligence_service import (
     submit_execution,
     suggest_keywords,
 )
-from ..custom_intelligence_store import TopicNameConflictError
+from ..custom_intelligence_store import TOPICS_PER_USER_LIMIT, TopicLimitError, TopicNameConflictError
+from ..intelligence_report_pdf import build_report_pdf, report_pdf_filename
 from ..qianfan_search import (
     QianfanConfigurationError,
     QianfanDisabledError,
@@ -135,8 +139,13 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
         return HTTPException(status_code=404, detail="情报记录不存在")
     if isinstance(exc, ActiveExecutionError):
         return HTTPException(status_code=409, detail="当前已有情报执行正在进行，请稍后再试")
+    if isinstance(exc, TopicLimitError):
+        return HTTPException(
+            status_code=409,
+            detail=f"已保存配置数量已达上限（{TOPICS_PER_USER_LIMIT} 个），请先删除或修改已有配置",
+        )
     if isinstance(exc, TopicNameConflictError):
-        return HTTPException(status_code=409, detail="同名情报主题已存在")
+        return HTTPException(status_code=409, detail="同名已保存配置已存在")
     if isinstance(exc, QianfanDisabledError):
         return HTTPException(status_code=409, detail="百度智能搜索服务已停用")
     if isinstance(exc, QianfanConfigurationError):
@@ -148,6 +157,17 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
     if isinstance(exc, IntelligenceStoreError):
         return HTTPException(status_code=500, detail=fallback)
     return HTTPException(status_code=500, detail=fallback)
+
+
+def _suggest_error_message(exc: Exception) -> str:
+    text = f"{exc.__class__.__name__} {exc}".casefold()
+    if "timeout" in text:
+        return "DeepSeek 关键词建议请求超时，请稍后重试。"
+    if "connection" in text:
+        return "DeepSeek 服务连接失败，请检查 LLM 服务网络或配置。"
+    if "unable to parse json" in text:
+        return "DeepSeek 关键词建议结果解析失败，请重试。"
+    return "关键词建议服务暂不可用，请稍后重试。"
 
 
 @router.get(
@@ -248,8 +268,10 @@ def post_keyword_suggestions(
     get_session(authorization)
     try:
         suggestions = suggest_keywords(payload.model_dump(), payload.max_suggestions)
+    except AnalysisConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        raise _handle_store_error(exc, "关键词建议服务暂不可用") from exc
+        raise HTTPException(status_code=502, detail=_suggest_error_message(exc)) from exc
     return {"suggestions": suggestions}
 
 
@@ -318,8 +340,22 @@ def post_topic_enabled(
     try:
         topic = store.set_topic_enabled(owner_id, topic_id, payload.enabled, owner_id)
     except Exception as exc:
-        raise _handle_store_error(exc, "无法更新情报主题状态") from exc
+        raise _handle_store_error(exc, "无法更新已保存配置状态") from exc
     return {"topic": _public_topic(topic)}
+
+
+@router.delete("/api/custom-intelligence/topics/{topic_id}")
+def delete_topic(
+    topic_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    session = get_session(authorization)
+    owner_id = _owner_user_id(session)
+    try:
+        store.delete_topic(owner_id, topic_id)
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法删除已保存配置") from exc
+    return {"deleted": True, "id": topic_id}
 
 
 @router.post("/api/custom-intelligence/topics/{topic_id}/execute", status_code=status.HTTP_202_ACCEPTED)
@@ -333,13 +369,14 @@ def post_topic_execute(
     try:
         topic = store.get_topic(owner_id, topic_id)
         if not bool(topic.get("enabled")):
-            raise HTTPException(status_code=409, detail="情报主题已停用，请先启用后执行")
+            raise HTTPException(status_code=409, detail="该配置已停用，请先启用后执行")
         snapshot = {
             key: value
             for key, value in topic.items()
             if key
             in {
                 "name",
+                "question",
                 "description",
                 "keywords",
                 "focus_objects",
@@ -352,7 +389,8 @@ def post_topic_execute(
                 "extra_requirements",
             }
         }
-        snapshot["question"] = f"请分析情报主题：{str(topic.get('name') or '证券行业近期动态')}"
+        saved_question = str(topic.get("question") or "").strip()
+        snapshot["question"] = saved_question or f"请分析情报主题：{str(topic.get('name') or '证券行业近期动态')}"
         execution = submit_execution(
             owner_id,
             snapshot,
@@ -452,3 +490,28 @@ def post_execution_reanalyze(
     except Exception as exc:
         raise _handle_store_error(exc, "无法重新分析情报记录") from exc
     return {"execution": _public_execution(execution)}
+
+
+@router.get("/api/custom-intelligence/executions/{execution_id}/report/pdf")
+def get_execution_report_pdf(
+    execution_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+) -> RawResponse:
+    session = get_session(authorization)
+    try:
+        execution = store.get_execution(_owner_user_id(session), execution_id)
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法加载情报记录") from exc
+    if execution.get("search_status") != "succeeded" or not execution.get("sources"):
+        raise HTTPException(status_code=409, detail="该记录没有可导出的搜索结果")
+    try:
+        pdf_bytes = build_report_pdf(execution)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="报告 PDF 生成失败，请稍后重试") from exc
+    filename = report_pdf_filename(execution)
+    disposition = f"attachment; filename*=UTF-8''{quote(filename.encode('utf-8'))}"
+    return RawResponse(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": disposition},
+    )

@@ -1,4 +1,4 @@
-import { requestJson } from "./core";
+import { BackendApiError, buildApiUrl, readError, requestJson } from "./core";
 import type {
   CustomIntelligenceExecutionResponse,
   CustomIntelligenceExecutionsResponse,
@@ -146,6 +146,18 @@ export function setCustomIntelligenceTopicEnabled(
   );
 }
 
+export function deleteCustomIntelligenceTopic(
+  token: string,
+  topicId: number,
+  signal?: AbortSignal,
+): Promise<{ deleted: boolean; id: number }> {
+  return requestJson<{ deleted: boolean; id: number }>(
+    `/api/custom-intelligence/topics/${encodeURIComponent(String(topicId))}`,
+    { method: "DELETE", signal },
+    token,
+  );
+}
+
 export function executeCustomIntelligenceTopic(
   token: string,
   topicId: number,
@@ -218,4 +230,37 @@ export function reanalyzeCustomIntelligenceExecution(
     { method: "POST", signal },
     token,
   );
+}
+
+export async function downloadCustomIntelligenceReportPdf(
+  token: string,
+  executionId: number,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string | null }> {
+  let response: Response;
+  try {
+    response = await fetch(
+      buildApiUrl(`/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/report/pdf`),
+      {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+        signal,
+      },
+    );
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new BackendApiError("无法访问后端 API", 0);
+  }
+  if (!response.ok) throw new BackendApiError(await readError(response), response.status);
+  const disposition = response.headers.get("Content-Disposition") || "";
+  let filename: string | null = null;
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match) {
+    try {
+      filename = decodeURIComponent(utf8Match[1]);
+    } catch {
+      filename = null;
+    }
+  }
+  return { blob: await response.blob(), filename };
 }

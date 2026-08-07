@@ -24,5 +24,8 @@ openai>=1.40,<2
 pandas>=2.2,<3
 openpyxl>=3.1,<4
 
+# Custom intelligence report PDF export
+reportlab>=4.1,<5
+
 # Fast offline backend checks
 pytest>=8.3,<9

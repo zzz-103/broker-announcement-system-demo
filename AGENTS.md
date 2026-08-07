@@ -258,7 +258,7 @@ GET  /api/dashboard-data/export.zip
 GET  /api/custom-intelligence/options
 POST /api/custom-intelligence/keyword-suggestions
 GET/POST /api/custom-intelligence/topics
-GET/POST /api/custom-intelligence/topics/{topic_id}
+GET/POST/DELETE /api/custom-intelligence/topics/{topic_id}
 POST /api/custom-intelligence/topics/{topic_id}/enabled
 POST /api/custom-intelligence/topics/{topic_id}/execute
 GET/POST /api/custom-intelligence/executions

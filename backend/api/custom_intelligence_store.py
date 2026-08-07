@@ -28,6 +28,20 @@ class TopicNameConflictError(IntelligenceStoreError):
     pass
 
 
+class TopicLimitError(IntelligenceStoreError):
+    pass
+
+
+# Maximum number of saved configuration combinations per user.
+TOPICS_PER_USER_LIMIT = 10
+
+
+# Per-user execution history retention. Oldest finished records beyond this
+# limit are pruned when a new execution is created; pending/running records
+# are never deleted.
+EXECUTIONS_RETENTION = 50
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -169,6 +183,14 @@ class IntelligenceStore:
                 connection.execute(
                     "ALTER TABLE intelligence_executions ADD COLUMN analysis_error_message TEXT"
                 )
+            topic_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(intelligence_topics)").fetchall()
+            }
+            if "question" not in topic_columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_topics ADD COLUMN question TEXT NOT NULL DEFAULT ''"
+                )
             connection.commit()
         if owns_connection:
             connection.close()
@@ -203,6 +225,7 @@ class IntelligenceStore:
             "id": int(row["id"]),
             "owner_user_id": int(row["owner_user_id"]),
             "name": str(row["name"]),
+            "question": str(row["question"] or "") if "question" in row.keys() else "",
             "description": str(row["description"] or ""),
             "keywords": _decode(row["keywords_json"], []),
             "focus_objects": _decode(row["focus_objects_json"], []),
@@ -254,18 +277,25 @@ class IntelligenceStore:
         try:
             with self._connect() as connection:
                 self.ensure_schema(connection)
+                existing = connection.execute(
+                    "SELECT COUNT(*) AS total FROM intelligence_topics WHERE owner_user_id = ?",
+                    (owner_user_id,),
+                ).fetchone()
+                if existing is not None and int(existing["total"]) >= TOPICS_PER_USER_LIMIT:
+                    raise TopicLimitError("saved configuration limit reached")
                 cursor = connection.execute(
                     """
                     INSERT INTO intelligence_topics
-                        (owner_user_id, name, description, keywords_json, focus_objects_json,
+                        (owner_user_id, name, question, description, keywords_json, focus_objects_json,
                          analysis_perspective, time_range, source_preference, specified_sites_json,
                          report_type, analysis_depth, extra_requirements, enabled,
                          created_by_user_id, updated_by_user_id, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                     """,
                     (
                         owner_user_id,
                         payload["name"],
+                        payload.get("question", ""),
                         payload.get("description", ""),
                         _json(payload.get("keywords", [])),
                         _json(payload.get("focus_objects", [])),
@@ -283,6 +313,8 @@ class IntelligenceStore:
                     ),
                 )
                 row = connection.execute("SELECT * FROM intelligence_topics WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        except TopicLimitError:
+            raise
         except sqlite3.IntegrityError as exc:
             raise TopicNameConflictError("topic name already exists") from exc
         except sqlite3.Error as exc:
@@ -331,7 +363,7 @@ class IntelligenceStore:
                 cursor = connection.execute(
                     """
                     UPDATE intelligence_topics
-                    SET name = ?, description = ?, keywords_json = ?, focus_objects_json = ?,
+                    SET name = ?, question = ?, description = ?, keywords_json = ?, focus_objects_json = ?,
                         analysis_perspective = ?, time_range = ?, source_preference = ?,
                         specified_sites_json = ?, report_type = ?, analysis_depth = ?,
                         extra_requirements = ?, updated_by_user_id = ?, updated_at = ?
@@ -339,6 +371,7 @@ class IntelligenceStore:
                     """,
                     (
                         payload["name"],
+                        payload.get("question", ""),
                         payload.get("description", ""),
                         _json(payload.get("keywords", [])),
                         _json(payload.get("focus_objects", [])),
@@ -370,6 +403,22 @@ class IntelligenceStore:
         if row is None:
             raise IntelligenceNotFoundError("topic not found")
         return self._topic_from_row(row)
+
+    def delete_topic(self, owner_user_id: int, topic_id: int) -> None:
+        try:
+            with self._connect() as connection:
+                self.ensure_schema(connection)
+                cursor = connection.execute(
+                    "DELETE FROM intelligence_topics WHERE id = ? AND owner_user_id = ?",
+                    (topic_id, owner_user_id),
+                )
+                if cursor.rowcount == 0:
+                    raise IntelligenceNotFoundError("topic not found")
+                connection.commit()
+        except IntelligenceNotFoundError:
+            raise
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to delete intelligence topic") from exc
 
     def set_topic_enabled(self, owner_user_id: int, topic_id: int, enabled: bool, actor_user_id: int) -> dict[str, object]:
         try:
@@ -513,6 +562,29 @@ class IntelligenceStore:
             "tested_at": str(row["tested_at"]) if row["tested_at"] else None,
         }
 
+    @staticmethod
+    def _prune_executions(connection: sqlite3.Connection, owner_user_id: int) -> None:
+        """Keep only the newest EXECUTIONS_RETENTION finished records per user.
+
+        Pending/running records are never touched, and the caller is expected
+        to run this inside the transaction that changes execution state.
+        """
+        connection.execute(
+            """
+            DELETE FROM intelligence_executions
+            WHERE owner_user_id = ?
+              AND status NOT IN ('pending', 'running')
+              AND id NOT IN (
+                  SELECT id FROM intelligence_executions
+                  WHERE owner_user_id = ?
+                    AND status NOT IN ('pending', 'running')
+                  ORDER BY created_at DESC, id DESC
+                  LIMIT ?
+              )
+            """,
+            (owner_user_id, owner_user_id, EXECUTIONS_RETENTION),
+        )
+
     def create_execution(
         self,
         owner_user_id: int,
@@ -552,6 +624,8 @@ class IntelligenceStore:
                     ),
                 )
                 row = connection.execute("SELECT * FROM intelligence_executions WHERE id = ?", (cursor.lastrowid,)).fetchone()
+                self._prune_executions(connection, owner_user_id)
+                connection.commit()
         except sqlite3.IntegrityError as exc:
             if "idx_intelligence_executions_owner_active" in str(exc) or "UNIQUE constraint failed: intelligence_executions.owner_user_id" in str(exc):
                 raise ActiveExecutionError("an intelligence execution is already active") from exc
@@ -640,6 +714,9 @@ class IntelligenceStore:
                 if cursor.rowcount == 0:
                     raise IntelligenceNotFoundError("execution not found")
                 row = connection.execute("SELECT * FROM intelligence_executions WHERE id = ?", (execution_id,)).fetchone()
+                if row is not None and values.get("status") in ("succeeded", "failed", "empty"):
+                    self._prune_executions(connection, int(row["owner_user_id"]))
+                    connection.commit()
         except IntelligenceNotFoundError:
             raise
         except sqlite3.IntegrityError as exc:

@@ -212,6 +212,21 @@ body {
   animation: progress-flow 1.5s linear infinite;
 }
 
+@keyframes ci-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ci-panel-in {
+  animation: ci-panel-in 0.32s ease-out;
+}
+
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
@@ -228,6 +243,10 @@ body {
 
   .admin-progress-indeterminate,
   .animate-progress-flow {
+    animation: none !important;
+  }
+
+  .ci-panel-in {
     animation: none !important;
   }
 }

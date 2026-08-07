@@ -123,10 +123,12 @@ class IntelligenceConfigBase(BaseModel):
 
 class IntelligenceTopicCreate(IntelligenceConfigBase):
     name: str = Field(min_length=1, max_length=120)
+    question: str = Field(default="", max_length=1_000)
 
 
 class IntelligenceTopicUpdate(IntelligenceConfigBase):
     name: str = Field(min_length=1, max_length=120)
+    question: str = Field(default="", max_length=1_000)
 
 
 class IntelligenceTopicEnabled(BaseModel):
@@ -182,6 +184,7 @@ class InstantSearchRequest(IntelligenceConfigBase):
 class KeywordSuggestionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+    question: str = Field(default="", max_length=1_000)
     description: str = Field(default="", max_length=2_000)
     keywords: list[str] = Field(default_factory=list, max_length=30)
     focus_objects: list[str] = Field(default_factory=list, max_length=20)

@@ -34,6 +34,10 @@ from .qianfan_search import (
 )
 
 
+class AnalysisConfigurationError(Exception):
+    """Raised when the DeepSeek analysis client is required but not configured."""
+
+
 PERSPECTIVE_LABELS = {
     "management": "管理层视角",
     "product_business": "产品与业务视角",
@@ -727,7 +731,11 @@ def reanalyze_execution(owner_user_id: int, execution_id: int) -> dict[str, obje
 
 
 def suggest_keywords(payload: dict[str, object], max_suggestions: int = 8) -> list[str]:
-    validate_configuration()
+    # Keyword suggestions only need the DeepSeek analysis client; they must not
+    # depend on the Baidu web search configuration.
+    if not analysis_service_configured():
+        raise AnalysisConfigurationError("DeepSeek 分析服务未配置，请先配置 LLM API 后重试")
+    question = clean_text(payload.get("question"), 1_000)
     description = clean_text(payload.get("description"), 2_000)
     keywords = clean_list(payload.get("keywords"), 30)
     focus_objects = clean_list(payload.get("focus_objects"), 20)
@@ -740,11 +748,12 @@ def suggest_keywords(payload: dict[str, object], max_suggestions: int = 8) -> li
         {
             "role": "user",
             "content": (
+                f"业务问题：{question}\n"
                 f"业务描述：{description}\n"
                 f"已有关键词：{'、'.join(keywords)}\n"
                 f"关注对象：{'、'.join(focus_objects)}\n"
                 f"分析视角：{perspective}\n"
-                f"请补充最多 {max(1, min(8, max_suggestions))} 个关键词，并放入 keywords 数组。"
+                f"请补充最多 {max(1, min(8, max_suggestions))} 个与业务问题相关、且不同于已有关键词的检索关键词，并放入 keywords 数组。"
             ),
         },
     ]
@@ -775,6 +784,7 @@ def suggest_keywords(payload: dict[str, object], max_suggestions: int = 8) -> li
 
 __all__ = [
     "ActiveExecutionError",
+    "AnalysisConfigurationError",
     "client",
     "IntelligenceNotFoundError",
     "IntelligenceStoreError",

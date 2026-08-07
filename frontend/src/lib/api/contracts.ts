@@ -213,6 +213,7 @@ export interface InstantSearchRequest extends CustomIntelligenceConfig {
 export interface IntelligenceTopic extends CustomIntelligenceConfig {
   id: number;
   name: string;
+  question: string;
   enabled: boolean;
   created_at: string;
   updated_at: string;
@@ -220,6 +221,7 @@ export interface IntelligenceTopic extends CustomIntelligenceConfig {
 
 export interface KeywordSuggestionRequest {
   description: string;
+  question?: string;
   keywords: string[];
   focus_objects: string[];
   analysis_perspective: IntelligencePerspective;
