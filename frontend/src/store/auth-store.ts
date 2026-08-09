@@ -7,6 +7,7 @@ const USERNAME_KEY = "adminUsername";
 const ROLE_KEY = "sessionRole";
 
 interface AuthState {
+  isHydrated: boolean;
   isLoggedIn: boolean;
   isAdmin: boolean;
   username: string;
@@ -20,6 +21,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => {
   return {
+    isHydrated: false,
     isLoggedIn: false,
     isAdmin: false,
     username: "",
@@ -34,6 +36,7 @@ export const useAuthStore = create<AuthState>((set) => {
         window.sessionStorage.setItem(USERNAME_KEY, displayName);
         window.sessionStorage.setItem(ROLE_KEY, data.role);
         set({
+          isHydrated: true,
           isLoggedIn: true,
           isAdmin: data.is_admin,
           username: displayName,
@@ -57,22 +60,25 @@ export const useAuthStore = create<AuthState>((set) => {
       window.sessionStorage.removeItem(TOKEN_KEY);
       window.sessionStorage.removeItem(USERNAME_KEY);
       window.sessionStorage.removeItem(ROLE_KEY);
-      set({ isLoggedIn: false, isAdmin: false, username: "", token: null, error: "" });
+      set({ isHydrated: true, isLoggedIn: false, isAdmin: false, username: "", token: null, error: "" });
     },
 
     clearAuth: (message = "") => {
       window.sessionStorage.removeItem(TOKEN_KEY);
       window.sessionStorage.removeItem(USERNAME_KEY);
       window.sessionStorage.removeItem(ROLE_KEY);
-      set({ isLoggedIn: false, isAdmin: false, username: "", token: null, error: message });
+      set({ isHydrated: true, isLoggedIn: false, isAdmin: false, username: "", token: null, error: message });
     },
 
     restoreSession: () => {
       const token = window.sessionStorage.getItem(TOKEN_KEY);
       const username = window.sessionStorage.getItem(USERNAME_KEY) || "";
       const role = window.sessionStorage.getItem(ROLE_KEY);
-      if (!token) return;
-      set({ isLoggedIn: true, isAdmin: role === "admin", username, token, error: "" });
+      if (!token) {
+        set({ isHydrated: true });
+        return;
+      }
+      set({ isHydrated: true, isLoggedIn: true, isAdmin: role === "admin", username, token, error: "" });
     },
   };
 });

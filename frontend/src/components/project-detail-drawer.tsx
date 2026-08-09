@@ -142,7 +142,6 @@ export function ProjectDetailDrawer({
               <QualityItem
                 label="是否属于非金融科技项目"
                 ok={!record.isFinTech}
-                invert
               />
             </div>
           </section>
@@ -186,13 +185,11 @@ function Field({
 function QualityItem({
   label,
   ok,
-  invert,
 }: {
   label: string;
   ok: boolean;
-  invert?: boolean;
 }) {
-  const isGood = invert ? !ok : ok;
+  const isGood = ok;
   return (
     <div className="flex items-center gap-2 text-[12px]">
       <span

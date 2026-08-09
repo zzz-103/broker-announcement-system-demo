@@ -133,7 +133,7 @@ export function SavedConfigList({
                     disabled: busy || activeExecutionId !== null,
                     onSelect: () => onToggle(topic),
                   },
-                  { label: "删除配置", danger: true, disabled: busy, onSelect: () => onDelete(topic) },
+                  { label: "删除配置", danger: true, disabled: busy || activeExecutionId !== null, onSelect: () => onDelete(topic) },
                 ]}
               />
             </div>

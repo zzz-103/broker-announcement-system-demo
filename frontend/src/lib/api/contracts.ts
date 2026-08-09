@@ -59,11 +59,6 @@ export type JobEvent =
   | { type: "progress"; job_id: string; job_type?: JobType; stage: string; message: string; current?: number; total?: number; progress?: number; timestamp: string; sequence?: number }
   | { type: "done"; job_id: string; status: "succeeded" | "failed" | "cancelled"; exit_code: number | null; timestamp: string; error?: string; sequence?: number };
 
-export interface DatasetResponse {
-  records: Record<string, string>[];
-  meta: { count: number; updated_at: string | null };
-}
-
 export type DashboardDatasetResponse =
   | DashboardOverview
   | DashboardFilters
@@ -75,9 +70,6 @@ export interface DashboardExportResponse {
   manifest: DashboardManifest;
   download_url: string;
 }
-export type AnnouncementsResponse = DatasetResponse;
-export type AppReleasesResponse = DatasetResponse;
-
 export interface AiAnalysisResponse {
   content: string | null; updatedAt: string | null;
   analysis?: { content?: string; [key: string]: unknown };
@@ -180,8 +172,6 @@ export interface IntelligenceSearchConfigResponse {
 
 export interface IntelligenceSearchConfigInput {
   enabled: boolean;
-  endpoint: string;
-  auth_header: string;
   timeout_seconds: number;
   api_key?: string;
 }
@@ -217,6 +207,7 @@ export interface IntelligenceTopic extends CustomIntelligenceConfig {
   enabled: boolean;
   created_at: string;
   updated_at: string;
+  latest_execution?: CustomIntelligenceExecution | null;
 }
 
 export interface KeywordSuggestionRequest {
@@ -292,6 +283,8 @@ export interface CustomIntelligenceExecution {
   final_query: string;
   report: Partial<IntelligenceReport> | null;
   sources: IntelligenceSource[];
+  search_answer: string;
+  search_followups: string[];
   status: CustomIntelligenceExecutionStatus;
   error_message: string | null;
   search_status: "pending" | "running" | "succeeded" | "failed" | "not_run";

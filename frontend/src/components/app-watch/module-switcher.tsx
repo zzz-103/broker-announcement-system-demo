@@ -29,7 +29,7 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
             aria-label={label}
             onClick={() => {
               if (key === "procurement") {
-                router.push("/?view=procurement");
+                router.push("/");
               } else if (key === "app-watch") {
                 router.push("/app-updates");
               } else {

@@ -17,12 +17,13 @@ import {
 import { formatCount, formatDateTime, formatMonthDay } from "@/lib/display";
 import { useFilterStore } from "@/store/filter-store";
 import { useAuthStore } from "@/store/auth-store";
-import { BackendApiError, recordDashboardView } from "@/lib/api/backend-client";
+import { BackendApiError, isAbortError, recordDashboardView } from "@/lib/api/backend-client";
 import { getAuditContext } from "@/lib/audit-context";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardFilters } from "@/components/dashboard-filters";
 import { ProcurementTabs } from "@/components/procurement/procurement-tabs";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
+import { SessionLoading } from "@/components/session-loading";
 import { MetricCards } from "@/components/metric-cards";
 import { ExecutiveSummary } from "@/components/executive-summary";
 import { FeedbackDialog } from "@/components/feedback-dialog";
@@ -91,10 +92,8 @@ export default function Dashboard() {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackCategory, setFeedbackCategory] = useState<FeedbackCategory | undefined>();
   const [feedbackBrokerName, setFeedbackBrokerName] = useState("");
-  const [landingResolved, setLandingResolved] = useState(false);
-
   // Auth state
-  const { isLoggedIn, isAdmin, username, logout, token, clearAuth } = useAuthStore();
+  const { isHydrated, isLoggedIn, isAdmin, username, logout, token, clearAuth } = useAuthStore();
   const restoreSession = useAuthStore((s) => s.restoreSession);
 
   useEffect(() => {
@@ -102,21 +101,13 @@ export default function Dashboard() {
   }, [restoreSession]);
 
   useEffect(() => {
-    if (!isLoggedIn) {
-      setLandingResolved(false);
-      return;
-    }
-    setLandingResolved(true);
-  }, [isLoggedIn]);
-
-  useEffect(() => {
-    if (!isLoggedIn || !token || !landingResolved) return;
+    if (!isHydrated || !isLoggedIn || !token) return;
     void recordDashboardView(token, getAuditContext()).catch((error: unknown) => {
       if (error instanceof BackendApiError && error.status === 401) {
         clearAuth("登录已失效，请重新登录");
       }
     });
-  }, [clearAuth, isLoggedIn, landingResolved, token]);
+  }, [clearAuth, isHydrated, isLoggedIn, token]);
 
   // Broker tags: show a compact subset until explicitly expanded.
   const [showAllBrokers, setShowAllBrokers] = useState(false);
@@ -147,10 +138,11 @@ export default function Dashboard() {
   // Only load data after login
   useEffect(() => {
     if (!isLoggedIn || !token) return;
+    const controller = new AbortController();
     setIsLoading(true);
     setDataStatus("loading");
     setDataMessage(null);
-    loadAndProcessData(token)
+    loadAndProcessData(token, controller.signal)
       .then(({ records, updatedAt, filters }) => {
         setAllData(records);
         setDataUpdatedAt(updatedAt);
@@ -164,6 +156,7 @@ export default function Dashboard() {
         setIsLoading(false);
       })
       .catch((err: unknown) => {
+        if (controller.signal.aborted || isAbortError(err)) return;
         if (err instanceof BackendApiError && err.status === 401) {
           clearAuth("登录已失效，请重新登录");
           return;
@@ -183,6 +176,7 @@ export default function Dashboard() {
         }
         setIsLoading(false);
       });
+    return () => controller.abort();
   }, [clearAuth, dataVersion, isLoggedIn, token]);
 
   const baseline = useMemo(() => getDataBaseline(allData), [allData]);
@@ -298,6 +292,10 @@ export default function Dashboard() {
     setFeedbackOpen(true);
   }, []);
 
+  if (!isHydrated) {
+    return <SessionLoading />;
+  }
+
   // Show login page if not logged in
   if (!isLoggedIn) {
     return <LoginPageWithApply />;
@@ -347,6 +345,13 @@ export default function Dashboard() {
           <div>
             <h2 className="text-xl font-bold tracking-tight text-[#172033] sm:text-2xl">招采情报</h2>
             <p className="mt-1 text-xs text-[#667085]">跟踪公开招采动态，辅助项目研判与业务跟进。</p>
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="当前统计范围">
+              <span className="rounded bg-[#EEF4FF] px-2 py-0.5 text-[10px] font-semibold text-[#315EA8]">
+                {timeRange === "30d" ? "最近 30 天" : timeRange === "90d" ? "最近 90 天" : timeRange === "year" ? "本年度" : "全部时间"}
+              </span>
+              {finTechOnly && <span className="rounded bg-[#EEF4FF] px-2 py-0.5 text-[10px] font-semibold text-[#315EA8]">仅金融科技项目</span>}
+              {brokerNames.length > 0 && <span className="rounded bg-[#F2F4F7] px-2 py-0.5 text-[10px] font-semibold text-[#667085]">{brokerNames.length} 家券商</span>}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -379,6 +384,8 @@ export default function Dashboard() {
         </div>
         {(isLoading || dataStatus === "empty" || dataStatus === "error") && (
           <div
+            role={dataStatus === "error" ? "alert" : "status"}
+            aria-live={dataStatus === "error" ? "assertive" : "polite"}
             className={`rounded-lg border px-4 py-3 text-[13px] ${
               dataStatus === "error"
                 ? "border-red-100 bg-red-50 text-red-600"
@@ -391,8 +398,8 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Global Filter Bar */}
-        <DashboardFilters
+        {/* Global filters do not affect the fixed 30-day AI report. */}
+        {activeTab !== "ai" && <DashboardFilters
           search={search}
           setSearch={setSearch}
           timeRange={timeRange}
@@ -419,7 +426,7 @@ export default function Dashboard() {
           sortedBrokers={sortedBrokers}
           showAllBrokers={showAllBrokers}
           setShowAllBrokers={setShowAllBrokers}
-        />
+        />}
 
         {/* Tab Bar - Sticky below header */}
         <ProcurementTabs
@@ -431,11 +438,17 @@ export default function Dashboard() {
 
         {/* Tab Content */}
         {activeTab === "ai" ? (
-          <div id="procurement-panel-ai" role="tabpanel" aria-labelledby="procurement-tab-ai"><AiSummary /></div>
+          <div id="procurement-panel-ai" role="tabpanel" aria-labelledby="procurement-tab-ai" className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-xs text-blue-800">
+              <span className="font-semibold">报告口径</span>
+              <span>最近 30 天全量公开招采数据，不受总览筛选条件影响。</span>
+            </div>
+            <AiSummary />
+          </div>
         ) : activeTab === "overview" ? (
           <div id="procurement-panel-overview" role="tabpanel" aria-labelledby="procurement-tab-overview" className="space-y-4">
             {/* Metric Cards */}
-            <MetricCards data={filteredData} baseline={baseline} statistics={dashboardStatistics} updatedAt={dataUpdatedAt} />
+            <MetricCards data={filteredData} baseline={baseline} />
 
             {/* Executive Summary */}
             <ExecutiveSummary data={filteredData} allData={allData} baseline={baseline} />
@@ -449,7 +462,7 @@ export default function Dashboard() {
 
             {/* Observation Cards */}
             <div className="grid grid-cols-1 md:grid-cols-6 lg:grid-cols-12 gap-3 sm:gap-4">
-              <BrokerActivityCard data={filteredData} baseline={baseline} />
+              <BrokerActivityCard data={filteredData} />
               <SupplierObservationCard data={filteredData} />
               <PriceSamplesCard
                 data={filteredData}

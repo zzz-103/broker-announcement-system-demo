@@ -90,6 +90,7 @@ export function ReportPanel({
   const sources = execution.sources;
   const searchSucceeded = execution.search_status === "succeeded";
   const analysisFailed = phase === "analysis_failed";
+  const reportReady = phase === "done" || phase === "analysis_failed";
   const title = execution.report?.title || execution.original_query || execution.snapshot.question || "即时情报报告";
   const question = execution.original_query || execution.snapshot.question || "";
 
@@ -162,7 +163,7 @@ export function ReportPanel({
             onReanalyze={onReanalyze}
             onRerun={onRerun}
           />
-          {searchSucceeded && (
+          {reportReady && (
             <Button variant="outline" size="sm" onClick={() => onExpand(execution)}>
               <BookOpen className="size-3.5" aria-hidden="true" />展开阅读
             </Button>

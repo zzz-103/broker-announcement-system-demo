@@ -3,6 +3,7 @@
 import { AlertCircle, Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
+import { SessionLoading } from "@/components/session-loading";
 import { DashboardHeader } from "@/components/dashboard-header";
 import {
   CustomIntelligenceTabs,
@@ -20,6 +21,7 @@ export default function CustomIntelligencePage() {
   const router = useRouter();
   const page = useCustomIntelligencePage();
 
+  if (!page.isHydrated) return <SessionLoading />;
   if (!page.isLoggedIn) return <LoginPageWithApply />;
 
   return (
@@ -56,8 +58,8 @@ export default function CustomIntelligencePage() {
           },
           {
             id: "executions-json",
-            label: "执行记录（完整数据）",
-            description: "保留结构化报告与来源",
+            label: "已保留记录（JSON）",
+            description: "最多保留最近 50 条，含报告与来源",
             disabled: page.executionsTotal === 0,
             onSelect: () => void page.exportAllExecutions("json"),
           },

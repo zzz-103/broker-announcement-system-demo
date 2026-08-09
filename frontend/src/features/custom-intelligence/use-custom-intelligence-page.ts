@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "@/store/auth-store";
 import { BackendApiError, isAbortError } from "@/lib/api/backend-client";
 import { exportCustomIntelligenceCsv, exportCustomIntelligenceJson } from "@/lib/custom-intelligence-export";
@@ -36,6 +36,7 @@ import {
 } from "./custom-intelligence-constants";
 import {
   errorMessage,
+  formFromExecution,
   formFromTopic,
   isActiveExecution,
   mergeExecution,
@@ -43,6 +44,7 @@ import {
 import type { CustomIntelligenceTab } from "./custom-intelligence-types";
 
 export interface CustomIntelligencePageController {
+  isHydrated: boolean;
   isLoggedIn: boolean;
   username: string;
   isAdmin: boolean;
@@ -132,7 +134,7 @@ type KeywordSuggestionSource = Pick<
 >;
 
 export function useCustomIntelligencePage(): CustomIntelligencePageController {
-  const { isLoggedIn, token, username, isAdmin, logout, clearAuth, restoreSession } = useAuthStore();
+  const { isHydrated, isLoggedIn, token, username, isAdmin, logout, clearAuth, restoreSession } = useAuthStore();
   const [activeTab, setActiveTab] = useState<CustomIntelligenceTab>("instant");
   const [form, setForm] = useState<InstantSearchRequest>(DEFAULT_FORM);
   const [options, setOptions] = useState<CustomIntelligenceOptionsResponse>(FALLBACK_OPTIONS);
@@ -165,6 +167,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
+  const reportRequestSequence = useRef(0);
   const serviceAvailable = !optionsLoading && options.service_status === "enabled";
   const analysisAvailable = !optionsLoading && options.analysis_configured;
   const configsLimitReached = topics.length >= TOPIC_LIMIT;
@@ -204,6 +207,9 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
 
   const recentExecutionsByTopic = useMemo(() => {
     const latest = new Map<number, CustomIntelligenceExecution>();
+    for (const topic of topics) {
+      if (topic.latest_execution) latest.set(topic.id, topic.latest_execution);
+    }
     for (const execution of executions) {
       if (execution.topic_id === null) continue;
       const current = latest.get(execution.topic_id);
@@ -212,7 +218,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
       }
     }
     return latest;
-  }, [executions]);
+  }, [executions, topics]);
 
   useEffect(() => {
     if (!token) return;
@@ -236,7 +242,9 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
         setWorkspaceMode(true);
       }
     }).catch((error: unknown) => {
-      if (!isAbortError(error)) handleError(error, "无法加载自定义情报配置");
+      if (!controller.signal.aborted && !isAbortError(error)) {
+        handleError(error, "无法加载自定义情报配置");
+      }
     }).finally(() => {
       if (!controller.signal.aborted) setOptionsLoading(false);
     });
@@ -247,11 +255,13 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     if (!token || activeExecutionId === null) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let consecutiveFailures = 0;
     const poll = async () => {
       try {
         const response = await fetchCustomIntelligenceExecution(token, activeExecutionId);
         if (disposed) return;
         const execution = response.execution;
+        consecutiveFailures = 0;
         setExecutions((current) => mergeExecution(current, execution));
         setSelectedExecution((current) => current?.id === execution.id ? execution : current);
         setWorkspaceExecution((current) => current?.id === execution.id ? execution : current);
@@ -268,8 +278,12 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
           clearAuth("登录已失效，请重新登录");
           return;
         }
-        // Keep polling through a transient network failure; the next request can recover.
-        timer = setTimeout(poll, 2000);
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) {
+          setPageError("执行仍在后端继续，但状态连接暂时中断；系统会降低频率自动重试。");
+        }
+        const delay = Math.min(30000, 2000 * (2 ** Math.min(consecutiveFailures, 4)));
+        timer = setTimeout(poll, delay);
       }
     };
     timer = setTimeout(poll, 2000);
@@ -297,7 +311,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   ) => {
     if (!token || isBusy) return;
     if (!analysisAvailable) {
-      setPageError("DeepSeek 分析服务未配置，请先联系管理员。");
+      setPageError("LLM 分析服务未配置，请先联系管理员。");
       return;
     }
     if (requireQuestionOrDescription && !source.question.trim() && !source.description.trim()) {
@@ -464,6 +478,8 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     setNotice("");
     try {
       const response = await executeCustomIntelligenceTopic(token, topic.id);
+      setForm(formFromTopic(topic));
+      setSelectedConfigId(topic.id);
       startPolling(response.execution);
       setSelectedExecution(response.execution);
       setWorkspaceExecution(response.execution);
@@ -646,19 +662,21 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   };
 
   const openReport = async (execution: CustomIntelligenceExecution) => {
+    const requestSequence = ++reportRequestSequence.current;
     setSelectedExecution(execution);
     setReportDialogOpen(true);
     if (!token) return;
     setReportLoading(true);
     try {
       const response = await fetchCustomIntelligenceExecution(token, execution.id);
+      if (requestSequence !== reportRequestSequence.current) return;
       setSelectedExecution(response.execution);
       setExecutions((current) => mergeExecution(current, response.execution));
     } catch (error) {
       if (error instanceof BackendApiError && error.status === 401) clearAuth("登录已失效，请重新登录");
       else setPageError(errorMessage(error, "无法加载完整报告"));
     } finally {
-      setReportLoading(false);
+      if (requestSequence === reportRequestSequence.current) setReportLoading(false);
     }
   };
 
@@ -674,6 +692,9 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     setPageError("");
     try {
       const response = await rerunCustomIntelligenceExecution(token, execution.id);
+      setForm(formFromExecution(execution));
+      setSelectedConfigId(execution.topic_id);
+      setActiveTab("instant");
       startPolling(response.execution);
       setSelectedExecution(response.execution);
       if (keepWorkspace) {
@@ -692,7 +713,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     keepWorkspace = false,
   ) => {
     if (!token || activeExecutionId !== null || !options.analysis_configured) {
-      if (!options.analysis_configured) setPageError("DeepSeek 分析服务未配置，请先联系管理员。");
+      if (!options.analysis_configured) setPageError("LLM 分析服务未配置，请先联系管理员。");
       return;
     }
     setPageError("");
@@ -711,6 +732,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   };
 
   return {
+    isHydrated,
     isLoggedIn,
     username,
     isAdmin,

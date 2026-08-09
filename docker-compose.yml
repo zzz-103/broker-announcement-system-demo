@@ -1,3 +1,5 @@
+# Development backend stack only. Production uses deploy/docker-compose.example.yml
+# copied into the external deployment directory and includes frontend + gateway.
 services:
   backend-api:
     image: ${BROKER_IMAGE:-broker-backend:1.3.1}

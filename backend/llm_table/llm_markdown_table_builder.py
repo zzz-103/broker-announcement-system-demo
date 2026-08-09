@@ -9,7 +9,6 @@ import re
 import sys
 import threading
 import time
-import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -392,33 +391,7 @@ class OpenAICompatibleClient(BaseOpenAICompatibleClient):
         return self._request_json(request_kwargs)
 
     def _request_json(self, request_kwargs: dict[str, Any]) -> Any:
-        # #region debug-point B:openai-request-start
-        report_debug_event(
-            hypothesis_id="B",
-            location="llm_markdown_table_builder.py:OpenAICompatibleClient._request_json:start",
-            msg="about to call chat.completions.create",
-            data={
-                "model": self.config.model,
-                "timeout_seconds": self.config.timeout_seconds,
-                "max_tokens": self.config.max_tokens,
-                "message_count": len(request_kwargs.get("messages", [])),
-            },
-            trace_id=str(time.time_ns()),
-        )
-        # #endregion
-        result = super()._request_json(request_kwargs)
-        # #region debug-point B:openai-request-end
-        report_debug_event(
-            hypothesis_id="B",
-            location="llm_markdown_table_builder.py:OpenAICompatibleClient._request_json:end",
-            msg="chat.completions.create returned",
-            data={
-                "model": self.config.model,
-                "timeout_seconds": self.config.timeout_seconds,
-            },
-        )
-        # #endregion
-        return result
+        return super()._request_json(request_kwargs)
 
 
 def emit_progress(
@@ -1225,48 +1198,6 @@ def is_timeout_error(exc: Exception) -> bool:
     return exc.__class__.__name__ == "APITimeoutError" or "timed out" in str(exc).lower()
 
 
-# #region debug-point A:report-helper
-def report_debug_event(
-    hypothesis_id: str,
-    location: str,
-    msg: str,
-    data: dict[str, Any],
-    trace_id: str | None = None,
-    run_id: str = "pre",
-) -> None:
-    env_path = ROOT_DIR / ".dbg" / "llm-timeout-hang.env"
-    server_url = "http://127.0.0.1:7777/event"
-    session_id = "llm-timeout-hang"
-    try:
-        if env_path.exists():
-            for line in env_path.read_text(encoding="utf-8").splitlines():
-                if line.startswith("DEBUG_SERVER_URL="):
-                    server_url = line.split("=", 1)[1].strip() or server_url
-                elif line.startswith("DEBUG_SESSION_ID="):
-                    session_id = line.split("=", 1)[1].strip() or session_id
-        payload = {
-            "sessionId": session_id,
-            "runId": run_id,
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "msg": f"[DEBUG] {msg}",
-            "data": data,
-            "traceId": trace_id,
-            "ts": int(time.time() * 1000),
-        }
-        urllib.request.urlopen(
-            urllib.request.Request(
-                server_url,
-                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-            ),
-            timeout=2,
-        ).read()
-    except Exception:
-        pass
-# #endregion
-
-
 def request_progress_logger(
     path: Path,
     timeout_seconds: float,
@@ -1354,25 +1285,6 @@ def process_markdown_file(
                 next_allowed_call_at[0] = time.monotonic() + min_interval_seconds
 
         started_at = time.monotonic()
-        # #region debug-point C:file-request-start
-        report_debug_event(
-            hypothesis_id="C",
-            location="llm_markdown_table_builder.py:process_markdown_file:start",
-            msg="file request started",
-            data={
-                "path": str(path),
-                "broker_folder": metadata["broker_folder"],
-                "markdown_file": metadata["markdown_file"],
-                "document_sha1": metadata["document_sha1"],
-                "markdown_chars": len(markdown),
-                "markdown_lines": markdown.count("\n") + 1,
-                "timeout_seconds": client.config.timeout_seconds,
-                "request_log_interval_seconds": request_log_interval_seconds,
-                "force_refresh": force_refresh,
-            },
-            trace_id=metadata["document_sha1"],
-        )
-        # #endregion
         print(
             f"[REQUEST START] {path} (timeout={client.config.timeout_seconds}s)",
             flush=True,
@@ -1396,22 +1308,6 @@ def process_markdown_file(
             payload = client.extract(markdown=markdown, metadata=metadata)
         except Exception as exc:
             elapsed = time.monotonic() - started_at
-            # #region debug-point D:file-request-error
-            report_debug_event(
-                hypothesis_id="D",
-                location="llm_markdown_table_builder.py:process_markdown_file:error",
-                msg="file request failed",
-                data={
-                    "path": str(path),
-                    "document_sha1": metadata["document_sha1"],
-                    "elapsed_seconds": round(elapsed, 3),
-                    "error_type": exc.__class__.__name__,
-                    "error_text": str(exc),
-                    "is_timeout_error": is_timeout_error(exc),
-                },
-                trace_id=metadata["document_sha1"],
-            )
-            # #endregion
             if is_timeout_error(exc):
                 print(
                     f"[REQUEST TIMEOUT] {path} 在 {elapsed:.1f}s 后超时: {exc}",
@@ -1427,20 +1323,6 @@ def process_markdown_file(
             stop_event.set()
 
         elapsed = time.monotonic() - started_at
-        # #region debug-point E:file-request-done
-        report_debug_event(
-            hypothesis_id="E",
-            location="llm_markdown_table_builder.py:process_markdown_file:done",
-            msg="file request completed",
-            data={
-                "path": str(path),
-                "document_sha1": metadata["document_sha1"],
-                "elapsed_seconds": round(elapsed, 3),
-                "payload_type": type(payload).__name__,
-            },
-            trace_id=metadata["document_sha1"],
-        )
-        # #endregion
         print(
             f"[REQUEST DONE] {path} 用时 {elapsed:.1f}s",
             flush=True,

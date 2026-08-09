@@ -126,6 +126,8 @@ def _normalize_broker(value: object) -> str:
 
 def _public_source_name(value: object) -> str:
     source = _text(value)
+    if not source:
+        return "公开招采数据"
     looks_like_relative_path = ("/" in source or "\\" in source) and not re.match(r"(?i)^https?://", source)
     return "公开招采数据" if looks_like_relative_path or PRIVATE_PATH_PATTERN.search(source) or PRIVATE_HOST_PATTERN.search(source) else source
 

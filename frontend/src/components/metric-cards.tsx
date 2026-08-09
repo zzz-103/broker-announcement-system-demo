@@ -1,14 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import type { DashboardStatistics, ProcessedRecord } from "@/lib/announcement-data";
+import type { ProcessedRecord } from "@/lib/announcement-data";
 import { uniqueCount } from "@/lib/announcement-data";
 
 interface MetricCardsProps {
   data: ProcessedRecord[];
   baseline: Date | null;
-  statistics: DashboardStatistics;
-  updatedAt: string | null;
 }
 
 interface MetricItem {

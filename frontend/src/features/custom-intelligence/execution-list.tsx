@@ -197,7 +197,7 @@ export function ExecutionList({
                           ) : execution.status === "failed" && !searchSucceeded ? (
                             <span className="text-[11px] text-red-600" title={execution.error_message || ""}>{errorSummary(execution.error_message)}</span>
                           ) : analysisFailed ? (
-                            <span className="text-[11px] text-amber-700" title={execution.analysis_error_message || ""}>搜索完成，DeepSeek 分析失败，可重新分析</span>
+                            <span className="text-[11px] text-amber-700" title={execution.analysis_error_message || ""}>搜索完成，LLM 分析失败，可重新分析</span>
                           ) : execution.status === "empty" ? (
                             <span className="text-[11px] text-[#667085]">未检索到有效来源</span>
                           ) : (

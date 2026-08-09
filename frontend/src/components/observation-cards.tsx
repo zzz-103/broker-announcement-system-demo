@@ -6,6 +6,7 @@ import {
   displayAmountLabel,
   formatDate,
   formatAmountInWan,
+  getValidBrokerName,
 } from "@/lib/announcement-data";
 import { Info } from "lucide-react";
 
@@ -17,36 +18,24 @@ interface PriceSamplesProps extends ObservationProps {
   onSelectProject: (record: ProcessedRecord) => void;
 }
 
-interface BrokerActivityProps extends ObservationProps {
-  baseline: Date | null;
-}
-
-export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
+export function BrokerActivityCard({ data }: ObservationProps) {
 
   const brokers = useMemo(() => {
-    const ninetyDaysAgo = baseline
-      ? new Date(baseline.getTime() - 90 * 86400000)
-      : null;
-    const recent = ninetyDaysAgo
-      ? data.filter(
-          (r) => r.validPublishDate && r.validPublishDate >= ninetyDaysAgo
-        )
-      : data;
-
     const brokerMap: Record<
       string,
       { keys: Set<string>; domains: Record<string, number>; latestDate: Date | null }
     > = {};
 
-    for (const r of recent) {
-      if (r.validBrokerName === "主体待识别") continue;
-      if (!brokerMap[r.validBrokerName])
-        brokerMap[r.validBrokerName] = {
+    for (const r of data) {
+      const brokerName = getValidBrokerName(r);
+      if (!brokerName) continue;
+      if (!brokerMap[brokerName])
+        brokerMap[brokerName] = {
           keys: new Set(),
           domains: {},
           latestDate: null,
         };
-      const b = brokerMap[r.validBrokerName];
+      const b = brokerMap[brokerName];
       b.keys.add(r.projectKey);
       b.domains[r.primaryDomain] = (b.domains[r.primaryDomain] || 0) + 1;
       if (r.validPublishDate) {
@@ -65,8 +54,8 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
         latestDate: formatDate(info.latestDate),
       }))
       .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
-  }, [data, baseline]);
+      .slice(0, 6);
+  }, [data]);
 
   const maxCount = useMemo(() => {
     if (brokers.length === 0) return 1;
@@ -74,7 +63,7 @@ export function BrokerActivityCard({ data, baseline }: BrokerActivityProps) {
   }, [brokers]);
 
   return (
-    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-6 lg:col-span-5">
+    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-6">
       <div>
         <div className="mb-3 flex items-center gap-1.5">
           <h3 className="text-[14px] font-bold text-[#172033]">
@@ -151,7 +140,8 @@ export function SupplierObservationCard({ data }: ObservationProps) {
         };
       const s = supplierMap[r.normalizedSupplier];
       s.projects.add(r.projectKey);
-      s.brokers.add(r.validBrokerName);
+      const brokerName = getValidBrokerName(r);
+      if (brokerName) s.brokers.add(brokerName);
       s.domains[r.primaryDomain] = (s.domains[r.primaryDomain] || 0) + 1;
     }
 
@@ -165,7 +155,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
           "-",
       }))
       .sort((a, b) => b.projectCount - a.projectCount)
-      .slice(0, 8);
+      .slice(0, 6);
   }, [data]);
 
   const maxCount = useMemo(() => {
@@ -174,7 +164,7 @@ export function SupplierObservationCard({ data }: ObservationProps) {
   }, [suppliers]);
 
   return (
-    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-4">
+    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-6">
       <div>
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           结果公示供应商
@@ -238,12 +228,12 @@ export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
   }, [data]);
 
   return (
-    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-3 lg:col-span-3">
+    <section className="surface-panel col-span-1 flex flex-col justify-between p-4 sm:p-5 md:col-span-6 lg:col-span-12">
       <div>
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           金额披露项目
         </h3>
-        <div className="space-y-0.5">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
           {samples.map((s) => (
             <button
               key={s.amountSampleKey}

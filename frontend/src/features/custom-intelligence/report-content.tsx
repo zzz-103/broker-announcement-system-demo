@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CustomIntelligenceExecution,
   CustomIntelligenceOptionsResponse,
@@ -132,9 +132,9 @@ function DynamicCard({
   );
 }
 
-function ReportSection({ title, children }: { title: string; children: React.ReactNode }) {
+function ReportSection({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="min-w-0">
+    <section id={id} className="min-w-0 scroll-mt-28">
       <h3 className={REPORT_HEADING_CLASS}>{title}</h3>
       {children}
     </section>
@@ -148,11 +148,19 @@ export function ReportBody({
   execution,
   options,
   anchorPrefix,
+  stickyOutline = false,
 }: {
   execution: CustomIntelligenceExecution;
   options: CustomIntelligenceOptionsResponse;
   anchorPrefix: string;
+  stickyOutline?: boolean;
 }) {
+  const [showAllDynamics, setShowAllDynamics] = useState(false);
+  const [showAllSources, setShowAllSources] = useState(false);
+  useEffect(() => {
+    setShowAllDynamics(false);
+    setShowAllSources(false);
+  }, [execution.id]);
   const report = (execution.report ?? {}) as Partial<IntelligenceReport>;
   const sources = execution.sources;
   const sourceMap = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
@@ -164,13 +172,28 @@ export function ReportBody({
   const opportunities = report.opportunities ?? [];
   const risks = report.risks ?? [];
   const watchItems = report.watch_items ?? [];
-  const recommendedFollowups = report.recommended_followups ?? [];
+  const recommendedFollowups = Array.from(new Set([
+    ...(report.recommended_followups ?? []),
+    ...(execution.search_followups ?? []),
+  ])).filter(Boolean);
+  const referenceWarnings = report.reference_warnings ?? [];
+  const searchAnswer = execution.search_answer?.trim() ?? "";
   const analysisFailed = execution.search_status === "succeeded" && execution.analysis_status === "failed";
+  const outline = [
+    { id: `${anchorPrefix}-core`, label: "核心结论", visible: true },
+    { id: `${anchorPrefix}-search-summary`, label: "检索摘要", visible: Boolean(searchAnswer) },
+    { id: `${anchorPrefix}-dynamics`, label: "重点动态", visible: dynamics.length > 0 },
+    { id: `${anchorPrefix}-focus`, label: "专属章节", visible: focusSections.length > 0 },
+    { id: `${anchorPrefix}-impact`, label: "影响分析", visible: Boolean(report.impact_analysis?.trim()) },
+    { id: `${anchorPrefix}-decisions`, label: "机会与风险", visible: opportunities.length + risks.length + watchItems.length > 0 },
+    { id: `${anchorPrefix}-followups`, label: "推荐追问", visible: recommendedFollowups.length > 0 },
+    { id: `${anchorPrefix}s`, label: "来源", visible: sources.length > 0 },
+  ].filter((item) => item.visible);
   return (
     <div className="min-w-0 space-y-9">
       {analysisFailed && (
         <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-          百度搜索已完成，DeepSeek 分析失败。当前可查看原始来源，也可以重新分析。
+          百度搜索已完成，LLM 分析失败。当前可查看原始来源，也可以重新分析。
         </div>
       )}
       {report.is_fallback && (
@@ -178,26 +201,56 @@ export function ReportBody({
           本次报告使用基础格式展示。
         </div>
       )}
+      {referenceWarnings.length > 0 && (
+        <div role="alert" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+          {referenceWarnings.length} 处报告引用未能匹配到原始来源，请以来源附录为准核验。
+        </div>
+      )}
       <section className="grid gap-3 rounded-lg border border-[#E9EEF4] bg-[#F8FAFD] p-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        <div><p className="text-[10px] font-semibold text-[#98A2B3]">完成时间</p><p className="mt-1 text-xs leading-5 text-[#344054]">{report.executed_at || formatDate(execution.completed_at || execution.created_at)}</p></div>
+        <div><p className="text-[10px] font-semibold text-[#98A2B3]">完成时间</p><p className="mt-1 text-xs leading-5 text-[#344054]">{formatDate(report.executed_at || execution.completed_at || execution.created_at)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.time_ranges, report.time_range || execution.snapshot.time_range)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">报告类型</p><p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.report_types, report.report_type || execution.snapshot.report_type)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p><p className="mt-1 text-xs leading-5 text-[#344054]">{report.valid_source_count ?? sources.length}</p></div>
       </section>
-      <ReportSection title="核心结论">
+      <nav aria-label="报告目录" className={`${stickyOutline ? "sticky top-0 z-10" : ""} -mx-1 flex flex-wrap gap-1.5 rounded-lg border border-[#E4EAF2] bg-white/95 p-2 shadow-sm backdrop-blur`}>
+        <span className="px-1.5 py-1 text-[11px] font-semibold text-[#98A2B3]">目录</span>
+        {outline.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => document.getElementById(item.id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className="rounded-md px-2 py-1 text-[11px] font-semibold text-[#475467] hover:bg-[#EEF4FF] hover:text-[#315EA8]"
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <ReportSection id={`${anchorPrefix}-core`} title="核心结论">
         <p className={REPORT_PROSE_CLASS}>{report.core_conclusion || "暂无核心结论。"}</p>
       </ReportSection>
+      {searchAnswer && (
+        <details id={`${anchorPrefix}-search-summary`} className="scroll-mt-28 rounded-lg border border-[#E9EEF4] bg-[#F8FAFD] p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-[#475467]">查看百度检索摘要</summary>
+          <p className={`mt-3 ${REPORT_PROSE_CLASS}`}>{searchAnswer}</p>
+        </details>
+      )}
       {dynamics.length > 0 && (
-        <ReportSection title="重点动态">
+        <ReportSection id={`${anchorPrefix}-dynamics`} title={`重点动态（${dynamics.length}）`}>
           <div className="space-y-4">
-            {dynamics.map((dynamic, index) => (
+            {(showAllDynamics ? dynamics : dynamics.slice(0, 5)).map((dynamic, index) => (
               <DynamicCard key={`${dynamic.title}-${index}`} dynamic={dynamic} index={index} sourceMap={sourceMap} sourceIndexes={sourceIndexes} anchorPrefix={anchorPrefix} />
             ))}
+            {dynamics.length > 5 && (
+              <button type="button" onClick={() => setShowAllDynamics((value) => !value)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-3 py-1.5 text-xs font-semibold text-[#315EA8] hover:bg-[#EEF4FF]">
+                {showAllDynamics ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                {showAllDynamics ? "收起动态" : `展开其余 ${dynamics.length - 5} 条动态`}
+              </button>
+            )}
           </div>
         </ReportSection>
       )}
       {focusSections.length > 0 && (
-        <ReportSection title="专属分析章节">
+        <ReportSection id={`${anchorPrefix}-focus`} title="专属分析章节">
           <div className="space-y-4">
             {focusSections.map((section) => (
               <div key={section.title} className="min-w-0 rounded-lg border border-[#E9EEF4] bg-white p-4 sm:p-5">
@@ -209,19 +262,19 @@ export function ReportBody({
         </ReportSection>
       )}
       {report.impact_analysis?.trim() ? (
-        <ReportSection title="影响分析">
+        <ReportSection id={`${anchorPrefix}-impact`} title="影响分析">
           <p className={REPORT_PROSE_CLASS}>{report.impact_analysis}</p>
         </ReportSection>
       ) : null}
       {(opportunities.length > 0 || risks.length > 0 || watchItems.length > 0) && (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div id={`${anchorPrefix}-decisions`} className="scroll-mt-28 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {opportunities.length > 0 && <ReportSection title="机会"><TextList items={opportunities} spaced /></ReportSection>}
           {risks.length > 0 && <ReportSection title="风险"><TextList items={risks} spaced /></ReportSection>}
           {watchItems.length > 0 && <ReportSection title="关注事项"><TextList items={watchItems} spaced /></ReportSection>}
         </div>
       )}
       {recommendedFollowups.length > 0 && (
-        <ReportSection title="推荐追问">
+        <ReportSection id={`${anchorPrefix}-followups`} title="推荐追问">
           <TextList items={recommendedFollowups} spaced />
         </ReportSection>
       )}
@@ -229,7 +282,13 @@ export function ReportBody({
         <section id={`${anchorPrefix}s`} className="scroll-mt-24 border-t border-[#E4EAF2] pt-7">
           <h3 className={REPORT_HEADING_CLASS}>本次报告参考来源（{sources.length}）</h3>
           <div className="mt-3 space-y-3">
-            {sources.map((source, index) => <SourceCard key={source.id} source={source} index={index + 1} anchorPrefix={anchorPrefix} />)}
+            {(showAllSources ? sources : sources.slice(0, 5)).map((source, index) => <SourceCard key={source.id} source={source} index={index + 1} anchorPrefix={anchorPrefix} />)}
+            {sources.length > 5 && (
+              <button type="button" onClick={() => setShowAllSources((value) => !value)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-3 py-1.5 text-xs font-semibold text-[#315EA8] hover:bg-[#EEF4FF]">
+                {showAllSources ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                {showAllSources ? "收起来源" : `展开其余 ${sources.length - 5} 条来源`}
+              </button>
+            )}
           </div>
         </section>
       )}

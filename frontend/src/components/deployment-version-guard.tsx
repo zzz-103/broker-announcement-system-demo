@@ -13,6 +13,7 @@ const VERSION_QUERY_KEY = "__app_version";
 
 export function DeploymentVersionGuard() {
   useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return;
     let checking = false;
 
     const checkVersion = async () => {

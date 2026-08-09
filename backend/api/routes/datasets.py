@@ -1,29 +1,17 @@
 from __future__ import annotations
 
 import csv
-from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from ..announcement_cache import accepts_gzip, etag_matches
 from ..auth import require_admin_token, require_token
-from ..config import PROJECT_ROOT, settings
-from ..contracts import PublishPlan
-from ..dashboard_data import (
-    backup_csv_atomically,
-    count_csv_records,
-    prune_old_announcement_backups,
-    publish_csv_atomically,
-)
+from ..config import settings
+from ..publication_service import PublicationError, publish_merged_announcements
 from ..job_manager import JobConflictError
 from ..runtime import announcement_response_cache, job_manager
-from ..supplemental_seed import (
-    CANONICAL_FIELDS,
-    SupplementalDataError,
-    merge_for_publication,
-    supplemental_data_dir,
-)
+from ..supplemental_seed import SupplementalDataError
 
 
 router = APIRouter()
@@ -61,10 +49,6 @@ def announcement_csv_path() -> Path:
 
 def app_releases_csv_path() -> Path:
     return settings.app_releases_csv_path
-
-
-def merged_announcement_csv_path() -> Path:
-    return settings.merged_announcement_csv_path
 
 
 def _cached_csv_response(request: Request, path: Path, projection: tuple[str, ...] | None = None) -> Response:
@@ -125,47 +109,22 @@ def publish_announcements() -> dict[str, object]:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     try:
-        merged_path = merged_announcement_csv_path()
         target_path = announcement_csv_path()
-        if not merged_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="final merged announcement CSV not found; run the matching pipeline first",
-            )
-
-        previous_count = count_csv_records(target_path)
         try:
-            merge_result = merge_for_publication(merged_path, supplemental_data_dir(PROJECT_ROOT))
+            meta = publish_merged_announcements()
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
         except SupplementalDataError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=str(exc),
             ) from exc
-
-        publish_plan = PublishPlan(
-            fieldnames=CANONICAL_FIELDS,
-            records=merge_result.records,
-            meta={
-                **merge_result.meta,
-                "previous_count": previous_count,
-                "source_count": merge_result.meta["staging_count"],
-            },
-        )
-        backup_name = backup_csv_atomically(target_path)
-        publish_csv_atomically(publish_plan.fieldnames, publish_plan.records, target_path)
+        except PublicationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         announcement_response_cache.invalidate(target_path)
-        prune_old_announcement_backups(target_path)
-
-        published_at = datetime.now(timezone.utc).isoformat()
-        updated_at = datetime.fromtimestamp(target_path.stat().st_mtime, timezone.utc).isoformat()
-        meta = {
-            **publish_plan.meta,
-            "count": len(publish_plan.records),
-            "published_count": len(publish_plan.records),
-            "published_at": published_at,
-            "updated_at": updated_at,
-            "backup_file": backup_name,
-        }
         return {"message": "推送成功", "meta": meta}
     finally:
         job_manager.release_operation("publish")

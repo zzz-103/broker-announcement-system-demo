@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  Check,
+  Copy,
   Eye,
   KeyRound,
   Loader2,
@@ -45,10 +47,6 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   const [config, setConfig] = useState<IntelligenceSearchConfigResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(true);
-  const [endpoint, setEndpoint] = useState(
-    "https://qianfan.baidubce.com/v2/ai_search/web_search",
-  );
-  const [authHeader, setAuthHeader] = useState("Authorization");
   const [timeoutSeconds, setTimeoutSeconds] = useState(120);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [apiKeyTouched, setApiKeyTouched] = useState(false);
@@ -57,6 +55,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   const [revealOpen, setRevealOpen] = useState(false);
   const [revealPassword, setRevealPassword] = useState("");
   const [revealing, setRevealing] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [lastTest, setLastTest] = useState<IntelligenceSearchTestRecord | null>(null);
@@ -75,8 +74,6 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   const applyConfig = useCallback((next: IntelligenceSearchConfigResponse) => {
     setConfig(next);
     setEnabled(next.enabled);
-    setEndpoint(next.endpoint);
-    setAuthHeader(next.auth_header);
     setTimeoutSeconds(next.timeout_seconds);
     setApiKeyDraft("");
     setApiKeyTouched(false);
@@ -101,14 +98,6 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
 
   const handleSave = async () => {
     if (!token || saving) return;
-    if (!/^https?:\/\/[^\s]+$/i.test(endpoint.trim())) {
-      setError("Endpoint 必须是有效的 HTTP 或 HTTPS 地址。");
-      return;
-    }
-    if (!authHeader.trim() || /[\r\n:]/.test(authHeader)) {
-      setError("鉴权请求头包含无效字符。");
-      return;
-    }
     const timeout = Number(timeoutSeconds);
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 600) {
       setError("请求超时必须为 1-600 秒。");
@@ -122,8 +111,6 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
         token,
         {
           enabled,
-          endpoint: endpoint.trim().replace(/\/+$/, ""),
-          auth_header: authHeader.trim(),
           timeout_seconds: timeout,
           api_key: apiKeyTouched && apiKeyDraft.trim() ? apiKeyDraft.trim() : undefined,
         },
@@ -165,13 +152,39 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
       const result = await revealAdminSearchConfigKey(token, revealPassword);
       setApiKeyDraft(result.api_key);
       setApiKeyTouched(true);
+      setCopied(false);
       setRevealPassword("");
       setRevealOpen(false);
-      setMessage("已显示完整 API Key，请勿复制到聊天或外部文档。");
+      setMessage("已显示完整 API Key，可直接修改后保存。");
     } catch (err) {
       handleError(err, "无法查看 API Key");
     } finally {
       setRevealing(false);
+    }
+  };
+
+  const handleCopyApiKey = async () => {
+    if (!apiKeyTouched || !apiKeyDraft) return;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(apiKeyDraft);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = apiKeyDraft;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copiedWithFallback = document.execCommand("copy");
+        textarea.remove();
+        if (!copiedWithFallback) throw new Error("clipboard unavailable");
+      }
+      setCopied(true);
+      setMessage("API Key 已复制到剪贴板。");
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("复制失败，请在输入框中手动选择并复制。");
     }
   };
 
@@ -232,14 +245,14 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
               <div className="relative min-w-0 flex-1">
                 <KeyRound className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#98A2B3]" />
                 <input
-                  type="password"
+                  type={apiKeyTouched ? "text" : "password"}
                   value={apiKeyTouched ? apiKeyDraft : config?.api_key_mask || ""}
-                  readOnly={!apiKeyTouched}
+                  readOnly={!apiKeyTouched && Boolean(config?.has_api_key)}
                   onChange={(event) => {
                     setApiKeyDraft(event.target.value);
                     setApiKeyTouched(true);
                   }}
-                  placeholder="留空保存时保留当前 Key"
+                  placeholder={config?.has_api_key ? "留空保存时保留当前 Key" : "请输入 API Key"}
                   className={cn(INPUT_CLASS, "pl-9")}
                 />
               </div>
@@ -253,28 +266,34 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
                 <Eye className="size-3.5" />
                 查看
               </button>
+              <button
+                type="button"
+                onClick={() => void handleCopyApiKey()}
+                disabled={!apiKeyTouched || !apiKeyDraft}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3 py-2 text-xs font-semibold text-[#475467] hover:bg-[#F8FAFC] disabled:cursor-not-allowed disabled:opacity-45"
+                title="复制完整 API Key"
+              >
+                {copied ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                {copied ? "已复制" : "复制"}
+              </button>
             </div>
             <p className="mt-1 text-[10px] text-[#98A2B3]">
-              管理员界面只显示掩码；查看完整 Key 需要重新输入管理员密码。
+              输入管理员密码后可查看完整 Key，也可以直接修改并保存。
             </p>
           </div>
 
           <div className="lg:col-span-2">
             <label className="mb-1.5 block text-xs font-semibold text-[#344054]">Endpoint</label>
-            <input
-              value={endpoint}
-              onChange={(event) => setEndpoint(event.target.value)}
-              className={INPUT_CLASS}
-            />
+            <div className="rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 py-2.5 font-mono text-xs text-[#475467]">
+              {config?.endpoint || "https://qianfan.baidubce.com/v2/ai_search/web_search"}
+            </div>
           </div>
 
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-[#344054]">鉴权请求头</label>
-            <input
-              value={authHeader}
-              onChange={(event) => setAuthHeader(event.target.value)}
-              className={INPUT_CLASS}
-            />
+            <div className="rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 py-2.5 text-sm text-[#475467]">
+              {config?.auth_header || "Authorization"}
+            </div>
           </div>
 
           <div>
@@ -331,7 +350,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
         <div className="rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-4">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#344054]">
             <CheckCircle2 className="size-3.5 text-[#2563EB]" />
-            DeepSeek 分析服务
+            LLM 分析服务
           </div>
           <p className="mt-2 text-sm text-[#344054]">
             {config?.analysis_configured ? "已复用现有 LLM 配置，状态可用。" : "未检测到可用 LLM 配置，结构化分析暂不可用。"}
@@ -344,7 +363,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
           <DialogHeader>
             <DialogTitle className="text-base text-[#172033]">查看完整 API Key</DialogTitle>
             <DialogDescription className="text-[#667085]">
-              请输入管理员密码以确认身份，完整 Key 仅显示在当前管理员界面。
+              请输入管理员密码以确认身份，确认后可查看和修改当前 Key。
             </DialogDescription>
           </DialogHeader>
           <div className="relative">

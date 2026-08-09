@@ -4,8 +4,9 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "rea
 import { RefreshCw, TrendingUp, List } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth-store";
-import { BackendApiError } from "@/lib/api/backend-client";
+import { BackendApiError, isAbortError } from "@/lib/api/backend-client";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
+import { SessionLoading } from "@/components/session-loading";
 import {
   AppReleaseNotGeneratedError,
   getAppReleaseStatistics,
@@ -39,7 +40,7 @@ interface FilterState {
 
 export default function AppUpdatesPage() {
   const router = useRouter();
-  const { token, clearAuth, username, isAdmin, logout, isLoggedIn } = useAuthStore();
+  const { token, clearAuth, username, isAdmin, logout, isHydrated, isLoggedIn } = useAuthStore();
   const restoreSession = useAuthStore((state) => state.restoreSession);
   
   // Data state
@@ -77,9 +78,10 @@ export default function AppUpdatesPage() {
   // Load data
   useEffect(() => {
     if (!token) return;
+    const controller = new AbortController();
     setDataStatus("loading");
     setDataMessage(null);
-    loadAppReleases(token)
+    loadAppReleases(token, controller.signal)
       .then(({ records: loaded, updatedAt: at, overview, filters: loadedFilters }) => {
         setRecords(loaded);
         setUpdatedAt(at);
@@ -89,6 +91,7 @@ export default function AppUpdatesPage() {
         setDataMessage(loaded.length === 0 ? "尚未生成券商 App 更新数据，请先运行券商 App 更新任务。" : null);
       })
       .catch((err: unknown) => {
+        if (controller.signal.aborted || isAbortError(err)) return;
         if (err instanceof BackendApiError && err.status === 401) {
           clearAuth("登录已失效，请重新登录");
           return;
@@ -105,6 +108,7 @@ export default function AppUpdatesPage() {
           setDataMessage(err instanceof Error ? err.message : "数据加载失败");
         }
       });
+    return () => controller.abort();
   }, [token, clearAuth, dataVersion]);
 
   const deferredSearch = useDeferredValue(filters.search.trim().toLowerCase());
@@ -187,6 +191,10 @@ export default function AppUpdatesPage() {
   }, []);
 
   const isBusy = dataStatus === "loading";
+
+  if (!isHydrated) {
+    return <SessionLoading />;
+  }
 
   if (!isLoggedIn) {
     return <LoginPageWithApply />;

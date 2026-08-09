@@ -135,7 +135,9 @@ def read_qualification_csv_text(path: Path) -> str:
 
 
 def generate_initial_password() -> str:
-    return "123456"
+    # URL-safe, copy-friendly and unique per account.  The plaintext value is
+    # returned once by the account-creation flow and is never stored.
+    return secrets.token_urlsafe(18)
 
 
 def hash_password(password: str) -> str:
@@ -396,50 +398,10 @@ def get_user_names_by_ids(user_ids: set[int]) -> dict[int, str]:
 
 
 def create_user(name: str, email: str, department: str) -> tuple[ApprovedUser, str]:
-    normalized_email = normalize_email(email)
-    username = username_from_email(normalized_email)
-    initial_password = generate_initial_password()
-    password_hash = hash_password(initial_password)
-    created_at = datetime.now(timezone.utc).isoformat()
-
-    try:
-        with _connect() as connection:
-            ensure_schema(connection)
-            cursor = connection.execute(
-                """
-                INSERT INTO approved_users
-                    (name, email, department, username, password_hash, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    name.strip(),
-                    normalized_email,
-                    department.strip(),
-                    username,
-                    password_hash,
-                    created_at,
-                ),
-            )
-            connection.commit()
-            row = connection.execute(
-                """
-                SELECT id, name, email, department, username, created_at
-                FROM approved_users
-                WHERE id = ?
-                """,
-                (cursor.lastrowid,),
-            ).fetchone()
-    except sqlite3.IntegrityError as exc:
-        raise DuplicateUserError("email or username already exists") from exc
-    except sqlite3.Error as exc:
-        raise UserStoreError("failed to create user") from exc
-
-    if row is None:
-        raise UserStoreError("failed to create user")
-    return row_to_user(row), initial_password
+    return create_user_with_username(name, email, department)
 
 
-def create_or_get_user(
+def create_user_with_username(
     name: str,
     email: str,
     department: str,
@@ -456,7 +418,7 @@ def create_or_get_user(
             ensure_schema(connection)
             existing = _fetch_user_by_email_or_username(connection, normalized_email, resolved_username)
             if existing is not None:
-                return existing, initial_password
+                raise DuplicateUserError("email or username already exists")
 
             cursor = connection.execute(
                 """
@@ -482,16 +444,8 @@ def create_or_get_user(
                 """,
                 (cursor.lastrowid,),
             ).fetchone()
-    except sqlite3.IntegrityError:
-        try:
-            with _connect() as connection:
-                ensure_schema(connection)
-                existing = _fetch_user_by_email_or_username(connection, normalized_email, resolved_username)
-        except sqlite3.Error as exc:
-            raise UserStoreError("failed to load existing user") from exc
-        if existing is not None:
-            return existing, initial_password
-        raise DuplicateUserError("email or username already exists")
+    except sqlite3.IntegrityError as exc:
+        raise DuplicateUserError("email or username already exists") from exc
     except sqlite3.Error as exc:
         raise UserStoreError("failed to create user") from exc
 
@@ -538,7 +492,7 @@ def apply_for_user(name: str, email: str, department: str) -> tuple[ApprovedUser
     if not department_value:
         raise QualificationNotFoundError("qualification not found")
     qualified_name, qualified_email, username = find_qualified_contact(name, email)
-    return create_or_get_user(
+    return create_user_with_username(
         name=qualified_name,
         email=qualified_email,
         department=department_value,

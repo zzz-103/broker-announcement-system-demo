@@ -1,5 +1,5 @@
-import { fetchDashboardFilters, fetchDashboardManifest, fetchDashboardOverview, fetchDashboardTenderProjects } from "@/lib/api/backend-client";
-import type { DashboardFilters, DashboardOverview, TenderProjectData } from "@dashboard-data/contracts";
+import { fetchDashboardFilters, fetchDashboardManifest, fetchDashboardTenderProjects } from "@/lib/api/backend-client";
+import type { DashboardFilters, TenderProjectData } from "@dashboard-data/contracts";
 import { normalizeBrokerName } from "@/lib/broker-names";
 
 export const ANNOUNCEMENT_STAGES = ["采购招标", "结果公示", "流标废标", "其他"] as const;
@@ -35,7 +35,7 @@ export interface ProcessedRecord {
   priorityReason: string;
 }
 
-export const SUPPORTED_SOURCES = ["金采网"] as const;
+export const SUPPORTED_SOURCES = ["公开招采数据"] as const;
 
 export interface BrokerActivityDistribution { high: number; medium: number; low: number; }
 export interface DashboardStatistics {
@@ -49,7 +49,6 @@ export interface DashboardStatistics {
 export interface LoadedAnnouncementData {
   records: ProcessedRecord[];
   updatedAt: string | null;
-  overview: DashboardOverview;
   filters: DashboardFilters;
 }
 
@@ -100,13 +99,12 @@ export function fromDashboardProject(row: TenderProjectData): ProcessedRecord {
   };
 }
 
-export async function loadAndProcessData(token: string): Promise<LoadedAnnouncementData> {
+export async function loadAndProcessData(token: string, signal?: AbortSignal): Promise<LoadedAnnouncementData> {
   try {
-    const [manifest, overview, filters, rows] = await Promise.all([
-      fetchDashboardManifest(token),
-      fetchDashboardOverview(token),
-      fetchDashboardFilters(token),
-      fetchDashboardTenderProjects(token),
+    const [manifest, filters, rows] = await Promise.all([
+      fetchDashboardManifest(token, signal),
+      fetchDashboardFilters(token, signal),
+      fetchDashboardTenderProjects(token, signal),
     ]);
     if (manifest.schema_version.split(".")[0] !== "1" || manifest.minimum_reader_version.split(".")[0] !== "1") {
       throw new Error("看板数据版本不兼容，请更新正式前端或重新导出数据包。");
@@ -114,7 +112,6 @@ export async function loadAndProcessData(token: string): Promise<LoadedAnnouncem
     return {
       records: rows.map(fromDashboardProject),
       updatedAt: manifest.generated_at || null,
-      overview,
       filters,
     };
   } catch (error) {

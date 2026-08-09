@@ -499,7 +499,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             <AlertCircle className="size-4 shrink-0 text-blue-600" />
             <p className="text-xs leading-relaxed text-blue-800">
               <span className="font-semibold text-blue-900">操作说明：</span>
-              任务按当前选择范围运行。更新看板后，前端数据才会同步刷新。
+              完整流程通过校验后会自动发布并刷新看板；单独数据处理仍需在「更多操作」中手动发布。
             </p>
           </div>
         </div>
@@ -531,7 +531,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           <DialogHeader>
             <DialogTitle className="text-base text-[#172033]">选择采集范围</DialogTitle>
             <DialogDescription className="text-[#667085]">
-              两种方式都会依次采集采购公告和结果公告；完整流程不会自动更新看板。
+              两种方式都会依次采集采购公告和结果公告；完整流程会在校验、备份后自动更新看板。
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 pt-2">
@@ -555,7 +555,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
               <Workflow className="size-4 shrink-0" />
               <span>
                 <span className="block text-sm font-semibold">运行完整流程</span>
-                <span className="mt-0.5 block text-xs font-normal text-white/70">继续运行数据处理、匹配与汇总，完成后由人工更新看板。</span>
+                <span className="mt-0.5 block text-xs font-normal text-white/70">继续运行数据处理、匹配与汇总，通过安全校验后自动发布。</span>
               </span>
             </Button>
           </div>

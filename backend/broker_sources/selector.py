@@ -159,9 +159,12 @@ def _copy_selected(documents: list[SourceDocument], output_root: Path) -> None:
             shutil.rmtree(backup)
         if output_root.exists():
             os.replace(output_root, backup)
-        os.replace(temp_root, output_root)
-        if backup.exists():
-            shutil.rmtree(backup)
+        try:
+            os.replace(temp_root, output_root)
+        except Exception:
+            if backup.exists() and not output_root.exists():
+                os.replace(backup, output_root)
+            raise
     except Exception:
         if temp_root.exists():
             shutil.rmtree(temp_root)
@@ -189,6 +192,10 @@ def prepare_selected_sources(
     selected, broker_sources, duplicate_count = select_documents(
         official, cfcpn, external, configs, official_passed
     )
+    if not selected:
+        raise ValueError(
+            "no valid source documents selected; previous selected generation was preserved"
+        )
     invalid_count = sum(
         not document.valid for document in [*official, *cfcpn, *external]
     )

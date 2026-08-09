@@ -25,6 +25,7 @@ from ..custom_intelligence_service import (
     IntelligenceNotFoundError,
     IntelligenceStoreError,
     analysis_service_configured,
+    initialize_service,
     options_payload,
     reanalyze_execution,
     store,
@@ -38,6 +39,7 @@ from ..qianfan_search import (
     QianfanDisabledError,
     QianfanError,
     QianfanTimeoutError,
+    QIANFAN_WEB_SEARCH_ENDPOINT,
     effective_search_config,
     qianfan_error_message,
     qianfan_http_status,
@@ -60,7 +62,14 @@ def _owner_user_id(session: dict[str, object]) -> int:
 
 
 def _public_topic(topic: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in topic.items() if key not in {"owner_user_id", "created_by_user_id", "updated_by_user_id"}}
+    public = {
+        key: value
+        for key, value in topic.items()
+        if key not in {"owner_user_id", "created_by_user_id", "updated_by_user_id", "latest_execution"}
+    }
+    latest = topic.get("latest_execution")
+    public["latest_execution"] = _public_execution(latest) if isinstance(latest, dict) else None
+    return public
 
 
 def _public_execution(execution: dict[str, object]) -> dict[str, object]:
@@ -117,17 +126,17 @@ def _test_error_message(exc: Exception) -> str:
     if isinstance(exc, QianfanDisabledError):
         return "搜索服务已停用。"
     if isinstance(exc, QianfanConfigurationError):
-        return "搜索服务未配置，请先保存有效的 API Key 和模型。"
+        return "搜索服务未配置，请先在后端环境配置有效的 API Key。"
     if isinstance(exc, QianfanTimeoutError):
         return "网络超时，请检查 Endpoint、网络连接或增加超时时间。"
     if isinstance(exc, QianfanError):
         code = (exc.error_code or "").casefold()
         if exc.status_code in {401, 403} or code in {"unauthorized", "forbidden", "permission_denied"}:
-            return "鉴权失败，请检查 API Key、模型权限和鉴权头。"
+            return "鉴权失败，请检查 API Key 权限和鉴权头。"
         if code == "invalidappid" or "no permission to use the appid" in str(exc).casefold():
-            return "API Key 未授权当前模型或应用，请在千帆控制台检查 Key 权限和应用绑定。"
+            return "API Key 未授权当前搜索服务，请在千帆控制台检查 Key 权限和应用绑定。"
         if exc.status_code in {400, 404} or "model" in code or "modelnotfound" in code:
-            return "模型不可用或参数错误，请检查模型名称与接口参数。"
+            return "搜索接口不可用或参数错误，请检查服务权限与请求参数。"
         if exc.status_code == 429 or code in {"overratelimit", "ratelimit", "too_many_requests"}:
             return "额度不足或限流，请稍后重试。"
         return "上游服务异常，请稍后重试。"
@@ -162,11 +171,11 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
 def _suggest_error_message(exc: Exception) -> str:
     text = f"{exc.__class__.__name__} {exc}".casefold()
     if "timeout" in text:
-        return "DeepSeek 关键词建议请求超时，请稍后重试。"
+        return "LLM 关键词建议请求超时，请稍后重试。"
     if "connection" in text:
-        return "DeepSeek 服务连接失败，请检查 LLM 服务网络或配置。"
+        return "LLM 服务连接失败，请检查服务网络或配置。"
     if "unable to parse json" in text:
-        return "DeepSeek 关键词建议结果解析失败，请重试。"
+        return "LLM 关键词建议结果解析失败，请重试。"
     return "关键词建议服务暂不可用，请稍后重试。"
 
 
@@ -186,19 +195,18 @@ def get_admin_search_config() -> dict[str, object]:
     dependencies=[Depends(require_admin_token)],
 )
 def post_admin_search_config(payload: SearchServiceConfigUpdate) -> dict[str, object]:
-    current = effective_search_config()
-    api_key = (payload.api_key or "").strip()
-    if not api_key or "••" in api_key:
-        api_key = current.api_key
     try:
+        current = effective_search_config()
+        api_key = (payload.api_key or "").strip()
+        if not api_key or "••" in api_key:
+            api_key = current.api_key
         store.save_search_config(
             enabled=payload.enabled,
-            api_key=api_key,
-            model=str(payload.model or ""),
-            endpoint=payload.endpoint,
-            auth_header=payload.auth_header,
+            endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
+            auth_header=settings.baidu_qianfan_auth_header,
             timeout_seconds=payload.timeout_seconds,
             updated_by_user_id=0,
+            api_key=api_key,
         )
         return _admin_search_config_payload()
     except Exception as exc:
@@ -247,8 +255,7 @@ def post_admin_search_config_test() -> dict[str, object]:
 def post_admin_search_config_reveal_key(payload: VerifyPasswordRequest) -> dict[str, str]:
     expected_password = settings.admin_password
     if expected_password and secrets.compare_digest(payload.password, expected_password):
-        config = effective_search_config()
-        return {"api_key": config.api_key}
+        return {"api_key": effective_search_config().api_key}
     raise HTTPException(status_code=401, detail="管理员密码不正确")
 
 
@@ -257,7 +264,11 @@ def get_custom_intelligence_options(
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     get_session(authorization)
-    return options_payload()
+    try:
+        initialize_service()
+        return options_payload()
+    except Exception as exc:
+        raise _handle_store_error(exc) from exc
 
 
 @router.post("/api/custom-intelligence/keyword-suggestions")

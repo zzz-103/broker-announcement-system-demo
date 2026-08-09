@@ -124,6 +124,8 @@ class IntelligenceStore:
                     report_json TEXT NOT NULL DEFAULT '{}',
                     sources_json TEXT NOT NULL DEFAULT '[]',
                     reference_aliases_json TEXT NOT NULL DEFAULT '{}',
+                    search_answer TEXT NOT NULL DEFAULT '',
+                    search_followups_json TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL,
                     error_message TEXT,
                     search_status TEXT NOT NULL DEFAULT 'pending',
@@ -149,7 +151,7 @@ class IntelligenceStore:
                     enabled INTEGER NOT NULL DEFAULT 1,
                     api_key TEXT NOT NULL DEFAULT '',
                     model TEXT NOT NULL DEFAULT '',
-                    endpoint TEXT NOT NULL DEFAULT 'https://qianfan.baidubce.com/v2/ai_search/chat/completions',
+                    endpoint TEXT NOT NULL DEFAULT 'https://qianfan.baidubce.com/v2/ai_search/web_search',
                     auth_header TEXT NOT NULL DEFAULT 'Authorization',
                     timeout_seconds REAL NOT NULL DEFAULT 120,
                     updated_at TEXT NOT NULL,
@@ -183,6 +185,14 @@ class IntelligenceStore:
                 connection.execute(
                     "ALTER TABLE intelligence_executions ADD COLUMN analysis_error_message TEXT"
                 )
+            if "search_answer" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN search_answer TEXT NOT NULL DEFAULT ''"
+                )
+            if "search_followups_json" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN search_followups_json TEXT NOT NULL DEFAULT '[]'"
+                )
             topic_columns = {
                 str(row["name"])
                 for row in connection.execute("PRAGMA table_info(intelligence_topics)").fetchall()
@@ -191,6 +201,13 @@ class IntelligenceStore:
                 connection.execute(
                     "ALTER TABLE intelligence_topics ADD COLUMN question TEXT NOT NULL DEFAULT ''"
                 )
+            connection.execute(
+                """
+                UPDATE intelligence_search_config
+                SET endpoint = 'https://qianfan.baidubce.com/v2/ai_search/web_search'
+                WHERE endpoint = 'https://qianfan.baidubce.com/v2/ai_search/chat/completions'
+                """
+            )
             connection.commit()
         if owns_connection:
             connection.close()
@@ -204,18 +221,35 @@ class IntelligenceStore:
             try:
                 with self._connect() as connection:
                     self.ensure_schema(connection)
-                    cursor = connection.execute(
+                    search_cursor = connection.execute(
                         """
                         UPDATE intelligence_executions
                         SET status = 'failed',
                             error_message = '服务重启导致执行中断',
+                            search_status = 'failed',
+                            analysis_status = 'not_run',
+                            search_error_message = '服务重启导致检索中断',
                             completed_at = COALESCE(completed_at, ?)
                         WHERE status IN ('pending', 'running')
+                          AND search_status != 'succeeded'
+                        """,
+                        (utc_now(),),
+                    )
+                    analysis_cursor = connection.execute(
+                        """
+                        UPDATE intelligence_executions
+                        SET status = 'failed',
+                            error_message = '服务重启导致分析中断',
+                            analysis_status = 'failed',
+                            analysis_error_message = '服务重启导致分析中断',
+                            completed_at = COALESCE(completed_at, ?)
+                        WHERE status IN ('pending', 'running')
+                          AND search_status = 'succeeded'
                         """,
                         (utc_now(),),
                     )
                     connection.commit()
-                    return int(cursor.rowcount)
+                    return int(search_cursor.rowcount) + int(analysis_cursor.rowcount)
             except sqlite3.Error as exc:
                 raise IntelligenceStoreError("failed to recover intelligence executions") from exc
 
@@ -258,6 +292,8 @@ class IntelligenceStore:
             "report": _decode(row["report_json"], {}),
             "sources": _decode(row["sources_json"], []),
             "reference_aliases": _decode(row["reference_aliases_json"], {}),
+            "search_answer": str(row["search_answer"] or ""),
+            "search_followups": _decode(row["search_followups_json"], []),
             "status": str(row["status"]),
             "error_message": str(row["error_message"]) if row["error_message"] else None,
             "search_status": str(row["search_status"] or "pending"),
@@ -331,9 +367,30 @@ class IntelligenceStore:
                     "SELECT * FROM intelligence_topics WHERE owner_user_id = ? ORDER BY updated_at DESC, id DESC",
                     (owner_user_id,),
                 ).fetchall()
+                execution_rows = connection.execute(
+                    """
+                    SELECT execution.*
+                    FROM intelligence_executions AS execution
+                    INNER JOIN (
+                        SELECT topic_id, MAX(id) AS execution_id
+                        FROM intelligence_executions
+                        WHERE owner_user_id = ? AND topic_id IS NOT NULL
+                        GROUP BY topic_id
+                    ) AS latest ON latest.execution_id = execution.id
+                    """,
+                    (owner_user_id,),
+                ).fetchall()
         except sqlite3.Error as exc:
             raise IntelligenceStoreError("failed to list intelligence topics") from exc
-        return [self._topic_from_row(row) for row in rows]
+        latest_by_topic = {
+            int(row["topic_id"]): self._execution_from_row(row)
+            for row in execution_rows
+            if row["topic_id"] is not None
+        }
+        topics = [self._topic_from_row(row) for row in rows]
+        for topic in topics:
+            topic["latest_execution"] = latest_by_topic.get(int(topic["id"]))
+        return topics
 
     def get_topic(self, owner_user_id: int, topic_id: int) -> dict[str, object]:
         try:
@@ -408,6 +465,16 @@ class IntelligenceStore:
         try:
             with self._connect() as connection:
                 self.ensure_schema(connection)
+                active = connection.execute(
+                    """
+                    SELECT 1 FROM intelligence_executions
+                    WHERE owner_user_id = ? AND topic_id = ? AND status IN ('pending', 'running')
+                    LIMIT 1
+                    """,
+                    (owner_user_id, topic_id),
+                ).fetchone()
+                if active is not None:
+                    raise ActiveExecutionError("cannot delete a topic while it is executing")
                 cursor = connection.execute(
                     "DELETE FROM intelligence_topics WHERE id = ? AND owner_user_id = ?",
                     (topic_id, owner_user_id),
@@ -415,7 +482,7 @@ class IntelligenceStore:
                 if cursor.rowcount == 0:
                     raise IntelligenceNotFoundError("topic not found")
                 connection.commit()
-        except IntelligenceNotFoundError:
+        except (ActiveExecutionError, IntelligenceNotFoundError):
             raise
         except sqlite3.Error as exc:
             raise IntelligenceStoreError("failed to delete intelligence topic") from exc
@@ -468,12 +535,11 @@ class IntelligenceStore:
         self,
         *,
         enabled: bool,
-        api_key: str,
-        model: str,
         endpoint: str,
         auth_header: str,
         timeout_seconds: float,
         updated_by_user_id: int,
+        api_key: str = "",
     ) -> dict[str, object]:
         now = utc_now()
         try:
@@ -498,7 +564,7 @@ class IntelligenceStore:
                     (
                         1 if enabled else 0,
                         api_key,
-                        model,
+                        "",
                         endpoint,
                         auth_header,
                         timeout_seconds,
@@ -697,6 +763,8 @@ class IntelligenceStore:
             "request_id",
             "final_query",
             "request_payload_json",
+            "search_answer",
+            "search_followups_json",
         }
         values = {key: value for key, value in updates.items() if key in allowed}
         if not values:

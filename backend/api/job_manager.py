@@ -446,6 +446,28 @@ class JobManager(JobCommandFactory):
                 self._finish_job(job_id, status="succeeded", exit_code=0, error=None)
                 return
 
+            if self._is_cancel_requested(job_id):
+                log("[publish] 已收到取消请求，Pipeline 停止")
+                self._finish_job(job_id, status="cancelled", exit_code=None, error="管理员手动停止")
+                return
+
+            log("[publish] 正式数据校验与自动发布阶段开始")
+            try:
+                from .publication_service import publish_merged_announcements
+                from .runtime import announcement_response_cache
+
+                publish_meta = publish_merged_announcements()
+                announcement_response_cache.invalidate(settings.announcement_csv_path)
+                log(
+                    "[publish] 完成：发布 "
+                    f"{publish_meta['published_count']} 条，留存比例 "
+                    f"{float(publish_meta['retain_ratio']):.1%}"
+                )
+            except Exception as exc:
+                log(f"[publish] 失败: {exc}", "stderr")
+                self._finish_job(job_id, status="failed", exit_code=None, error=f"自动发布失败: {exc}")
+                return
+
             # Final stage: AI analysis
             if self._is_cancel_requested(job_id):
                 log("[analysis] 已收到取消请求，Pipeline 停止")

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Loader2, RefreshCw, X } from "lucide-react";
+import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { useMemo } from "react";
 import {
   Dialog,
@@ -16,7 +16,7 @@ import type {
 } from "@/lib/api/contracts";
 import { ReportBody } from "./report-content";
 import { ReportActions } from "./report-actions";
-import { formatDate, optionLabel } from "./custom-intelligence-utils";
+import { formatDate, getReportPhase, optionLabel } from "./custom-intelligence-utils";
 
 function ExecutionErrorDetail({
   execution,
@@ -93,6 +93,7 @@ export function ReportDialog({
   const currentExecution = execution;
   const searchSucceeded = currentExecution?.search_status === "succeeded";
   const analysisFailed = searchSucceeded && currentExecution?.analysis_status === "failed";
+  const phase = currentExecution ? getReportPhase(currentExecution) : null;
   const scrollToSources = () => {
     document.getElementById("report-sources")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -106,9 +107,15 @@ export function ReportDialog({
               <DialogTitle className="min-w-0 break-words text-lg leading-7 text-[#172033] sm:text-xl sm:leading-8">{title}</DialogTitle>
               <DialogDescription className="mt-1 text-xs leading-5 text-[#667085]">
                 {currentExecution
-                  ? analysisFailed
+                  ? phase === "queued" || phase === "searching"
+                    ? "正在检索公开信息"
+                    : phase === "analyzing"
+                      ? `正在分析 · 已整理 ${currentExecution.sources.length} 条有效来源`
+                      : phase === "empty"
+                        ? "检索完成，但未获得有效来源"
+                        : analysisFailed
                     ? "搜索完成，分析失败，可查看原始来源或重新分析"
-                    : currentExecution.search_status !== "succeeded"
+                    : phase === "search_failed"
                       ? "执行失败，详情见下方"
                       : `已完成 · ${formatDate(currentExecution.completed_at || currentExecution.created_at)} · ${currentExecution.sources.length} 条有效来源`
                   : "正在加载完整报告…"}
@@ -133,9 +140,6 @@ export function ReportDialog({
                   <ExternalLink className="size-3.5" aria-hidden="true" />查看全部来源
                 </Button>
               )}
-              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-                <X className="size-3.5" aria-hidden="true" />关闭
-              </Button>
             </div>
           </div>
         </DialogHeader>
@@ -144,10 +148,18 @@ export function ReportDialog({
             {loading && <div className="mb-4 flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700"><Loader2 className="size-4 animate-spin" />正在加载完整报告…</div>}
             {!currentExecution ? (
               <p className="text-sm text-[#667085]">暂无报告内容。</p>
+            ) : phase === "queued" || phase === "searching" || phase === "analyzing" ? (
+              <div role="status" className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                <Loader2 className="size-4 animate-spin" />执行仍在进行，报告完成后会自动更新。
+              </div>
+            ) : phase === "empty" ? (
+              <div role="status" className="rounded-lg border border-[#E4EAF2] bg-[#F8FAFD] p-4 text-sm leading-6 text-[#667085]">
+                未检索到有效来源，无法生成或导出报告。请调整关键词或扩大时间范围后重新执行。
+              </div>
             ) : currentExecution.search_status !== "succeeded" ? (
               <ExecutionErrorDetail execution={currentExecution} options={options} onRerun={onRerun} />
             ) : (
-              <ReportBody execution={currentExecution} options={options} anchorPrefix="report-source" />
+              <ReportBody execution={currentExecution} options={options} anchorPrefix="report-source" stickyOutline />
             )}
           </div>
         </div>

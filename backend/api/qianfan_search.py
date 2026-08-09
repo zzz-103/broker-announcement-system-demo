@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import httpx
 
 from .config import settings
 from .custom_intelligence_store import store
+
+QIANFAN_WEB_SEARCH_ENDPOINT = "https://qianfan.baidubce.com/v2/ai_search/web_search"
 
 
 class QianfanError(Exception):
@@ -65,7 +67,6 @@ class QianfanSearchResult:
 class EffectiveSearchConfig:
     enabled: bool
     api_key: str
-    model: str
     endpoint: str
     auth_header: str
     timeout_seconds: float
@@ -237,31 +238,26 @@ def build_search_payload(
 def effective_search_config() -> EffectiveSearchConfig:
     """Return the effective Baidu config for each request.
 
-    A saved administrator row is authoritative even when it is disabled or has
-    empty fields. Environment values are only a fallback before a row exists.
+    Administrator settings, including an explicitly saved API key, are stored
+    in the shared configuration row.  The environment key remains a fallback
+    for installations that have not saved an administrator configuration yet.
     """
     row = store.get_search_config_row()
     if row is not None:
-        endpoint = str(row.get("endpoint") or "").strip().rstrip("/")
-        model = str(row.get("model") or "").strip()
-        auth_header = str(row.get("auth_header") or "Authorization").strip()
+        saved_api_key = str(row.get("api_key") or "").strip()
         return EffectiveSearchConfig(
             enabled=bool(row.get("enabled")),
-            api_key=str(row.get("api_key") or ""),
-            model=model,
-            endpoint=endpoint,
-            auth_header=auth_header,
+            api_key=saved_api_key or settings.baidu_qianfan_api_key,
+            endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
+            auth_header=settings.baidu_qianfan_auth_header,
             timeout_seconds=max(1.0, min(600.0, float(row.get("timeout_seconds") or 0))),
             config_source="admin",
         )
     api_key = settings.baidu_qianfan_api_key
-    model = settings.baidu_qianfan_model
-    endpoint = settings.baidu_qianfan_endpoint
     return EffectiveSearchConfig(
-        enabled=bool(api_key and endpoint),
+        enabled=bool(api_key),
         api_key=api_key,
-        model=model,
-        endpoint=endpoint,
+        endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
         auth_header=settings.baidu_qianfan_auth_header,
         timeout_seconds=settings.baidu_qianfan_timeout_seconds,
         config_source="env",
@@ -281,30 +277,10 @@ def validate_configuration() -> None:
         raise QianfanConfigurationError(f"百度智能搜索配置缺失：{', '.join(missing)}")
 
 
-def _authorization_value(api_key: str, header_name: str) -> str:
+def _authorization_value(api_key: str) -> str:
     # Both documented variants accept bearer-style credentials; deployments
     # can override the header name while the secret remains server-side.
-    return f"Bearer {api_key}" if header_name.casefold() == "authorization" else f"Bearer {api_key}"
-
-
-def probe_auth_headers(
-    send: Callable[[str], int],
-    candidates: tuple[str, ...] = ("Authorization", "X-Appbuilder-Authorization"),
-) -> str | None:
-    """Choose an auth header based on an injected status probe.
-
-    No network request is made by this helper; production startup can call it
-    from a deployment-specific probe while tests provide a deterministic send.
-    A status that reached parameter validation is treated as authenticated.
-    """
-    for header in candidates:
-        try:
-            status = int(send(header))
-        except Exception:  # pragma: no cover - caller-owned probe
-            continue
-        if status not in {401, 403}:
-            return header
-    return None
+    return f"Bearer {api_key}"
 
 
 class QianfanSearchClient:
@@ -315,10 +291,7 @@ class QianfanSearchClient:
         config = effective_search_config()
         validate_configuration()
         headers = {
-            config.auth_header: _authorization_value(
-                config.api_key,
-                config.auth_header,
-            ),
+            config.auth_header: _authorization_value(config.api_key),
             "Content-Type": "application/json",
             "Accept": "application/json",
         }

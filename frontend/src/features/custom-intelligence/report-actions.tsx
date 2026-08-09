@@ -3,7 +3,7 @@
 import { Bookmark, Download, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CustomIntelligenceExecution } from "@/lib/api/contracts";
-import { canSaveExecutionAsConfig } from "./custom-intelligence-utils";
+import { canSaveExecutionAsConfig, isActiveExecution } from "./custom-intelligence-utils";
 
 export interface ReportActionsProps {
   execution: CustomIntelligenceExecution;
@@ -30,10 +30,15 @@ export function ReportActions({
 }: ReportActionsProps) {
   const searchSucceeded = execution.search_status === "succeeded";
   const analysisFailed = searchSucceeded && execution.analysis_status === "failed";
+  const terminal = !isActiveExecution(execution.status);
+  const hasCompleteReport = terminal
+    && searchSucceeded
+    && execution.sources.length > 0
+    && (execution.analysis_status === "succeeded" || execution.analysis_status === "failed");
   const canSaveConfig = canSaveExecutionAsConfig(execution);
   return (
     <>
-      {searchSucceeded && (
+      {hasCompleteReport && (
         <Button variant="outline" size="sm" onClick={() => onExportPdf(execution)} disabled={pdfExporting}>
           {pdfExporting ? <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}导出 PDF
         </Button>
@@ -48,7 +53,7 @@ export function ReportActions({
           <RefreshCw className="size-3.5" aria-hidden="true" />重新分析
         </Button>
       )}
-      {searchSucceeded && onRerun && (
+      {terminal && onRerun && (
         <Button variant="outline" size="sm" onClick={() => onRerun(execution)} disabled={activeExecutionId !== null || !serviceAvailable}>
           <RefreshCw className="size-3.5" aria-hidden="true" />重新执行
         </Button>

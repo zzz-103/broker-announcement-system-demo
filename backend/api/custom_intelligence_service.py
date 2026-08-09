@@ -35,7 +35,7 @@ from .qianfan_search import (
 
 
 class AnalysisConfigurationError(Exception):
-    """Raised when the DeepSeek analysis client is required but not configured."""
+    """Raised when the configured analysis client is unavailable."""
 
 
 PERSPECTIVE_LABELS = {
@@ -252,7 +252,8 @@ def normalize_snapshot(payload: dict[str, object]) -> dict[str, object]:
     for key in ("keywords", "focus_objects", "specified_sites"):
         values = snapshot.get(key)
         if isinstance(values, list):
-            snapshot[key] = clean_list(values, 30 if key == "keywords" else 20)
+            limit = 30 if key == "keywords" else 5 if key == "specified_sites" else 20
+            snapshot[key] = clean_list(values, limit)
         else:
             snapshot[key] = []
     return snapshot
@@ -264,13 +265,18 @@ def build_final_query(snapshot: dict[str, object]) -> str:
     keywords = [clean_text(item, 200) for item in snapshot.get("keywords", []) if clean_text(item, 200)]
     focus = [clean_text(item, 200) for item in snapshot.get("focus_objects", []) if clean_text(item, 200)]
     if keywords:
-        clauses.append("关键词：" + "、".join(keywords[:5]))
+        clauses.append("关键词：" + "、".join(keywords))
     if focus:
-        clauses.append("关注对象：" + "、".join(focus[:3]))
+        clauses.append("关注对象：" + "、".join(focus))
     return " ".join(item for item in clauses if item).strip()[:1_000]
 
 
-def build_analysis_messages(snapshot: dict[str, object], sources: list[dict[str, object]]) -> list[dict[str, str]]:
+def build_analysis_messages(
+    snapshot: dict[str, object],
+    sources: list[dict[str, object]],
+    search_answer: str = "",
+    search_followups: list[str] | None = None,
+) -> list[dict[str, str]]:
     report_type = REPORT_TYPE_LABELS.get(str(snapshot.get("report_type")), "行业动态")
     depth = DEPTH_LABELS.get(str(snapshot.get("analysis_depth")), "标准")
     extra = clean_text(snapshot.get("extra_requirements"), 2_000)
@@ -312,6 +318,8 @@ def build_analysis_messages(snapshot: dict[str, object], sources: list[dict[str,
         f"报告类型：{report_type}\n"
         f"分析深度：{depth}\n"
         f"额外要求：{extra or '无'}\n"
+        f"百度检索摘要：{clean_text(search_answer, 4_000) or '未提供'}\n"
+        f"百度推荐追问：{'、'.join(clean_list(search_followups or [], 20)) or '未提供'}\n"
         f"必须按报告类型补充重点章节：{'、'.join(REPORT_FOCUS_LABELS.get(str(snapshot.get('report_type')), []))}\n"
         f"可用来源（共 {len(source_items)} 条）：\n{json.dumps(source_items, ensure_ascii=False)}"
     )
@@ -398,9 +406,9 @@ def _fallback_report(
         "time_range": str(snapshot.get("time_range") or "month"),
         "valid_source_count": len(sources),
         "report_type": str(snapshot.get("report_type") or "industry_trends"),
-        "service": "baidu_web_search+deepseek",
+        "service": "baidu_web_search+llm",
         "search_service": "baidu_web_search",
-        "analysis_service": "deepseek",
+        "analysis_service": "openai_compatible_llm",
         "request_id": request_id or "",
         "is_fallback": True,
         "core_conclusion": clean_text(answer, 4_000) or "本次检索未返回可整理的综合回答。",
@@ -426,18 +434,23 @@ def normalize_report(
     executed_at: str,
     request_id: str | None = None,
 ) -> dict[str, object]:
+    def fallback() -> dict[str, object]:
+        report = _fallback_report(snapshot, answer, sources, executed_at, request_id)
+        report["recommended_followups"] = clean_list(followups, 20)
+        return report
+
     raw = _extract_json_object(answer)
     if raw is None:
-        return _fallback_report(snapshot, answer, sources, executed_at, request_id)
+        return fallback()
     raw = dict(raw)
     raw["question"] = snapshot.get("question", "")
     raw["executed_at"] = executed_at
     raw["time_range"] = snapshot.get("time_range", "month")
     raw["valid_source_count"] = len(sources)
     raw["report_type"] = snapshot.get("report_type", "industry_trends")
-    raw["service"] = "baidu_web_search+deepseek"
+    raw["service"] = "baidu_web_search+llm"
     raw["search_service"] = "baidu_web_search"
-    raw["analysis_service"] = "deepseek"
+    raw["analysis_service"] = "openai_compatible_llm"
     raw["request_id"] = request_id or ""
     raw["is_fallback"] = False
     raw["title"] = clean_text(raw.get("title"), 500)
@@ -481,10 +494,12 @@ def normalize_report(
             )
     raw["key_dynamics"] = dynamics[:30]
     raw["recommended_followups"] = list(dict.fromkeys([*raw["recommended_followups"], *clean_list(followups, 20)]))[:20]
+    if not raw["title"] or not raw["core_conclusion"]:
+        return fallback()
     try:
         report = IntelligenceReport.model_validate(raw)
     except ValidationError:
-        return _fallback_report(snapshot, answer, sources, executed_at, request_id)
+        return fallback()
     result = report.model_dump(mode="json")
     result["valid_source_count"] = len(sources)
     if invalid_reference_ids:
@@ -501,14 +516,14 @@ def _error_message(exc: Exception) -> str:
 def _analysis_error_message(exc: Exception) -> str:
     text = f"{exc.__class__.__name__} {exc}".casefold()
     if "timeout" in text:
-        return "DeepSeek 分析请求超时，请重新分析。"
+        return "LLM 分析请求超时，请重新分析。"
     if "apiconnectionerror" in text or "connection error" in text or "connectionerror" in text:
-        return "DeepSeek 服务连接失败，请检查 LLM 服务网络或配置。"
+        return "LLM 服务连接失败，请检查服务网络或配置。"
     if "unable to parse json" in text:
-        return "DeepSeek 分析结果解析失败，请重新分析。"
+        return "LLM 分析结果解析失败，请重新分析。"
     if "api_key" in text or "配置文件" in text or "llm 配置" in text:
-        return "DeepSeek 分析服务未配置或密钥缺失，请联系管理员。"
-    return "DeepSeek 分析失败，请重新分析。"
+        return "LLM 分析服务未配置或密钥缺失，请联系管理员。"
+    return "LLM 分析失败，请重新分析。"
 
 
 def _request_analysis(
@@ -516,9 +531,11 @@ def _request_analysis(
     sources: list[dict[str, object]],
     aliases: dict[str, str],
     search_request_id: str | None,
+    search_answer: str = "",
+    search_followups: list[str] | None = None,
 ) -> dict[str, object]:
     client = _load_analysis_client()
-    messages = build_analysis_messages(snapshot, sources)
+    messages = build_analysis_messages(snapshot, sources, search_answer, search_followups)
     config = client.config
     request_kwargs: dict[str, Any] = {
         "model": config.model,
@@ -538,7 +555,7 @@ def _request_analysis(
         snapshot,
         sources,
         aliases,
-        [],
+        search_followups or [],
         datetime.now(timezone.utc).isoformat(),
         request_id=search_request_id,
     )
@@ -553,7 +570,16 @@ def _run_analysis(
     try:
         execution = store.get_execution_by_id(execution_id)
         snapshot = normalize_snapshot(execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {})
-        report = _request_analysis(snapshot, sources, aliases, search_request_id)
+        search_answer = clean_text(execution.get("search_answer"), 8_000)
+        search_followups = clean_list(execution.get("search_followups"), 20)
+        report = _request_analysis(
+            snapshot,
+            sources,
+            aliases,
+            search_request_id,
+            search_answer,
+            search_followups,
+        )
         store.update_execution(
             execution_id,
             status="succeeded",
@@ -574,7 +600,7 @@ def _run_analysis(
             pass
         fallback = _fallback_report(
             snapshot,
-            "百度网页检索已完成，但 DeepSeek 结构化分析失败。可以查看原始检索结果，或点击“重新分析”。",
+            "百度网页检索已完成，但 LLM 结构化分析失败。可以查看原始检索结果，或点击“重新分析”。",
             sources,
             datetime.now(timezone.utc).isoformat(),
             search_request_id,
@@ -620,6 +646,8 @@ def _run_execution(execution_id: int) -> None:
         )
         result = client.search(request_payload)
         sources, aliases = normalize_sources(result)
+        search_answer = clean_text(result.answer, 8_000)
+        search_followups = clean_list(result.followups, 20)
         if not sources:
             store.update_execution(
                 execution_id,
@@ -631,6 +659,8 @@ def _run_execution(execution_id: int) -> None:
                 completed_at=datetime.now(timezone.utc).isoformat(),
                 sources_json=json.dumps([], ensure_ascii=False),
                 reference_aliases_json=json.dumps({}, ensure_ascii=False),
+                search_answer=search_answer,
+                search_followups_json=json.dumps(search_followups, ensure_ascii=False),
                 request_id=result.request_id,
             )
             return
@@ -642,6 +672,8 @@ def _run_execution(execution_id: int) -> None:
             error_message=None,
             sources_json=json.dumps(sources, ensure_ascii=False),
             reference_aliases_json=json.dumps(aliases, ensure_ascii=False),
+            search_answer=search_answer,
+            search_followups_json=json.dumps(search_followups, ensure_ascii=False),
             request_id=result.request_id,
         )
         _run_analysis(execution_id, sources, aliases, result.request_id)
@@ -726,15 +758,26 @@ def reanalyze_execution(owner_user_id: int, execution_id: int) -> dict[str, obje
         error_message=None,
     )
     assert _executor is not None
-    _executor.submit(_run_analysis, execution_id, sources, aliases, search_request_id)
+    try:
+        _executor.submit(_run_analysis, execution_id, sources, aliases, search_request_id)
+    except Exception:
+        store.update_execution(
+            execution_id,
+            status="failed",
+            analysis_status="failed",
+            analysis_error_message="情报分析未能启动，请稍后重试。",
+            error_message="情报分析未能启动，请稍后重试。",
+            completed_at=datetime.now(timezone.utc).isoformat(),
+        )
+        raise
     return updated
 
 
 def suggest_keywords(payload: dict[str, object], max_suggestions: int = 8) -> list[str]:
-    # Keyword suggestions only need the DeepSeek analysis client; they must not
+    # Keyword suggestions only need the configured analysis client; they must not
     # depend on the Baidu web search configuration.
     if not analysis_service_configured():
-        raise AnalysisConfigurationError("DeepSeek 分析服务未配置，请先配置 LLM API 后重试")
+        raise AnalysisConfigurationError("LLM 分析服务未配置，请先配置 LLM API 后重试")
     question = clean_text(payload.get("question"), 1_000)
     description = clean_text(payload.get("description"), 2_000)
     keywords = clean_list(payload.get("keywords"), 30)

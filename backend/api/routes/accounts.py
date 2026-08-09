@@ -221,6 +221,9 @@ def apply_user(payload: UserApplyRequest, request: Request) -> dict[str, object]
             "username": user.username,
             "initial_password": initial_password,
         }
+    except DuplicateUserError as exc:
+        audit_result = "already_exists"
+        raise HTTPException(status_code=409, detail="账户已存在，请直接登录或联系管理员重置密码") from exc
     except QualificationServiceUnavailableError as exc:
         audit_result = "service_unavailable"
         print(f"Qualification service unavailable: {exc.__class__.__name__}")

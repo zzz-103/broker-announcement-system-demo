@@ -32,6 +32,23 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 
 打开 `http://localhost:3000`。真实爬虫、LLM 和 App Watch 任务需要相应私密配置；只看页面时可使用已有样例数据。
 
+首次启用“申请账号”前，将 `backend/config/user_qualification.example.csv` 复制为私有的 `backend/config/user_qualification.csv`，按同一表头填入真实名单；真实名单不要提交。`.env.example` 的本地 CORS 与调度器端口已和上述命令对齐。
+
+## 核心业务流
+
+```text
+采集（金采网 + 已启用券商官网）
+→ 来源选择（空结果拒绝覆盖上一代）
+→ 采购/结果 LLM 结构化
+→ 规则匹配 + LLM 复核 + 合并
+→ 留存比例校验 + 原子发布正式 CSV
+→ 可选 AI 分析
+→ dashboard-data 导出层
+→ 正式前端
+```
+
+完整 Pipeline 会自动安全发布合并结果；“更新看板”仅保留为单独运行 LLM 后的人工发布或故障恢复入口。发布前会检查候选非空及 `PUBLISH_MIN_RETAIN_RATIO`，失败不会覆盖上一版正式 CSV。
+
 ## 标准数据包
 
 后端把正式 CSV/JSON 一次转换为标准化 `dashboard-data` 数据包（Manifest、统计、SHA-256 校验），正式前端通过受保护的 `/api/dashboard-data/*` 接口读取，不再直接解析原始 CSV。管理员可在“管理控制台 → 前端数据包”导出 ZIP，也可在仓库根目录执行：
@@ -55,6 +72,7 @@ backend/broker_app_watch/    券商 App 更新采集与结构化
 backend/config/broker_app_watch/  App 来源与分类配置
 backend/data/broker_app_watch/    App raw/processed/exports 运行数据
 backend/python-*/            金采网公告爬虫
+backend/*/tests/              按模块归档的后端测试与 fixtures
 frontend/src/features/       正式前端业务模块（procurement / app-watch / admin / custom-intelligence）
 shared/dashboard-data/       标准数据包 Schema
 ```
@@ -75,7 +93,7 @@ AI 自定义情报中心提供即时搜索、主题管理与后台执行，默�
 ## 常用验证
 
 ```bash
-./.venv/bin/python -m unittest discover -s backend/api -p 'test*.py'
+./.venv/bin/python -m unittest discover -s backend/api/tests -p 'test*.py'
 cd frontend && pnpm run ts-check && pnpm run lint:build
 ```
 
@@ -90,6 +108,7 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 
 - [运行与发布](docs/operations.md)：本地启动、Windows 发布和排障。
 - [架构边界](docs/architecture.md)：模块职责和标准数据包流程。
+- [交接速查](docs/handoff.md)：数据流、配置、日志、扩展点和兼容接口。
 - [正式前端](frontend/README.md)：看板开发与样式约束。
 - [官网来源采集](backend/broker_sources/README.md)：券商官网与金采网的来源选择。
 - [金采网爬虫](backend/python-http-www-cfcpn-com-jcw/README.md)：公告抓取命令和输出目录。

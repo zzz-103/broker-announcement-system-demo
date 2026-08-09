@@ -46,16 +46,22 @@ def llm_config_path() -> Path:
 
 def window_days() -> int:
     try:
-        return max(1, int(os.getenv("AI_ANALYSIS_WINDOW_DAYS", "30")))
+        value = int(os.getenv("AI_ANALYSIS_WINDOW_DAYS", "30"))
     except ValueError as exc:
         raise AiAnalysisError(500, "AI_ANALYSIS_WINDOW_DAYS 配置无效") from exc
+    if not 1 <= value <= 3650:
+        raise AiAnalysisError(500, "AI_ANALYSIS_WINDOW_DAYS 必须在 1 到 3650 之间")
+    return value
 
 
 def timeout_seconds() -> int:
     try:
-        return max(1, int(os.getenv("AI_ANALYSIS_TIMEOUT_SECONDS", "120")))
+        value = int(os.getenv("AI_ANALYSIS_TIMEOUT_SECONDS", "120"))
     except ValueError as exc:
         raise AiAnalysisError(500, "AI_ANALYSIS_TIMEOUT_SECONDS 配置无效") from exc
+    if not 1 <= value <= 600:
+        raise AiAnalysisError(500, "AI_ANALYSIS_TIMEOUT_SECONDS 必须在 1 到 600 之间")
+    return value
 
 
 def load_cached_analysis() -> dict[str, Any]:

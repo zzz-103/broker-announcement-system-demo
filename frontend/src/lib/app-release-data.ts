@@ -78,13 +78,13 @@ export function fromDashboardAppUpdate(row: AppUpdateData): AppReleaseRecord {
   };
 }
 
-export async function loadAppReleases(token: string): Promise<LoadedAppReleaseData> {
+export async function loadAppReleases(token: string, signal?: AbortSignal): Promise<LoadedAppReleaseData> {
   try {
     const [manifest, overview, filters, rows] = await Promise.all([
-      fetchDashboardManifest(token),
-      fetchDashboardOverview(token),
-      fetchDashboardFilters(token),
-      fetchDashboardAppUpdates(token),
+      fetchDashboardManifest(token, signal),
+      fetchDashboardOverview(token, signal),
+      fetchDashboardFilters(token, signal),
+      fetchDashboardAppUpdates(token, signal),
     ]);
     if (manifest.schema_version.split(".")[0] !== "1" || manifest.minimum_reader_version.split(".")[0] !== "1") {
       throw new Error("看板数据版本不兼容，请更新正式前端或重新导出数据包。");

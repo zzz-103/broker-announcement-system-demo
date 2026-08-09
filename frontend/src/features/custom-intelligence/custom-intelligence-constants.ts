@@ -53,12 +53,12 @@ export const FALLBACK_OPTIONS: CustomIntelligenceOptionsResponse = {
     { value: "research", label: "研究资料优先" },
   ],
   preset_questions: [],
-  service_configured: true,
-  service_enabled: true,
-  service_status: "enabled",
+  service_configured: false,
+  service_enabled: false,
+  service_status: "not_configured",
   deep_search_enabled: false,
-  analysis_configured: true,
-  analysis_service_status: "configured",
+  analysis_configured: false,
+  analysis_service_status: "not_configured",
 };
 
 export const FIELD_INPUT_CLASS = "w-full rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98A2B3] focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15";

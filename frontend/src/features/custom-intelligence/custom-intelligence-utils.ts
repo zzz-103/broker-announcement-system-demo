@@ -87,6 +87,23 @@ export function formFromTopic(topic: IntelligenceTopic): InstantSearchRequest {
   };
 }
 
+export function formFromExecution(execution: CustomIntelligenceExecution): InstantSearchRequest {
+  const snapshot = execution.snapshot;
+  return {
+    question: snapshot.question || execution.original_query || "",
+    description: snapshot.description || "",
+    keywords: [...(snapshot.keywords ?? [])],
+    focus_objects: [...(snapshot.focus_objects ?? [])],
+    analysis_perspective: snapshot.analysis_perspective ?? "industry_research",
+    time_range: snapshot.time_range ?? "month",
+    source_preference: snapshot.source_preference ?? "balanced",
+    specified_sites: [...(snapshot.specified_sites ?? [])],
+    report_type: snapshot.report_type ?? "industry_trends",
+    analysis_depth: snapshot.analysis_depth ?? "standard",
+    extra_requirements: snapshot.extra_requirements || "",
+  };
+}
+
 export function optionLabel(
   options: readonly { value: string; label: string }[],
   value: string | undefined,

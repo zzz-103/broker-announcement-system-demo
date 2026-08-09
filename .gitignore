@@ -1,17 +1,28 @@
-# Crawl outputs
+# Local credentials and deployment-only configuration
+.env
+.env.*
+!.env.example
+backend/config/llm_api_config.json
+backend/config/broker_app_watch/settings.yaml
+runtime/
+
+# Generated crawler and task output
 **/output/
+**/output_test/
 **/failures.jsonl
 **/checkpoint.json
-backend/config/llm_api_config.json
-backend/data/csco_contacts_output.csv
-backend/data/raw_json
-backend/data/users.db
-backend/data/audit.db
-backend/data/brokers
-backend/data/staging/
 manual_test/
+
+# Local temporary files and logs
 .tmp/
-# Runtime generated data (keep .gitkeep for directory structure)
+.temp/
+*.tmp
+*.temp
+*.log
+*.log.*
+logs/
+
+# Runtime data (keep only explicitly committed seeds and .gitkeep files)
 backend/data/announcement_table.csv
 backend/data/announcement_table-*.backup.csv
 backend/data/announcement_table.jsonl
@@ -19,14 +30,15 @@ backend/data/announcement_table.xlsx
 backend/data/ai-analysis.json
 backend/data/dashboard-data/
 backend/data/dashboard-data.zip
+backend/data/raw_json/
+backend/data/brokers/
+backend/data/staging/
+backend/data/official-sources/*
+!backend/data/official-sources/.gitignore
 backend/data/run_summary.json
 backend/data/failed_files.jsonl
-backend/data/staging/*.csv
-backend/data/staging/*.jsonl
 backend/data/supplemental/*
 !backend/data/supplemental/.gitkeep
-backend/data/supplemental-test/*
-!backend/data/supplemental-test/.gitkeep
 backend/data/broker_app_watch/raw/*
 !backend/data/broker_app_watch/raw/.gitkeep
 backend/data/broker_app_watch/processed/releases/*
@@ -35,22 +47,49 @@ backend/data/broker_app_watch/processed/llm/*
 !backend/data/broker_app_watch/processed/llm/.gitkeep
 backend/data/broker_app_watch/exports/*
 !backend/data/broker_app_watch/exports/.gitkeep
-backend/config/broker_app_watch/settings.yaml
-runtime/
+backend/data/csco_contacts_output.csv
 backend/data-save/
-# Python virtual environment and cache
+
+# Database files and sidecars
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python environments, caches and test reports
 .venv/
 venv/
 __pycache__/
-*.pyc
-.DS_Store
-**/.DS_Store
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+coverage/
+htmlcov/
+test-results/
+**/test_output/
+**/test-output/
+**/*test_tmp/
+**/*_test_tmp/
+backend/llm_table/tests/fixtures/llm_output/
 
-# Local caches
+# Frontend dependencies, caches and build output
 .pnpm-store/
-.DS_Store
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/dist/
+*.tsbuildinfo
 
-# Local configuration and credentials (examples remain tracked)
-.env
-.env.*
-!.env.example
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

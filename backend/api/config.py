@@ -102,6 +102,14 @@ class Settings:
         return bounded_int("ANNOUNCEMENT_BACKUP_RETENTION", 3, 1, 100)
 
     @property
+    def publish_min_retain_ratio(self) -> float:
+        try:
+            value = float(os.getenv("PUBLISH_MIN_RETAIN_RATIO", "0.5"))
+        except (TypeError, ValueError):
+            return 0.5
+        return value if 0 < value <= 1 else 0.5
+
+    @property
     def session_limit(self) -> int:
         return bounded_int("SESSION_LIMIT", 1000, 10, 100_000)
 
@@ -155,17 +163,6 @@ class Settings:
     @property
     def baidu_qianfan_api_key(self) -> str:
         return os.getenv("BAIDU_QIANFAN_API_KEY", "").strip()
-
-    @property
-    def baidu_qianfan_model(self) -> str:
-        return os.getenv("BAIDU_QIANFAN_MODEL", "").strip()
-
-    @property
-    def baidu_qianfan_endpoint(self) -> str:
-        return os.getenv(
-            "BAIDU_QIANFAN_ENDPOINT",
-            "https://qianfan.baidubce.com/v2/ai_search/web_search",
-        ).strip().rstrip("/")
 
     @property
     def baidu_qianfan_auth_header(self) -> str:

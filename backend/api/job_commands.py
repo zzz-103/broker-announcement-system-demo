@@ -128,9 +128,8 @@ class JobCommandFactory:
         if notice_type not in {"procurement", "result"}:
             raise JobStartError(f"Unsupported scraper notice type: {notice_type}")
         scraper_root = PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw"
-        python_executable = self._resolve_path(
+        python_executable = self._resolve_python_executable(
             os.getenv("SCRAPER_PYTHON_EXECUTABLE"),
-            PROJECT_ROOT,
             Path(sys.executable),
         )
         script_path = resolve_project_path(
@@ -244,7 +243,7 @@ class JobCommandFactory:
             PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output"
         )
         staging = PROJECT_ROOT / "backend" / "data" / "staging"
-        python_executable = resolve_project_path(
+        python_executable = self._resolve_python_executable(
             os.getenv("LLM_PYTHON_EXECUTABLE"),
             Path(sys.executable),
         )

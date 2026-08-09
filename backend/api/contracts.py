@@ -90,7 +90,7 @@ class IntelligenceConfigBase(BaseModel):
     analysis_perspective: AnalysisPerspective = "industry_research"
     time_range: TimeRange = "month"
     source_preference: SourcePreference = "balanced"
-    specified_sites: list[str] = Field(default_factory=list, max_length=20)
+    specified_sites: list[str] = Field(default_factory=list, max_length=5)
     report_type: ReportType = "industry_trends"
     analysis_depth: AnalysisDepth = "standard"
     extra_requirements: str = Field(default="", max_length=2_000)
@@ -141,27 +141,8 @@ class SearchServiceConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     enabled: bool
-    model: str | None = Field(default=None, max_length=200)
-    endpoint: str = Field(min_length=1, max_length=500)
-    auth_header: str = Field(min_length=1, max_length=64)
     timeout_seconds: float = Field(default=120, ge=1, le=600)
     api_key: str | None = Field(default=None, max_length=1_000)
-
-    @field_validator("endpoint")
-    @classmethod
-    def validate_endpoint(cls, value: str) -> str:
-        value = value.strip().rstrip("/")
-        if not re.match(r"^https?://[^\s]+$", value, flags=re.IGNORECASE):
-            raise ValueError("endpoint must be an HTTP or HTTPS URL")
-        return value
-
-    @field_validator("auth_header")
-    @classmethod
-    def validate_auth_header(cls, value: str) -> str:
-        value = value.strip()
-        if not value or re.search(r"[\r\n:]", value):
-            raise ValueError("auth_header contains an invalid character")
-        return value
 
 
 class InstantSearchRequest(IntelligenceConfigBase):

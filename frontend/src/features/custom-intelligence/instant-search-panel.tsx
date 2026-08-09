@@ -85,7 +85,7 @@ export function InstantSearchPanel({
               <Play className="size-4" />开始搜索
             </button>
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <button onClick={onSuggestKeywords} disabled={suggesting || !analysisAvailable} title={analysisAvailable ? undefined : "DeepSeek 分析服务未配置"} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-[#F8FAFD] px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
+              <button onClick={onSuggestKeywords} disabled={suggesting || !analysisAvailable} title={analysisAvailable ? undefined : "LLM 分析服务未配置"} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-[#F8FAFD] px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
                 {suggesting ? "正在生成…" : "补充关键词"}
               </button>
               <button onClick={onSaveCurrentConfig} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-3 py-2 text-xs font-semibold text-[#315EA8] transition hover:bg-[#EEF4FF]">

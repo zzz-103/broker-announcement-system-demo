@@ -43,16 +43,14 @@ App Watch 的可选定时刷新复用 `python -m backend.api.scheduler`，通过
 
 ```env
 BAIDU_QIANFAN_API_KEY=<server-side-api-key>
-BAIDU_QIANFAN_MODEL=<enabled-model-name>
-BAIDU_QIANFAN_ENDPOINT=https://qianfan.baidubce.com/v2/ai_search/chat/completions
 BAIDU_QIANFAN_AUTH_HEADER=Authorization
 BAIDU_QIANFAN_TIMEOUT_SECONDS=120
 CUSTOM_INTELLIGENCE_MAX_WORKERS=2
 ```
 
-官方文档的请求模板与 curl 示例对鉴权头存在差异；当前默认使用 `Authorization: Bearer ...`。上线前应使用目标账号在安全环境探测鉴权，如实际通过的是 `X-Appbuilder-Authorization`，只覆盖 `BAIDU_QIANFAN_AUTH_HEADER` 并重启后端，不修改业务代码。
+搜索接口固定为百度 `v2/ai_search/web_search`，不允许浏览器或数据库覆盖 Endpoint，默认使用 `Authorization: Bearer ...`。上线前应使用目标账号在安全环境执行管理页连接测试；如账号明确要求 `X-Appbuilder-Authorization`，只覆盖 `BAIDU_QIANFAN_AUTH_HEADER` 并重启后端。
 
-主题与执行记录默认幂等创建在 `USER_DB_PATH` 指向的现有数据库中。只有部署明确需要隔离时才设置 `CUSTOM_INTELLIGENCE_DB_PATH`；未配置不会生成第二个默认数据库。生产继续使用单 worker，执行状态由数据库保存，页面每 2 秒轮询恢复。
+主题与每次执行记录保存在 `USER_DB_PATH` 指向的现有数据库中；每次执行都会新建历史记录，最多保留最近 50 条。只有部署明确需要隔离时才设置 `CUSTOM_INTELLIGENCE_DB_PATH`；未配置不会生成第二个默认数据库。生产继续使用单 worker，执行状态由数据库保存，页面轮询恢复。
 
 登录后访问 `http://localhost:3000/custom-intelligence`。建议先执行一条“简洁”即时搜索，再检查执行记录中的 request ID、来源和报告；所有分析深度均关闭百度深搜索。
 
@@ -69,23 +67,23 @@ corepack pnpm@9.0.0 install --frozen-lockfile
 
 ## Windows 内网发布
 
-源码仓库和生产运行目录分开。生产发布入口是部署目录中的 `deploy-release.ps1`，不要用仓库根目录的开发 Compose 代替正式发布。
+源码仓库和生产运行目录分开。仓库根 `docker-compose.yml` 只用于后端开发，不是生产拓扑。首次建生产目录时，将仓库的 `deploy/docker-compose.example.yml` 复制为 `D:\broker-system\docker-compose.yml`，同时复制 `deploy/nginx.conf`；准备 `runtime/config/llm_api_config.json`、`runtime/config/user_qualification.csv`、`.env` 和 runtime 数据目录。之后统一由 `scripts/deploy-release.ps1` 发布。
 
 ### 拉取后最快部署
 
-以后发布新版本，直接在开发目录执行以下命令；把 `1.5.0` 替换成目标版本号即可：
+以后发布新版本，直接在开发目录执行以下命令；把 `1.6.0` 替换成目标版本号即可：
 
 ```powershell
 cd D:\broker-announcement-system-demo
 git pull --ff-only
-.\scripts\deploy-release.ps1 -Version 1.5.0 -DeployDir D:\broker-system
+.\scripts\deploy-release.ps1 -Version 1.6.0 -DeployDir D:\broker-system
 ```
 
 也可以使用生产目录中的转发脚本：
 
 ```powershell
 cd D:\broker-system
-.\deploy-release.ps1 -Version 1.5.0
+.\deploy-release.ps1 -Version 1.6.0
 ```
 
 发布脚本会校验源码已同步到 `origin/master`、构建两个镜像、更新生产 `.env` 的
@@ -94,6 +92,7 @@ cd D:\broker-system
 生产前确认：
 
 - `.env` 已设置真实管理员密码、调度器 Token 和 LLM 配置。
+- `.env` 已设置 `BROKER_VERSION` 与 `BROKER_PUBLIC_URL`；Compose 校验能看到 backend-api、backend-scheduler、frontend、gateway 四项服务。
 - `FRONTEND_ORIGIN`、`FRONTEND_DIST_PATH` 和数据挂载目录正确。
 - FastAPI 保持单 worker，确保 Session、任务锁、SSE 和缓存一致。
 - 网关对 HTML 和 `version.json` 使用 `no-store`，哈希静态资源使用长期缓存。
@@ -111,7 +110,7 @@ python scripts/export_dashboard_data.py --zip
 ## 关键验证
 
 ```bash
-./.venv/bin/python -m unittest discover -s backend/api -p 'test*.py'
+./.venv/bin/python -m unittest discover -s backend/api/tests -p 'test*.py'
 cd frontend && pnpm run ts-check && pnpm run lint:build
 NEXT_PUBLIC_API_BASE_URL= pnpm build
 ```
@@ -124,5 +123,5 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 - 401：后端重启使旧 Token 失效，重新登录即可。
 - 409：已有互斥任务或导出操作运行中。
 - 自定义情报 409：同一用户已有 pending/running 执行，等待完成后再提交。
-- 自定义情报 503：后端未配置百度 API Key 或模型；504 表示上游超时。
+- 自定义情报 503：后端未配置百度 API Key，或情报数据库暂不可用；504 表示上游超时。
 - 修改 `.env` 或前端环境变量后：重启对应服务；修改正式前端后重新生成 `out/`。

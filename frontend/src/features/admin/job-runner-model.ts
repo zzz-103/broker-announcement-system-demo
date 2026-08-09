@@ -116,7 +116,7 @@ export function jobSuccessSummary(jobType: JobType, label: string): string {
     return "数据处理、规则匹配与汇总已完成；请审核结果后更新看板。";
   }
   if (jobType === "pipeline") {
-    return "公告采集、数据处理、规则匹配与汇总已完成；请审核结果后更新看板。";
+    return "公告采集、数据处理、匹配与汇总已完成，正式数据已自动安全发布。";
   }
   if (jobType === "scraper") {
     return "采购公告与结果公告采集完成；尚未运行数据处理与匹配。";

@@ -206,21 +206,29 @@ export function DomainDistributionChart({ data }: ChartsProps) {
   const chartData = useMemo(() => {
     const domainKeys: Record<string, Set<string>> = {};
     for (const r of data) {
-      if (!r.isFinTech) continue;
       if (!domainKeys[r.primaryDomain]) domainKeys[r.primaryDomain] = new Set();
       domainKeys[r.primaryDomain].add(r.projectKey);
     }
-    const sorted = Object.entries(domainKeys)
+    const allDomains = Object.entries(domainKeys)
       .map(([d, keys]) => ({ domain: d, count: keys.size }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
+      .sort((a, b) => b.count - a.count);
 
-    const totalFinTech = sorted.reduce((s, d) => s + d.count, 0);
+    const sorted = allDomains.length > 8
+      ? [
+          ...allDomains.slice(0, 7),
+          {
+            domain: "其他方向",
+            count: allDomains.slice(7).reduce((sum, item) => sum + item.count, 0),
+          },
+        ]
+      : allDomains;
+
+    const totalProjects = allDomains.reduce((sum, item) => sum + item.count, 0);
     return {
       domains: sorted.map((d) => d.domain),
       counts: sorted.map((d) => d.count),
       percentages: sorted.map((d) =>
-        totalFinTech > 0 ? ((d.count / totalFinTech) * 100).toFixed(1) : "0"
+        totalProjects > 0 ? ((d.count / totalProjects) * 100).toFixed(1) : "0"
       ),
     };
   }, [data]);
@@ -266,8 +274,8 @@ export function DomainDistributionChart({ data }: ChartsProps) {
                   ? Reflect.get(params, "dataIndex")
                   : 0;
               const valIndex = typeof rawDataIndex === "number" ? rawDataIndex : 0;
-              const total = chartData.counts.length || 8;
-              const opacity = 0.35 + (valIndex / (total - 1)) * 0.65;
+              const denominator = Math.max(1, chartData.counts.length - 1);
+              const opacity = 0.35 + (valIndex / denominator) * 0.65;
               return `rgba(37, 99, 235, ${Math.min(1, Math.max(0.35, opacity))})`;
             },
             borderRadius: [0, 4, 4, 0],
@@ -315,6 +323,11 @@ export function DomainDistributionChart({ data }: ChartsProps) {
         <div ref={chartRef} className="h-full w-full" role="img" aria-label="项目方向分布图" />
         {data.length === 0 && <EmptyChartState />}
       </div>
+      {chartData.domains.length > 0 && (
+        <p className="sr-only">
+          {chartData.domains.map((domain, index) => `${domain} ${chartData.counts[index]} 个项目，占 ${chartData.percentages[index]}%`).join("；")}
+        </p>
+      )}
     </section>
   );
 }
@@ -355,7 +368,7 @@ export function StageDistributionChart({ data }: ChartsProps) {
       animation: !reducedMotion,
       title: {
         text: totalSum.toLocaleString(),
-        subtext: "全部公告",
+        subtext: "当前筛选记录",
         left: "29%",
         top: "40%",
         textAlign: "center",
@@ -425,6 +438,11 @@ export function StageDistributionChart({ data }: ChartsProps) {
         <div ref={chartRef} className="h-full w-full" role="img" aria-label="公告阶段分布图" />
         {data.length === 0 && <EmptyChartState />}
       </div>
+      {data.length > 0 && (
+        <p className="sr-only">
+          {chartData.map((stage) => `${stage.name} ${stage.value} 条记录`).join("；")}
+        </p>
+      )}
     </section>
   );
 }

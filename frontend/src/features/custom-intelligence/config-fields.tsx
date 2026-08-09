@@ -30,23 +30,25 @@ function TagEditor({
   placeholder,
   onChange,
   hint,
+  maxItems,
 }: {
   label: string;
   values: string[];
   placeholder: string;
   onChange: (values: string[]) => void;
   hint?: string;
+  maxItems?: number;
 }) {
   const [draft, setDraft] = useState("");
   const add = useCallback(() => {
     const value = draft.trim();
-    if (!value || values.includes(value)) {
+    if (!value || values.includes(value) || (maxItems !== undefined && values.length >= maxItems)) {
       setDraft("");
       return;
     }
     onChange([...values, value]);
     setDraft("");
-  }, [draft, onChange, values]);
+  }, [draft, maxItems, onChange, values]);
   return (
     <div>
       <FieldLabel hint={hint}>{label}</FieldLabel>
@@ -71,11 +73,12 @@ function TagEditor({
             }}
             onBlur={add}
             placeholder={values.length ? "继续添加…" : placeholder}
+            disabled={maxItems !== undefined && values.length >= maxItems}
             className="min-w-[120px] flex-1 border-0 bg-transparent px-1 py-1 text-xs text-[#172033] outline-none placeholder:text-[#98A2B3]"
           />
         </div>
       </div>
-      <p className="mt-1 text-[10px] text-[#98A2B3]">按 Enter 添加，可重复点击标签右侧删除。</p>
+      <p className="mt-1 text-[10px] text-[#98A2B3]">按 Enter 添加，可点击标签右侧删除。{maxItems ? `最多 ${maxItems} 项。` : ""}</p>
     </div>
   );
 }
@@ -198,7 +201,7 @@ export function ConfigFields({
               />
             </div>
             <div>
-              <FieldLabel>来源偏好</FieldLabel>
+              <FieldLabel hint="用于报告分析，不改变百度检索范围">分析取材偏好</FieldLabel>
               <HoverSelect
                 value={value.source_preference}
                 onChange={(next) => update("source_preference", next as IntelligenceSourcePreference)}
@@ -215,7 +218,7 @@ export function ConfigFields({
             <TagEditor label="检索关键词" values={value.keywords} onChange={(next) => update("keywords", next)} placeholder="例如：财富管理" />
             <TagEditor label="关注对象" values={value.focus_objects} onChange={(next) => update("focus_objects", next)} placeholder="例如：头部券商、投顾团队" />
           </div>
-          <TagEditor label="指定站点" values={value.specified_sites} onChange={(next) => update("specified_sites", next)} placeholder="例如：csrc.gov.cn" hint="仅填写域名；提交时再次校验" />
+          <TagEditor label="指定检索站点" values={value.specified_sites} onChange={(next) => update("specified_sites", next)} placeholder="例如：csrc.gov.cn" hint="仅填写域名" maxItems={5} />
           <div>
             <FieldLabel hint="可选">补充要求</FieldLabel>
             <textarea value={value.extra_requirements} onChange={(event) => update("extra_requirements", event.target.value)} rows={3} maxLength={2000} placeholder="例如：结论要区分已发生事实与推测，并给出可执行的跟进建议。" className="w-full resize-y rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15" />

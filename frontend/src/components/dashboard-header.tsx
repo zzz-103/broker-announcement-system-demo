@@ -58,13 +58,15 @@ function ExportMenu({ options }: { options: DashboardExportOption[] }) {
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="导出数据"
+        title="导出数据"
         onClick={() => setOpen((value) => !value)}
         disabled={!hasEnabledOption}
-        className="inline-flex h-9 w-[84px] items-center justify-center gap-1.5 rounded-md border border-blue-300/40 bg-blue-500/90 px-2 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(37,99,235,0.22)] transition-colors hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-55"
+        className="inline-flex h-9 w-9 items-center justify-center gap-1.5 rounded-md border border-blue-300/40 bg-blue-500/90 px-2 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(37,99,235,0.22)] transition-colors hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-55 sm:w-[84px]"
       >
-        <Download className="size-3.5" />
-        <span>导出</span>
-        <ChevronDown className={`size-3 transition-transform ${open ? "rotate-180" : ""}`} />
+        <Download className="size-3.5" aria-hidden="true" />
+        <span className="hidden sm:inline">导出</span>
+        <ChevronDown className={`hidden size-3 transition-transform sm:block ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
         <div
@@ -115,11 +117,11 @@ function UserMenu({
         aria-label={`用户菜单：${username || "当前用户"}`}
         title={username || "当前用户"}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-9 w-[132px] min-w-0 items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2.5 text-left text-[12px] text-slate-200 transition-colors hover:bg-white/10 hover:text-white"
+        className="inline-flex h-9 w-9 min-w-0 items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2 text-left text-[12px] text-slate-200 transition-colors hover:bg-white/10 hover:text-white sm:w-[132px] sm:justify-start sm:px-2.5"
       >
         <UserRound className="size-3.5 shrink-0 text-slate-300" />
-        <span className="min-w-0 flex-1 truncate">{username || "当前用户"}</span>
-        <ChevronDown className={`size-3 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <span className="hidden min-w-0 flex-1 truncate sm:block">{username || "当前用户"}</span>
+        <ChevronDown className={`hidden size-3 shrink-0 text-slate-400 transition-transform sm:block ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
         <div
@@ -179,10 +181,10 @@ export function DashboardHeader({
       className="sticky top-0 z-40 h-[68px] min-w-0 overflow-visible border-b border-blue-400/20 bg-[linear-gradient(105deg,#102847_0%,#17385F_58%,#1E4070_100%)] text-white"
       aria-label="平台导航"
     >
-      <div className="mx-auto flex h-full min-w-0 max-w-[1600px] items-center gap-3 px-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-full min-w-0 max-w-[1600px] items-center gap-1.5 px-3 sm:gap-3 sm:px-6 lg:px-8">
         <div className="flex min-w-0 flex-1 basis-0 items-center gap-2">
           <Image src="/brand/company-icon.png" alt="世纪证券" width={36} height={36} className="size-8 shrink-0 rounded-lg" priority />
-          <h1 className="min-w-0 truncate text-[15px] font-bold tracking-wide text-white sm:text-[17px]">世纪证券业务信息平台</h1>
+          <h1 className="hidden min-w-0 truncate text-[17px] font-bold tracking-wide text-white md:block">世纪证券业务信息平台</h1>
         </div>
 
         <ModuleSwitcher activeModule={activeModule} />
