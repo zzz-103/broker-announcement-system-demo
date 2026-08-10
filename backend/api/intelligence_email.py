@@ -10,10 +10,13 @@ from __future__ import annotations
 import html
 import re
 import smtplib
+import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import make_msgid
 from typing import Iterable, Literal
+
+import certifi
 
 from .config import settings
 from .custom_intelligence_store import IntelligenceStore
@@ -45,6 +48,16 @@ class EmailRecipientError(Exception):
 
 class ExternalRecipientConfirmationRequired(EmailRecipientError):
     pass
+
+
+def _smtp_ssl_context() -> ssl.SSLContext:
+    """Build a verified TLS context from the deployed CA bundle.
+
+    Explicitly using certifi keeps Windows/macOS virtual environments from
+    depending on an incomplete host trust store. Certificate verification is
+    never disabled.
+    """
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,7 +287,12 @@ def test_smtp_configuration(config: EffectiveSMTPConfig) -> dict[str, object]:
         raise EmailConfigurationError("SMTP 未配置用户名、发件地址或授权码")
     validate_smtp_identity(config.username, config.from_address)
     try:
-        with smtplib.SMTP_SSL(config.host, config.port, timeout=config.timeout_seconds) as smtp:
+        with smtplib.SMTP_SSL(
+            config.host,
+            config.port,
+            timeout=config.timeout_seconds,
+            context=_smtp_ssl_context(),
+        ) as smtp:
             smtp.ehlo()
             smtp.login(config.username, config.authorization_code)
     except Exception as exc:
@@ -305,7 +323,12 @@ def send_report_email(
     validate_smtp_identity(config.username, config.from_address)
     results: list[dict[str, object]] = []
     try:
-        with smtplib.SMTP_SSL(config.host, config.port, timeout=config.timeout_seconds) as smtp:
+        with smtplib.SMTP_SSL(
+            config.host,
+            config.port,
+            timeout=config.timeout_seconds,
+            context=_smtp_ssl_context(),
+        ) as smtp:
             smtp.ehlo()
             smtp.login(config.username, config.authorization_code)
             for recipient in normalized:

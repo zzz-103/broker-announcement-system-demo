@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,10 +28,12 @@ from backend.llm_table.llm_client import (
 
 class FakeSMTP:
     sent: list[object] = []
+    calls: list[dict[str, object]] = []
 
     def __init__(self, *args, **kwargs):
         self.args = args
         self.kwargs = kwargs
+        self.calls.append({"args": args, "kwargs": kwargs})
 
     def __enter__(self):
         return self
@@ -70,6 +73,8 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             clear=False,
         )
         self.env_patch.start()
+        FakeSMTP.sent = []
+        FakeSMTP.calls = []
 
     def tearDown(self):
         self.env_patch.stop()
@@ -194,6 +199,8 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         self.assertEqual([item["status"] for item in results], ["sent", "sent"])
         self.assertEqual(len(FakeSMTP.sent), 2)
         self.assertTrue(all(str(message["From"]) == "sender@126.com" for message in FakeSMTP.sent))
+        self.assertIsInstance(FakeSMTP.calls[0]["kwargs"]["context"], ssl.SSLContext)
+        self.assertEqual(FakeSMTP.calls[0]["kwargs"]["timeout"], 5)
 
     def test_connection_failure_returns_safe_per_recipient_results(self):
         execution = {

@@ -55,6 +55,10 @@ CUSTOM_INTELLIGENCE_MAX_WORKERS=2
 
 如果页面提示服务不可用或分析失败，先在管理员“AI 技术配置”中检查共享 DeepSeek 的 `base_url`、`model` 和 API Key，并建议保持 `use_json_object: true`。Report V2 要求事实与分析绑定本次搜索的有效 source ID；核心判断失去有效依据时分析失败并保留搜索来源，不会用无引用文本冒充正式报告。
 
+管理员保存的 DeepSeek 配置会原子写入 `LLM_CONFIG_OVERRIDE_PATH`（默认 `backend/data/llm_api_config.override.json`，不得纳入版本控制），并优先于旧的 `LLM_CONFIG_PATH`。该覆盖是全项目共享配置，会同时用于 AI 情报助手、招采 AI 分析、App Watch 和 LLM 结构化任务；旧配置文件仅作为未设置覆盖时的回退。百度 API Key、DeepSeek API Key 与网易 SMTP 授权码均可在管理页经管理员密码二次验证后查看和替换，连接测试与配置变更只记录不含凭据的安全审计信息。
+
+邮件发送固定使用 `smtp.126.com:465` 和 SSL，SMTP 用户名必须与 `@126.com` 发件地址一致，登录只使用客户端授权码。普通用户最多选择 5 个收件人和 HTML/PDF 形式；公司域外地址必须再次确认，系统为每个收件人分别生成邮件，且始终复用已经持久化的同一份 Report V2，不会再次调用模型。
+
 ## Windows 本地验证
 
 Windows 使用与锁文件一致的 Corepack pnpm 9：

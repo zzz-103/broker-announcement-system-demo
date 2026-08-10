@@ -542,7 +542,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(sources[0]["provider_reference_ids"], ["r1", "r2"])
         self.assertEqual(aliases, {"r1": "source-1", "r2": "source-1"})
 
-    def test_same_title_on_different_hosts_is_not_collapsed(self) -> None:
+    def test_same_title_on_different_hosts_is_collapsed(self) -> None:
         result = QianfanSearchResult(
             answer="",
             references=[
@@ -551,8 +551,8 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             ],
         )
         sources, aliases = normalize_sources(result)
-        self.assertEqual(len(sources), 2)
-        self.assertEqual(aliases, {"r1": "source-1", "r2": "source-2"})
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(aliases, {"r1": "source-1", "r2": "source-1"})
 
     def test_tracking_query_parameters_do_not_create_duplicate_sources(self) -> None:
         result = QianfanSearchResult(
@@ -668,7 +668,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             )
 
     def test_analysis_uses_json_mode_and_rejects_plain_text(self) -> None:
-        request: dict[str, object] = {}
+        requests: list[dict[str, object]] = []
         config = SimpleNamespace(
             model="test-model",
             temperature=0.1,
@@ -684,8 +684,9 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
                 self.config = config
 
             def _request_json(self, request_kwargs: dict[str, object], *, fallback_to_text: bool = False) -> str:
-                request.update(request_kwargs)
+                request = dict(request_kwargs)
                 request["fallback_to_text"] = fallback_to_text
+                requests.append(request)
                 return "模型返回的普通文本结论"
 
         snapshot = {"question": "q", "time_range": "month", "report_type": "industry_trends"}
@@ -694,9 +695,57 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service._request_analysis(snapshot, sources, {}, "request-1")
 
-        self.assertEqual(request["response_format"], {"type": "json_object"})
-        self.assertTrue(request["fallback_to_text"])
-        self.assertNotIn("version", request)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(requests[0]["response_format"], {"type": "json_object"})
+        self.assertTrue(requests[0]["fallback_to_text"])
+        self.assertNotIn("version", requests[0])
+        self.assertNotIn("上一轮输出未通过", requests[0]["messages"][0]["content"])
+        self.assertIn("上一轮输出未通过", requests[1]["messages"][0]["content"])
+
+    def test_analysis_retries_once_after_report_v2_validation_failure(self) -> None:
+        valid = json.dumps(
+            {
+                "version": 2,
+                "title": "报告",
+                "core_judgment": [
+                    {"type": "analysis", "text": "有依据的判断", "source_ids": ["source-1"]}
+                ],
+            },
+            ensure_ascii=False,
+        )
+        responses = iter(["不是 JSON", valid])
+        config = SimpleNamespace(
+            model="test-model",
+            temperature=0.1,
+            top_p=1.0,
+            max_tokens=1024,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+            use_json_object=True,
+        )
+
+        class FakeAnalysisClient:
+            def __init__(self) -> None:
+                self.config = config
+                self.call_count = 0
+
+            def _request_json(self, request_kwargs: dict[str, object], *, fallback_to_text: bool = False) -> str:
+                self.call_count += 1
+                return next(responses)
+
+        fake_client = FakeAnalysisClient()
+        sources = [{"id": "source-1", "title": "来源", "url": "https://example.com"}]
+        with patch.object(service, "_load_analysis_client", return_value=fake_client):
+            report = service._request_analysis(
+                {"focus": "问题", "time_range": "month", "report_length": "standard"},
+                sources,
+                {},
+                "request-1",
+            )
+
+        self.assertEqual(fake_client.call_count, 2)
+        self.assertEqual(report["version"], 2)
+        self.assertEqual(report["core_judgment"][0]["source_ids"], ["source-1"])
 
     def test_recover_stale_execution_closes_active_phase(self) -> None:
         snapshot = {"question": "q"}
@@ -969,6 +1018,8 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         messages = build_planner_messages({"focus": "证券行业变化"})
         self.assertIn("intent", messages[0]["content"])
         self.assertIn("2 到 5", messages[0]["content"])
+        self.assertIn("search_recency_filter", messages[0]["content"])
+        self.assertIn("禁止加入年份", messages[0]["content"])
         concise_messages = build_planner_messages({"focus": "证券行业变化", "report_length": "concise"})
         deep_messages = build_planner_messages({"focus": "证券行业变化", "report_length": "deep"})
         self.assertEqual(concise_messages, deep_messages)

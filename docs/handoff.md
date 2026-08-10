@@ -16,7 +16,7 @@
 ## 启动、配置与排障
 
 - 最短本地启动见根 `README.md`；生产拓扑模板见 `deploy/`，FastAPI 必须保持单 worker。
-- 配置入口是根 `.env`、旧版 `backend/config/llm_api_config.json` 与管理员“AI 技术配置”。百度、共享 DeepSeek 和网易 SMTP 授权码均只在服务端保存；管理员二次验证密码后可查看和替换，普通用户不可见。管理员保存的 DeepSeek 覆盖文件位于 `backend/data/` 且不进入版本控制。
+- 配置入口是根 `.env`、旧版 `backend/config/llm_api_config.json` 与管理员“AI 技术配置”。百度、共享 DeepSeek 和网易 SMTP 授权码均只在服务端保存；管理员二次验证密码后可查看和替换，普通用户不可见。管理员保存的 DeepSeek 覆盖文件默认是被忽略的 `backend/data/llm_api_config.override.json`，优先于旧配置，并供 AI 情报助手、招采 AI 分析、App Watch 与 LLM 结构化任务共同使用。
 - 新账号使用一次性随机初始密码；重复申请不会返回或重置既有密码。初始密码只在创建响应中出现一次，应通过内部安全渠道交付。
 - 用户申请依赖 `USER_QUALIFICATION_CSV_PATH`；表头样例见 `backend/config/user_qualification.example.csv`。
 - 管理任务日志通过管理页 SSE 查看，内存最多保留最近 500 行；容器日志使用 `docker compose logs -f backend-api` / `backend-scheduler`。

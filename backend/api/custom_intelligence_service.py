@@ -334,6 +334,8 @@ def build_planner_messages(snapshot: dict[str, object]) -> list[dict[str, str]]:
         "JSON 顶层只能有 intent 和 queries 字段；intent 是本次检索意图的简短中文概括；"
         "queries 必须是 2 到 5 个对象，每个对象只有 query 和 purpose 字段。"
         "query 是可直接交给百度普通网页搜索的短中文查询，purpose 是简短中文目的。"
+        "每条 query 必须保留研究重点中的核心业务实体，避免只有宽泛行业词。"
+        "时间范围由后台 search_recency_filter 处理；query 中禁止加入年份、最新、近期、过去若干天等时间词。"
         "不要输出 URL、站点限定、时间参数或任何工具调用，不要把搜索结果当作事实。"
     )
     user = (
@@ -461,17 +463,17 @@ def _normalized_source_title(title: object) -> str:
     return re.sub(r"\s+", " ", clean_text(title, 500)).strip().casefold()
 
 
-def _safe_title_dedupe_key(host: str, title: str) -> tuple[str, str] | None:
-    if not host or not title:
+def _safe_title_dedupe_key(title: str) -> str | None:
+    if not title:
         return None
-    return host, title
+    return title
 
 
 def normalize_sources(result: QianfanSearchResult) -> tuple[list[dict[str, object]], dict[str, str]]:
     canonical: list[dict[str, object]] = []
     aliases: dict[str, str] = {}
     by_url: dict[str, dict[str, object]] = {}
-    by_title: dict[tuple[str, str], dict[str, object]] = {}
+    by_title: dict[str, dict[str, object]] = {}
     by_provider_id: dict[str, dict[str, object]] = {}
     for reference in result.references:
         url = reference.url.strip()
@@ -480,9 +482,8 @@ def normalize_sources(result: QianfanSearchResult) -> tuple[list[dict[str, objec
         normalized_url = _canonical_source_url(url)
         if not normalized_url:
             continue
-        normalized_host = _canonical_source_host(url)
         normalized_title = _normalized_source_title(reference.title)
-        title_key = _safe_title_dedupe_key(normalized_host, normalized_title)
+        title_key = _safe_title_dedupe_key(normalized_title)
         provider_id = clean_text(reference.provider_reference_id, 100) or str(len(aliases) + 1)
         existing = (
             by_provider_id.get(provider_id)
@@ -796,8 +797,9 @@ def _search_with_queries(
                 }
             )
             continue
-        # Namespace every query so a provider reusing numeric ids cannot
-        # accidentally collapse unrelated ranked results.
+        # Scope parser-generated rank ids to this query. Explicit provider ids
+        # (including numeric ids) remain stable and can deduplicate across
+        # planned queries.
         result = _namespace_search_result(result, f"query-{attempt + 1}")
         payloads.append(payload)
         results.append(result)
@@ -1130,30 +1132,46 @@ def _request_analysis(
     search_request_id: str | None,
 ) -> dict[str, object]:
     client = _load_analysis_client()
-    messages = build_analysis_messages(snapshot, sources)
+    base_messages = build_analysis_messages(snapshot, sources)
     config = client.config
-    request_kwargs: dict[str, Any] = {
-        "model": config.model,
-        "messages": messages,
-        "temperature": config.temperature,
-        "top_p": config.top_p,
-        "max_tokens": config.max_tokens,
-        "frequency_penalty": config.frequency_penalty,
-        "presence_penalty": config.presence_penalty,
-    }
-    if config.use_json_object:
-        request_kwargs["response_format"] = {"type": "json_object"}
-    raw = client._request_json(request_kwargs, fallback_to_text=True)
-    answer = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
-    return normalize_report(
-        answer,
-        snapshot,
-        sources,
-        aliases,
-        [],
-        datetime.now(timezone.utc).isoformat(),
-        request_id=search_request_id,
-    )
+    last_validation_error: ValueError | None = None
+    # One bounded retry is allowed only when the model response itself cannot
+    # pass JSON/Report V2 evidence validation. Network and upstream failures
+    # still fail immediately, and no new search or agent step is introduced.
+    for attempt in range(2):
+        messages = [dict(message) for message in base_messages]
+        if attempt:
+            messages[0]["content"] += (
+                "\n上一轮输出未通过 Report V2 结构或引用校验。请重新完整输出一次严格 JSON；"
+                "核心判断必须至少包含一条绑定有效 source_id 的 fact 或 analysis。"
+            )
+        request_kwargs: dict[str, Any] = {
+            "model": config.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "max_tokens": config.max_tokens,
+            "frequency_penalty": config.frequency_penalty,
+            "presence_penalty": config.presence_penalty,
+        }
+        if config.use_json_object:
+            request_kwargs["response_format"] = {"type": "json_object"}
+        try:
+            raw = client._request_json(request_kwargs, fallback_to_text=True)
+            answer = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
+            return normalize_report(
+                answer,
+                snapshot,
+                sources,
+                aliases,
+                [],
+                datetime.now(timezone.utc).isoformat(),
+                request_id=search_request_id,
+            )
+        except ValueError as exc:
+            last_validation_error = exc
+    assert last_validation_error is not None
+    raise last_validation_error
 
 
 def _run_analysis(
