@@ -43,18 +43,17 @@ App Watch 的可选定时刷新复用 `python -m backend.api.scheduler`，通过
 
 ```env
 BAIDU_QIANFAN_API_KEY=<server-side-api-key>
-BAIDU_QIANFAN_AUTH_HEADER=Authorization
 BAIDU_QIANFAN_TIMEOUT_SECONDS=120
 CUSTOM_INTELLIGENCE_MAX_WORKERS=2
 ```
 
-搜索接口固定为百度 `v2/ai_search/web_search`，不允许浏览器或数据库覆盖 Endpoint，默认使用 `Authorization: Bearer ...`。上线前应使用目标账号在安全环境执行管理页连接测试；如账号明确要求 `X-Appbuilder-Authorization`，只覆盖 `BAIDU_QIANFAN_AUTH_HEADER` 并重启后端。
+搜索接口固定为百度 `v2/ai_search/web_search` 和 `baidu_search_v2`，不允许浏览器或数据库覆盖 Endpoint。第一版仅支持 bce-v3 API Key，并固定使用 `Authorization: Bearer <API Key>`；上线前应在管理页执行连接测试。
 
 主题与每次执行记录保存在 `USER_DB_PATH` 指向的现有数据库中；每个用户最多保留最近 30 条执行记录，新增或完成执行后自动删除创建时间最早的已结束记录。历史记录页面按 10 条一页提供分页翻阅。只有部署明确需要隔离时才设置 `CUSTOM_INTELLIGENCE_DB_PATH`；未配置不会生成第二个默认数据库。生产继续使用单 worker，执行状态由数据库保存，页面轮询恢复。
 
-登录后访问 `http://localhost:3000/custom-intelligence`。自定义情报的研究深度同时决定报告整理的来源上限：简洁最多 10 条网页来源，标准最多 20 条，深度研究最多 30 条。系统先执行主搜索，再按来源分面最多执行 4 轮补搜（监管与风险、机构案例、技术落地、研究与专业媒体），补搜每轮最多请求 50 条，并在达到来源上限后提前停止。这里的数量是去重和质量筛选后的有效来源上限，实际来源数可能因时间范围、指定站点或可用结果不足而减少；执行记录内部会保留每轮新增来源数、域名数和错误信息，便于定位扩源不足的原因。来源 URL 会清理常见追踪参数；只有同域名的高置信度同标题内容才会按标题合并，不同网站的同标题资料会保留为独立来源。深度研究本期只扩大网页来源范围并提高报告分析要求，不启用千帆另一套上游深度搜索能力；“来源偏好”会影响补搜分面顺序和报告分析。建议先执行一条“简洁”即时搜索，再检查执行记录中的 request ID、来源和报告。
+登录后访问 `http://localhost:3000/custom-intelligence`。系统先由共享 DeepSeek 生成 2–5 个短查询，每个查询调用一次百度普通搜索（最多 10 条），再按百度原始排名轮转合并，执行 URL/标题/provider 去重、可解析日期的时效过滤和每域最多 3 条控制，最终最多保留 15 条来源。报告篇幅只影响成文深度，不改变查询数量。Planner 失败时仅使用用户原始关注描述执行一次带明确标记的降级检索，不再执行固定分面补搜。管理员可在执行诊断中查看 queries、每轮数量、过滤统计、最终来源、request ID 与阶段错误，普通用户不可见。
 
-如果页面提示搜索已完成但分析失败，先检查 `LLM_CONFIG_PATH` 指向的配置是否包含有效的 `base_url`、`model` 和 API Key，并建议保持 `use_json_object: true`。自定义情报会对模型返回的非 JSON 文本降级生成基础报告，避免仅因 Markdown 包装或普通文本格式导致整次分析失败；上游鉴权、配额、超时和服务错误仍需要重新分析或修复配置。
+如果页面提示服务不可用或分析失败，先在管理员“AI 技术配置”中检查共享 DeepSeek 的 `base_url`、`model` 和 API Key，并建议保持 `use_json_object: true`。Report V2 要求事实与分析绑定本次搜索的有效 source ID；核心判断失去有效依据时分析失败并保留搜索来源，不会用无引用文本冒充正式报告。
 
 ## Windows 本地验证
 

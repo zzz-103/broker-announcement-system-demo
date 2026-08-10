@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -68,73 +67,17 @@ class LlmJobRequest(BaseModel):
     overwrite: bool = False
 
 
-AnalysisPerspective = Literal[
+TimeRange = Literal["week", "month", "semiyear", "year"]
+ReportItemType = Literal["fact", "analysis", "recommendation"]
+AssistantAudience = Literal[
     "management",
-    "product_business",
+    "business_product",
     "technology",
     "compliance_risk",
     "industry_research",
+    "custom",
 ]
-TimeRange = Literal["week", "month", "semiyear", "year"]
-ReportType = Literal["management_brief", "competitive_analysis", "industry_trends", "risk_monitoring"]
-AnalysisDepth = Literal["concise", "standard", "deep"]
-SourcePreference = Literal["authoritative", "balanced", "news", "research"]
-
-
-class IntelligenceConfigBase(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    description: str = Field(default="", max_length=2_000)
-    keywords: list[str] = Field(default_factory=list, max_length=30)
-    focus_objects: list[str] = Field(default_factory=list, max_length=20)
-    analysis_perspective: AnalysisPerspective = "industry_research"
-    time_range: TimeRange = "month"
-    source_preference: SourcePreference = "balanced"
-    specified_sites: list[str] = Field(default_factory=list, max_length=5)
-    report_type: ReportType = "industry_trends"
-    analysis_depth: AnalysisDepth = "standard"
-    extra_requirements: str = Field(default="", max_length=2_000)
-
-    @field_validator("keywords", "focus_objects", "specified_sites")
-    @classmethod
-    def normalize_list(cls, values: list[str]) -> list[str]:
-        result: list[str] = []
-        for value in values:
-            item = str(value).strip()
-            if item and item not in result:
-                result.append(item)
-        return result
-
-    @field_validator("specified_sites")
-    @classmethod
-    def validate_sites(cls, values: list[str]) -> list[str]:
-        import re
-
-        normalized: list[str] = []
-        for value in values:
-            site = value.lower().strip()
-            site = re.sub(r"^https?://", "", site).split("/", 1)[0]
-            if not site or len(site) > 253 or "." not in site or any(ch.isspace() for ch in site):
-                raise ValueError("specified_sites contains an invalid domain")
-            if site not in normalized:
-                normalized.append(site)
-        return normalized
-
-
-class IntelligenceTopicCreate(IntelligenceConfigBase):
-    name: str = Field(min_length=1, max_length=120)
-    question: str = Field(default="", max_length=1_000)
-
-
-class IntelligenceTopicUpdate(IntelligenceConfigBase):
-    name: str = Field(min_length=1, max_length=120)
-    question: str = Field(default="", max_length=1_000)
-
-
-class IntelligenceTopicEnabled(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
+ReportLength = Literal["concise", "standard", "deep"]
 
 
 class SearchServiceConfigUpdate(BaseModel):
@@ -145,37 +88,27 @@ class SearchServiceConfigUpdate(BaseModel):
     api_key: str | None = Field(default=None, max_length=1_000)
 
 
-class InstantSearchRequest(IntelligenceConfigBase):
-    question: str = Field(default="", max_length=1_000)
-    search_question: str | None = Field(default=None, max_length=1_000)
-    query: str | None = Field(default=None, max_length=1_000)
+class InstantSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    audience: AssistantAudience
+    audience_detail: str = Field(default="", max_length=2_000)
+    focus_tags: list[str] = Field(default_factory=list, max_length=3)
+    focus: str = Field(min_length=1, max_length=1_000)
+    extra_focus: str = Field(default="", max_length=2_000)
+    time_range: TimeRange = "month"
+    report_length: ReportLength = "standard"
+
+    @field_validator("focus_tags")
+    @classmethod
+    def normalize_focus_tags(cls, values: list[str]) -> list[str]:
+        return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
 
     @model_validator(mode="after")
     def ensure_question(self) -> "InstantSearchRequest":
-        alternate = (self.search_question or self.query or "").strip()
-        if not self.question.strip() and not alternate:
-            raise ValueError("question is required")
-        if not self.question.strip() and alternate:
-            self.question = alternate
-        else:
-            self.question = self.question.strip()
+        if self.audience == "custom" and not self.audience_detail.strip():
+            raise ValueError("audience_detail is required for custom audience")
         return self
-
-
-class KeywordSuggestionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    question: str = Field(default="", max_length=1_000)
-    description: str = Field(default="", max_length=2_000)
-    keywords: list[str] = Field(default_factory=list, max_length=30)
-    focus_objects: list[str] = Field(default_factory=list, max_length=20)
-    analysis_perspective: AnalysisPerspective = "industry_research"
-    max_suggestions: int = Field(default=8, ge=1, le=8)
-
-    @field_validator("keywords", "focus_objects")
-    @classmethod
-    def normalize_suggestion_inputs(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(item.strip() for item in values if item and item.strip()))
 
 
 class ExecutionListResponse(BaseModel):
@@ -183,43 +116,39 @@ class ExecutionListResponse(BaseModel):
     meta: dict[str, object]
 
 
-class IntelligenceDynamic(BaseModel):
-    title: str = ""
-    institutions: list[str] = Field(default_factory=list, max_length=20)
-    information_time: str = ""
-    summary: str = ""
-    impact_analysis: str = ""
-    event_tags: list[str] = Field(default_factory=list, max_length=20)
+class IntelligenceReportItem(BaseModel):
+    """A grounded V2 report item.
+
+    The service performs the source-id validity check because it owns the
+    canonical/alias mapping. Recommendations may intentionally have no source
+    ids; factual and analytical items are filtered before persistence when
+    they cannot be grounded.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: ReportItemType = "analysis"
+    text: str = ""
     source_ids: list[str] = Field(default_factory=list, max_length=30)
 
 
-class IntelligenceFocusSection(BaseModel):
-    title: str = ""
-    items: list[str] = Field(default_factory=list, max_length=20)
-
-
 class IntelligenceReport(BaseModel):
+    """Report V2 wire shape consumed by web, PDF and mail renderers."""
+
     model_config = ConfigDict(extra="ignore")
 
+    version: Literal[2] = 2
     title: str = "AI 自定义情报报告"
-    question: str = ""
+    audience: str = ""
     executed_at: str = ""
     time_range: str = "month"
-    valid_source_count: int = Field(default=0, ge=0)
-    report_type: ReportType = "industry_trends"
-    service: str = "baidu_qianfan"
-    search_service: str = "baidu_web_search"
-    analysis_service: str = "deepseek"
-    request_id: str = ""
-    is_fallback: bool = False
-    core_conclusion: str = ""
-    key_dynamics: list[IntelligenceDynamic] = Field(default_factory=list, max_length=30)
-    impact_analysis: str = ""
-    opportunities: list[str] = Field(default_factory=list, max_length=30)
-    risks: list[str] = Field(default_factory=list, max_length=30)
-    watch_items: list[str] = Field(default_factory=list, max_length=30)
-    recommended_followups: list[str] = Field(default_factory=list, max_length=20)
-    focus_sections: list[IntelligenceFocusSection] = Field(default_factory=list, max_length=6)
+    report_length: str = "standard"
+    core_judgment: list[IntelligenceReportItem] = Field(default_factory=list, max_length=30)
+    key_developments: list[IntelligenceReportItem] = Field(default_factory=list, max_length=30)
+    impact_analysis: list[IntelligenceReportItem] = Field(default_factory=list, max_length=30)
+    company_implications: list[IntelligenceReportItem] = Field(default_factory=list, max_length=30)
+    risks_and_watch_items: list[IntelligenceReportItem] = Field(default_factory=list, max_length=30)
+    reference_warnings: list[str] = Field(default_factory=list, max_length=30)
 
 
 @dataclass(slots=True)

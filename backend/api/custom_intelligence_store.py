@@ -115,6 +115,13 @@ class IntelligenceStore:
                     report_type TEXT NOT NULL,
                     analysis_depth TEXT NOT NULL,
                     extra_requirements TEXT NOT NULL DEFAULT '',
+                    config_version INTEGER NOT NULL DEFAULT 2,
+                    audience TEXT NOT NULL DEFAULT '',
+                    audience_detail TEXT NOT NULL DEFAULT '',
+                    focus_tags_json TEXT NOT NULL DEFAULT '[]',
+                    focus TEXT NOT NULL DEFAULT '',
+                    extra_focus TEXT NOT NULL DEFAULT '',
+                    report_length TEXT NOT NULL DEFAULT 'standard',
                     enabled INTEGER NOT NULL DEFAULT 1,
                     created_by_user_id INTEGER NOT NULL,
                     updated_by_user_id INTEGER NOT NULL,
@@ -146,6 +153,8 @@ class IntelligenceStore:
                     analysis_status TEXT NOT NULL DEFAULT 'pending',
                     search_error_message TEXT,
                     analysis_error_message TEXT,
+                    planning_status TEXT NOT NULL DEFAULT 'not_run',
+                    planning_error_message TEXT,
                     request_id TEXT,
                     created_by_user_id INTEGER NOT NULL,
                     executed_by_user_id INTEGER NOT NULL,
@@ -177,6 +186,42 @@ class IntelligenceStore:
                     message TEXT NOT NULL DEFAULT '',
                     tested_at TEXT
                 );
+                CREATE TABLE IF NOT EXISTS intelligence_smtp_config (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    host TEXT NOT NULL DEFAULT 'smtp.126.com',
+                    port INTEGER NOT NULL DEFAULT 465,
+                    username TEXT NOT NULL DEFAULT '',
+                    from_address TEXT NOT NULL DEFAULT '',
+                    authorization_code TEXT NOT NULL DEFAULT '',
+                    use_ssl INTEGER NOT NULL DEFAULT 1,
+                    timeout_seconds REAL NOT NULL DEFAULT 30,
+                    updated_at TEXT NOT NULL,
+                    updated_by_user_id INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS intelligence_default_rules (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    rules_json TEXT NOT NULL DEFAULT '{}',
+                    updated_at TEXT NOT NULL,
+                    updated_by_user_id INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS intelligence_delivery_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    execution_id INTEGER NOT NULL,
+                    owner_user_id INTEGER NOT NULL,
+                    recipient TEXT NOT NULL,
+                    format TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    message_id TEXT,
+                    error_message TEXT,
+                    external_confirmed INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    sent_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_intelligence_delivery_execution
+                    ON intelligence_delivery_log(execution_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_intelligence_delivery_owner
+                    ON intelligence_delivery_log(owner_user_id, created_at DESC);
                 """
             )
             columns = {
@@ -207,6 +252,14 @@ class IntelligenceStore:
                 connection.execute(
                     "ALTER TABLE intelligence_executions ADD COLUMN search_followups_json TEXT NOT NULL DEFAULT '[]'"
                 )
+            if "planning_status" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN planning_status TEXT NOT NULL DEFAULT 'not_run'"
+                )
+            if "planning_error_message" not in columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_executions ADD COLUMN planning_error_message TEXT"
+                )
             topic_columns = {
                 str(row["name"])
                 for row in connection.execute("PRAGMA table_info(intelligence_topics)").fetchall()
@@ -214,6 +267,28 @@ class IntelligenceStore:
             if "question" not in topic_columns:
                 connection.execute(
                     "ALTER TABLE intelligence_topics ADD COLUMN question TEXT NOT NULL DEFAULT ''"
+                )
+            topic_migrations = {
+                "config_version": "INTEGER NOT NULL DEFAULT 1",
+                "audience": "TEXT NOT NULL DEFAULT ''",
+                "audience_detail": "TEXT NOT NULL DEFAULT ''",
+                "focus_tags_json": "TEXT NOT NULL DEFAULT '[]'",
+                "focus": "TEXT NOT NULL DEFAULT ''",
+                "extra_focus": "TEXT NOT NULL DEFAULT ''",
+                "report_length": "TEXT NOT NULL DEFAULT 'standard'",
+            }
+            for column, definition in topic_migrations.items():
+                if column not in topic_columns:
+                    connection.execute(
+                        f"ALTER TABLE intelligence_topics ADD COLUMN {column} {definition}"
+                    )
+            delivery_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(intelligence_delivery_log)").fetchall()
+            }
+            if "external_confirmed" not in delivery_columns:
+                connection.execute(
+                    "ALTER TABLE intelligence_delivery_log ADD COLUMN external_confirmed INTEGER NOT NULL DEFAULT 0"
                 )
             connection.execute(
                 """
@@ -274,6 +349,7 @@ class IntelligenceStore:
 
     @staticmethod
     def _topic_from_row(row: sqlite3.Row) -> dict[str, object]:
+        columns = set(row.keys())
         return {
             "id": int(row["id"]),
             "owner_user_id": int(row["owner_user_id"]),
@@ -289,6 +365,13 @@ class IntelligenceStore:
             "report_type": str(row["report_type"]),
             "analysis_depth": str(row["analysis_depth"]),
             "extra_requirements": str(row["extra_requirements"] or ""),
+            "config_version": int(row["config_version"] or 2) if "config_version" in columns else 2,
+            "audience": str(row["audience"] or "") if "audience" in columns else "",
+            "audience_detail": str(row["audience_detail"] or "") if "audience_detail" in columns else "",
+            "focus_tags": _decode(row["focus_tags_json"], []) if "focus_tags_json" in columns else [],
+            "focus": str(row["focus"] or "") if "focus" in columns else "",
+            "extra_focus": str(row["extra_focus"] or "") if "extra_focus" in columns else "",
+            "report_length": str(row["report_length"] or "standard") if "report_length" in columns else "standard",
             "enabled": bool(row["enabled"]),
             "created_by_user_id": int(row["created_by_user_id"]),
             "updated_by_user_id": int(row["updated_by_user_id"]),
@@ -298,6 +381,7 @@ class IntelligenceStore:
 
     @staticmethod
     def _execution_from_row(row: sqlite3.Row) -> dict[str, object]:
+        columns = set(row.keys())
         return {
             "id": int(row["id"]),
             "owner_user_id": int(row["owner_user_id"]),
@@ -319,6 +403,12 @@ class IntelligenceStore:
             "analysis_status": str(row["analysis_status"] or "pending"),
             "search_error_message": str(row["search_error_message"]) if row["search_error_message"] else None,
             "analysis_error_message": str(row["analysis_error_message"]) if row["analysis_error_message"] else None,
+            "planning_status": str(row["planning_status"] or "not_run") if "planning_status" in columns else "not_run",
+            "planning_error_message": (
+                str(row["planning_error_message"]) if row["planning_error_message"] else None
+            )
+            if "planning_error_message" in columns
+            else None,
             "request_id": str(row["request_id"]) if row["request_id"] else None,
             "created_by_user_id": int(row["created_by_user_id"]),
             "executed_by_user_id": int(row["executed_by_user_id"]),
@@ -343,9 +433,10 @@ class IntelligenceStore:
                     INSERT INTO intelligence_topics
                         (owner_user_id, name, question, description, keywords_json, focus_objects_json,
                          analysis_perspective, time_range, source_preference, specified_sites_json,
-                         report_type, analysis_depth, extra_requirements, enabled,
+                         report_type, analysis_depth, extra_requirements, config_version, audience,
+                         audience_detail, focus_tags_json, focus, extra_focus, report_length, enabled,
                          created_by_user_id, updated_by_user_id, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
                     """,
                     (
                         owner_user_id,
@@ -354,13 +445,20 @@ class IntelligenceStore:
                         payload.get("description", ""),
                         _json(payload.get("keywords", [])),
                         _json(payload.get("focus_objects", [])),
-                        payload["analysis_perspective"],
-                        payload["time_range"],
-                        payload["source_preference"],
+                        payload.get("analysis_perspective", "industry_research"),
+                        payload.get("time_range", "month"),
+                        payload.get("source_preference", "balanced"),
                         _json(payload.get("specified_sites", [])),
-                        payload["report_type"],
-                        payload["analysis_depth"],
+                        payload.get("report_type", "industry_trends"),
+                        payload.get("analysis_depth", payload.get("report_length", "standard")),
                         payload.get("extra_requirements", ""),
+                        payload.get("config_version", 2),
+                        payload.get("audience", ""),
+                        payload.get("audience_detail", ""),
+                        _json(payload.get("focus_tags", [])),
+                        payload.get("focus", ""),
+                        payload.get("extra_focus", ""),
+                        payload.get("report_length", "standard"),
                         actor_user_id,
                         actor_user_id,
                         now,
@@ -442,7 +540,9 @@ class IntelligenceStore:
                     SET name = ?, question = ?, description = ?, keywords_json = ?, focus_objects_json = ?,
                         analysis_perspective = ?, time_range = ?, source_preference = ?,
                         specified_sites_json = ?, report_type = ?, analysis_depth = ?,
-                        extra_requirements = ?, updated_by_user_id = ?, updated_at = ?
+                        extra_requirements = ?, config_version = ?, audience = ?, audience_detail = ?,
+                        focus_tags_json = ?, focus = ?, extra_focus = ?, report_length = ?,
+                        updated_by_user_id = ?, updated_at = ?
                     WHERE id = ? AND owner_user_id = ?
                     """,
                     (
@@ -451,13 +551,20 @@ class IntelligenceStore:
                         payload.get("description", ""),
                         _json(payload.get("keywords", [])),
                         _json(payload.get("focus_objects", [])),
-                        payload["analysis_perspective"],
-                        payload["time_range"],
-                        payload["source_preference"],
+                        payload.get("analysis_perspective", "industry_research"),
+                        payload.get("time_range", "month"),
+                        payload.get("source_preference", "balanced"),
                         _json(payload.get("specified_sites", [])),
-                        payload["report_type"],
-                        payload["analysis_depth"],
+                        payload.get("report_type", "industry_trends"),
+                        payload.get("analysis_depth", payload.get("report_length", "standard")),
                         payload.get("extra_requirements", ""),
+                        payload.get("config_version", 2),
+                        payload.get("audience", ""),
+                        payload.get("audience_detail", ""),
+                        _json(payload.get("focus_tags", [])),
+                        payload.get("focus", ""),
+                        payload.get("extra_focus", ""),
+                        payload.get("report_length", "standard"),
                         actor_user_id,
                         now,
                         topic_id,
@@ -505,25 +612,6 @@ class IntelligenceStore:
             raise
         except sqlite3.Error as exc:
             raise IntelligenceStoreError("failed to delete intelligence topic") from exc
-
-    def set_topic_enabled(self, owner_user_id: int, topic_id: int, enabled: bool, actor_user_id: int) -> dict[str, object]:
-        try:
-            with self._connection() as connection:
-                self.ensure_schema(connection)
-                cursor = connection.execute(
-                    "UPDATE intelligence_topics SET enabled = ?, updated_by_user_id = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
-                    (1 if enabled else 0, actor_user_id, utc_now(), topic_id, owner_user_id),
-                )
-                if cursor.rowcount == 0:
-                    raise IntelligenceNotFoundError("topic not found")
-                row = connection.execute("SELECT * FROM intelligence_topics WHERE id = ?", (topic_id,)).fetchone()
-        except IntelligenceNotFoundError:
-            raise
-        except sqlite3.Error as exc:
-            raise IntelligenceStoreError("failed to update intelligence topic status") from exc
-        if row is None:
-            raise IntelligenceNotFoundError("topic not found")
-        return self._topic_from_row(row)
 
     @staticmethod
     def _search_config_from_row(row: sqlite3.Row) -> dict[str, object]:
@@ -648,6 +736,214 @@ class IntelligenceStore:
         }
 
     @staticmethod
+    def _smtp_config_from_row(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "id": int(row["id"]),
+            "enabled": bool(row["enabled"]),
+            "host": str(row["host"] or "smtp.126.com"),
+            "port": int(row["port"] or 465),
+            "username": str(row["username"] or ""),
+            "from_address": str(row["from_address"] or ""),
+            "authorization_code": str(row["authorization_code"] or ""),
+            "use_ssl": bool(row["use_ssl"]),
+            "timeout_seconds": float(row["timeout_seconds"] or 30),
+            "updated_at": str(row["updated_at"] or ""),
+            "updated_by_user_id": int(row["updated_by_user_id"] or 0),
+        }
+
+    def get_smtp_config(self) -> dict[str, object] | None:
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                row = connection.execute(
+                    "SELECT * FROM intelligence_smtp_config WHERE id = 1"
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to load SMTP configuration") from exc
+        return self._smtp_config_from_row(row) if row is not None else None
+
+    def save_smtp_config(
+        self,
+        *,
+        enabled: bool,
+        username: str,
+        from_address: str,
+        authorization_code: str,
+        updated_by_user_id: int,
+        timeout_seconds: float = 30,
+    ) -> dict[str, object]:
+        now = utc_now()
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                connection.execute(
+                    """
+                    INSERT INTO intelligence_smtp_config
+                        (id, enabled, host, port, username, from_address,
+                         authorization_code, use_ssl, timeout_seconds, updated_at, updated_by_user_id)
+                    VALUES (1, ?, 'smtp.126.com', 465, ?, ?, ?, 1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        enabled = excluded.enabled,
+                        host = 'smtp.126.com',
+                        port = 465,
+                        username = excluded.username,
+                        from_address = excluded.from_address,
+                        authorization_code = excluded.authorization_code,
+                        use_ssl = 1,
+                        timeout_seconds = excluded.timeout_seconds,
+                        updated_at = excluded.updated_at,
+                        updated_by_user_id = excluded.updated_by_user_id
+                    """,
+                    (
+                        1 if enabled else 0,
+                        username,
+                        from_address,
+                        authorization_code,
+                        timeout_seconds,
+                        now,
+                        updated_by_user_id,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM intelligence_smtp_config WHERE id = 1"
+                ).fetchone()
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to save SMTP configuration") from exc
+        if row is None:
+            raise IntelligenceStoreError("failed to save SMTP configuration")
+        return self._smtp_config_from_row(row)
+
+    def get_default_rules(self) -> dict[str, object]:
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                row = connection.execute(
+                    "SELECT * FROM intelligence_default_rules WHERE id = 1"
+                ).fetchone()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to load intelligence default rules") from exc
+        if row is None:
+            return {"rules": {}, "updated_at": None, "updated_by_user_id": 0}
+        decoded = _decode(row["rules_json"], {})
+        return {
+            "rules": decoded if isinstance(decoded, (dict, list)) else {},
+            "updated_at": str(row["updated_at"] or "") or None,
+            "updated_by_user_id": int(row["updated_by_user_id"] or 0),
+        }
+
+    def save_default_rules(self, *, rules: object, updated_by_user_id: int) -> dict[str, object]:
+        now = utc_now()
+        if not isinstance(rules, (dict, list)):
+            raise IntelligenceStoreError("default rules must be an object or list")
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                connection.execute(
+                    """
+                    INSERT INTO intelligence_default_rules (id, rules_json, updated_at, updated_by_user_id)
+                    VALUES (1, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        rules_json = excluded.rules_json,
+                        updated_at = excluded.updated_at,
+                        updated_by_user_id = excluded.updated_by_user_id
+                    """,
+                    (_json(rules), now, updated_by_user_id),
+                )
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to save intelligence default rules") from exc
+        return {"rules": rules, "updated_at": now, "updated_by_user_id": updated_by_user_id}
+
+    def create_delivery_log(
+        self,
+        *,
+        execution_id: int,
+        owner_user_id: int,
+        recipient: str,
+        format: str,
+        status: str,
+        message_id: str | None = None,
+        error_message: str | None = None,
+        external_confirmed: bool = False,
+        sent_at: str | None = None,
+    ) -> dict[str, object]:
+        created_at = utc_now()
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                cursor = connection.execute(
+                    """
+                    INSERT INTO intelligence_delivery_log
+                        (execution_id, owner_user_id, recipient, format, status,
+                        message_id, error_message, external_confirmed, created_at, sent_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        execution_id,
+                        owner_user_id,
+                        recipient,
+                        format,
+                        status,
+                        message_id,
+                        error_message,
+                        1 if external_confirmed else 0,
+                        created_at,
+                        sent_at,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM intelligence_delivery_log WHERE id = ?", (cursor.lastrowid,)
+                ).fetchone()
+                connection.commit()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to record intelligence email delivery") from exc
+        if row is None:
+            raise IntelligenceStoreError("failed to record intelligence email delivery")
+        return {
+            "id": int(row["id"]),
+            "execution_id": int(row["execution_id"]),
+            "owner_user_id": int(row["owner_user_id"]),
+            "recipient": str(row["recipient"]),
+            "format": str(row["format"]),
+            "status": str(row["status"]),
+            "message_id": str(row["message_id"]) if row["message_id"] else None,
+            "error_message": str(row["error_message"]) if row["error_message"] else None,
+            "external_confirmed": bool(row["external_confirmed"]),
+            "created_at": str(row["created_at"]),
+            "sent_at": str(row["sent_at"]) if row["sent_at"] else None,
+        }
+
+    def list_delivery_logs(self, execution_id: int, limit: int = 50) -> list[dict[str, object]]:
+        limit = max(1, min(100, int(limit)))
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                rows = connection.execute(
+                    "SELECT * FROM intelligence_delivery_log WHERE execution_id = "
+                    "? ORDER BY created_at DESC, id DESC LIMIT ?",
+                    (execution_id, limit),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to load intelligence email delivery logs") from exc
+        return [
+            {
+                "id": int(row["id"]),
+                "execution_id": int(row["execution_id"]),
+                "owner_user_id": int(row["owner_user_id"]),
+                "recipient": str(row["recipient"]),
+                "format": str(row["format"]),
+                "status": str(row["status"]),
+                "message_id": str(row["message_id"]) if row["message_id"] else None,
+                "error_message": str(row["error_message"]) if row["error_message"] else None,
+                "external_confirmed": bool(row["external_confirmed"]),
+                "created_at": str(row["created_at"]),
+                "sent_at": str(row["sent_at"]) if row["sent_at"] else None,
+            }
+            for row in rows
+        ]
+
+    @staticmethod
     def _prune_executions(connection: sqlite3.Connection, owner_user_id: int) -> None:
         """Keep at most EXECUTIONS_RETENTION records per user.
 
@@ -665,9 +961,9 @@ class IntelligenceStore:
             ).fetchone()[0]
         )
         finished_limit = max(0, EXECUTIONS_RETENTION - active_count)
-        connection.execute(
+        stale_rows = connection.execute(
             """
-            DELETE FROM intelligence_executions
+            SELECT id FROM intelligence_executions
             WHERE owner_user_id = ?
               AND status NOT IN ('pending', 'running')
               AND id NOT IN (
@@ -679,6 +975,18 @@ class IntelligenceStore:
               )
             """,
             (owner_user_id, owner_user_id, finished_limit),
+        ).fetchall()
+        stale_ids = [int(row[0]) for row in stale_rows]
+        if not stale_ids:
+            return
+        placeholders = ",".join("?" for _ in stale_ids)
+        connection.execute(
+            f"DELETE FROM intelligence_delivery_log WHERE execution_id IN ({placeholders})",
+            stale_ids,
+        )
+        connection.execute(
+            f"DELETE FROM intelligence_executions WHERE id IN ({placeholders})",
+            stale_ids,
         )
 
     def create_execution(
@@ -827,6 +1135,19 @@ class IntelligenceStore:
             "total_pages": total_pages,
         }
 
+    def list_recent_executions(self, limit: int = 50) -> list[dict[str, object]]:
+        limit = max(1, min(200, int(limit)))
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                rows = connection.execute(
+                    "SELECT * FROM intelligence_executions ORDER BY created_at DESC, id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to list recent intelligence executions") from exc
+        return [self._execution_from_row(row) for row in rows]
+
     def update_execution(self, execution_id: int, **updates: object) -> dict[str, object]:
         allowed = {
             "status",
@@ -845,6 +1166,8 @@ class IntelligenceStore:
             "request_payload_json",
             "search_answer",
             "search_followups_json",
+            "planning_status",
+            "planning_error_message",
         }
         values = {key: value for key, value in updates.items() if key in allowed}
         if not values:

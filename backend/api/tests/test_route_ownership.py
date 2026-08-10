@@ -83,12 +83,10 @@ class RouteOwnershipTests(unittest.TestCase):
             ("POST", "/api/jobs/{job_id}/cancel"),
             ("GET", "/api/jobs/{job_id}/events"),
             ("GET", "/api/custom-intelligence/options"),
-            ("POST", "/api/custom-intelligence/keyword-suggestions"),
             ("GET", "/api/custom-intelligence/topics"),
             ("POST", "/api/custom-intelligence/topics"),
             ("GET", "/api/custom-intelligence/topics/{topic_id}"),
             ("POST", "/api/custom-intelligence/topics/{topic_id}"),
-            ("POST", "/api/custom-intelligence/topics/{topic_id}/enabled"),
             ("DELETE", "/api/custom-intelligence/topics/{topic_id}"),
             ("POST", "/api/custom-intelligence/topics/{topic_id}/execute"),
             ("GET", "/api/custom-intelligence/executions"),
@@ -96,11 +94,24 @@ class RouteOwnershipTests(unittest.TestCase):
             ("GET", "/api/custom-intelligence/executions/{execution_id}"),
             ("POST", "/api/custom-intelligence/executions/{execution_id}/rerun"),
             ("POST", "/api/custom-intelligence/executions/{execution_id}/reanalyze"),
+            ("POST", "/api/custom-intelligence/executions/{execution_id}/email"),
             ("GET", "/api/custom-intelligence/executions/{execution_id}/report/pdf"),
             ("GET", "/api/admin/custom-intelligence/search-config"),
             ("POST", "/api/admin/custom-intelligence/search-config"),
             ("POST", "/api/admin/custom-intelligence/search-config/test"),
             ("POST", "/api/admin/custom-intelligence/search-config/reveal-key"),
+            ("GET", "/api/admin/custom-intelligence/llm-config"),
+            ("POST", "/api/admin/custom-intelligence/llm-config"),
+            ("POST", "/api/admin/custom-intelligence/llm-config/test"),
+            ("POST", "/api/admin/custom-intelligence/llm-config/reveal-key"),
+            ("GET", "/api/admin/custom-intelligence/smtp-config"),
+            ("POST", "/api/admin/custom-intelligence/smtp-config"),
+            ("POST", "/api/admin/custom-intelligence/smtp-config/test"),
+            ("POST", "/api/admin/custom-intelligence/smtp-config/reveal-authorization-code"),
+            ("GET", "/api/admin/custom-intelligence/default-rules"),
+            ("POST", "/api/admin/custom-intelligence/default-rules"),
+            ("GET", "/api/admin/custom-intelligence/executions"),
+            ("GET", "/api/admin/custom-intelligence/executions/{execution_id}/diagnostics"),
         }
         self.assertTrue(expected.issubset(registered), expected - registered)
 
@@ -135,6 +146,49 @@ class RouteOwnershipTests(unittest.TestCase):
             response = getattr(self.client, method)(path)
             self.assertEqual(response.status_code, 401)
 
+    def test_v2_execution_input_rejects_unknown_audience_and_invalid_focus_tags(self) -> None:
+        headers = self._admin_headers()
+        base = {
+            "audience_detail": "",
+            "focus": "关注近期证券行业变化",
+            "extra_focus": "",
+            "time_range": "month",
+            "report_length": "standard",
+        }
+        invalid_audience = self.client.post(
+            "/api/custom-intelligence/executions",
+            headers=headers,
+            json={**base, "audience": "unknown-audience", "focus_tags": []},
+        )
+        self.assertEqual(invalid_audience.status_code, 422)
+        missing_custom_detail = self.client.post(
+            "/api/custom-intelligence/executions",
+            headers=headers,
+            json={**base, "audience": "custom", "focus_tags": []},
+        )
+        self.assertEqual(missing_custom_detail.status_code, 422)
+        too_many_tags = self.client.post(
+            "/api/custom-intelligence/executions",
+            headers=headers,
+            json={
+                **base,
+                "audience": "management",
+                "focus_tags": ["财富管理", "AI 与智能投顾", "数字化转型", "监管政策"],
+            },
+        )
+        self.assertEqual(too_many_tags.status_code, 422)
+        hidden_source_parameter = self.client.post(
+            "/api/custom-intelligence/executions",
+            headers=headers,
+            json={
+                **base,
+                "audience": "management",
+                "focus_tags": [],
+                "source_preference": "authoritative",
+            },
+        )
+        self.assertEqual(hidden_source_parameter.status_code, 422)
+
     def test_custom_intelligence_background_route_and_owner_isolation(self) -> None:
         main.session_tokens["custom-user-7"] = {
             "username": "user-7",
@@ -165,31 +219,46 @@ class RouteOwnershipTests(unittest.TestCase):
             )
 
         request_payload = {
-            "question": "近期证券行业变化",
-            "analysis_perspective": "industry_research",
+            "audience": "industry_research",
+            "audience_detail": "",
+            "focus_tags": ["同业竞争"],
+            "focus": "近期证券行业变化",
+            "extra_focus": "",
             "time_range": "month",
-            "source_preference": "balanced",
-            "report_type": "industry_trends",
-            "analysis_depth": "concise",
+            "report_length": "concise",
         }
         with (
             patch.dict(os.environ, {"BAIDU_QIANFAN_API_KEY": "test-only"}),
+            patch.object(
+                custom_intelligence_service,
+                "_request_query_plan",
+                return_value={
+                    "intent": "验证路由所有权",
+                    "queries": [
+                        {"query": "证券行业变化", "purpose": "行业动态"},
+                        {"query": "券商经营变化", "purpose": "经营影响"},
+                    ],
+                },
+            ),
+            patch.object(custom_intelligence_service, "analysis_service_configured", return_value=True),
             patch.object(custom_intelligence_service.client, "search", side_effect=fake_search),
             patch.object(
                 custom_intelligence_service,
                 "_request_analysis",
                 return_value={
+                    "version": 2,
                     "title": "路由测试报告",
-                    "core_conclusion": "综合结论",
-                    "question": "近期证券行业变化",
+                    "audience": "industry_research",
                     "executed_at": "now",
                     "time_range": "month",
-                    "valid_source_count": 1,
-                    "report_type": "industry_trends",
-                    "service": "baidu_web_search+deepseek",
-                    "search_service": "baidu_web_search",
-                    "analysis_service": "deepseek",
-                    "is_fallback": False,
+                    "report_length": "concise",
+                    "core_judgment": [
+                        {"type": "analysis", "text": "综合结论", "source_ids": ["source-1"]}
+                    ],
+                    "key_developments": [],
+                    "impact_analysis": [],
+                    "company_implications": [],
+                    "risks_and_watch_items": [],
                 },
             ),
         ):
@@ -226,7 +295,7 @@ class RouteOwnershipTests(unittest.TestCase):
                 time.sleep(0.01)
         assert completed is not None
         self.assertEqual(completed.json()["execution"]["status"], "succeeded")
-        self.assertEqual(completed.json()["execution"]["request_id"], "request-route-1")
+        self.assertNotIn("request_id", completed.json()["execution"])
         self.assertEqual(len(completed.json()["execution"]["sources"]), 1)
 
     def test_admin_and_approved_user_login_are_fastapi_features(self) -> None:
@@ -347,6 +416,265 @@ class RouteOwnershipTests(unittest.TestCase):
             )
             self.assertEqual(revealed_changed.status_code, 200)
             self.assertEqual(revealed_changed.json(), {"api_key": "bce-v3/changed-secret-key"})
+
+    def test_admin_llm_smtp_rules_and_diagnostics_are_guarded_and_redacted(self) -> None:
+        admin_headers = self._admin_headers()
+        main.session_tokens["ai-config-user"] = {
+            "username": "ai-config-user",
+            "name": "AI Config User",
+            "role": "user",
+            "is_admin": False,
+            "user_id": 21,
+        }
+        user_headers = {"Authorization": "Bearer ai-config-user"}
+        for path in (
+            "/api/admin/custom-intelligence/llm-config",
+            "/api/admin/custom-intelligence/smtp-config",
+            "/api/admin/custom-intelligence/default-rules",
+            "/api/admin/custom-intelligence/executions",
+        ):
+            self.assertEqual(self.client.get(path).status_code, 401, path)
+            self.assertEqual(self.client.get(path, headers=user_headers).status_code, 403, path)
+
+        config_db = Path(_RUNTIME_DIR.name) / f"ai-config-{uuid.uuid4().hex}.db"
+        override_path = Path(_RUNTIME_DIR.name) / f"llm-override-{uuid.uuid4().hex}.json"
+        with patch.dict(
+            os.environ,
+            {
+                "CUSTOM_INTELLIGENCE_DB_PATH": str(config_db),
+                "LLM_CONFIG_OVERRIDE_PATH": str(override_path),
+            },
+        ):
+            llm_secret = "test-deepseek-handoff-key"
+            saved_llm = self.client.post(
+                "/api/admin/custom-intelligence/llm-config",
+                headers=admin_headers,
+                json={
+                    "enabled": True,
+                    "base_url": "https://llm.example.test/v1",
+                    "model": "test-deepseek-model",
+                    "api_key": llm_secret,
+                    "temperature": 0.1,
+                    "top_p": 1,
+                    "max_tokens": 524288,
+                    "timeout_seconds": 60,
+                    "use_json_object": True,
+                },
+            )
+            self.assertEqual(saved_llm.status_code, 200)
+            self.assertNotIn(llm_secret, saved_llm.text)
+            self.assertTrue(saved_llm.json()["has_api_key"])
+            self.assertEqual(saved_llm.json()["config_source"], "override")
+            self.assertEqual(
+                self.client.post(
+                    "/api/admin/custom-intelligence/llm-config/reveal-key",
+                    headers=admin_headers,
+                    json={"password": "wrong-password"},
+                ).status_code,
+                401,
+            )
+            revealed_llm = self.client.post(
+                "/api/admin/custom-intelligence/llm-config/reveal-key",
+                headers=admin_headers,
+                json={"password": "route-audit-password"},
+            )
+            self.assertEqual(revealed_llm.json(), {"api_key": llm_secret})
+            replaced_llm_secret = "test-deepseek-replaced-key"
+            replaced_llm = self.client.post(
+                "/api/admin/custom-intelligence/llm-config",
+                headers=admin_headers,
+                json={
+                    "enabled": True,
+                    "base_url": "https://llm.example.test/v1",
+                    "model": "test-deepseek-model",
+                    "api_key": replaced_llm_secret,
+                    "temperature": 0.1,
+                    "top_p": 1,
+                    "max_tokens": 524288,
+                    "timeout_seconds": 60,
+                    "use_json_object": True,
+                },
+            )
+            self.assertEqual(replaced_llm.status_code, 200)
+            self.assertNotIn(replaced_llm_secret, replaced_llm.text)
+            self.assertEqual(
+                self.client.post(
+                    "/api/admin/custom-intelligence/llm-config/reveal-key",
+                    headers=admin_headers,
+                    json={"password": "route-audit-password"},
+                ).json(),
+                {"api_key": replaced_llm_secret},
+            )
+            with patch.object(
+                custom_intelligence_routes,
+                "test_deepseek_configuration",
+                return_value={"status": "success", "message": "DeepSeek mock ok"},
+            ):
+                tested_llm = self.client.post(
+                    "/api/admin/custom-intelligence/llm-config/test",
+                    headers=admin_headers,
+                )
+            self.assertEqual(tested_llm.json()["status"], "success")
+
+            smtp_secret = "test-smtp-authorization-code"
+            saved_smtp = self.client.post(
+                "/api/admin/custom-intelligence/smtp-config",
+                headers=admin_headers,
+                json={
+                    "enabled": True,
+                    "username": "sender@126.com",
+                    "from_address": "sender@126.com",
+                    "authorization_code": smtp_secret,
+                    "timeout_seconds": 30,
+                },
+            )
+            self.assertEqual(saved_smtp.status_code, 200)
+            smtp_body = saved_smtp.json()
+            self.assertEqual((smtp_body["host"], smtp_body["port"], smtp_body["use_ssl"]), ("smtp.126.com", 465, True))
+            self.assertNotIn(smtp_secret, saved_smtp.text)
+            revealed_smtp = self.client.post(
+                "/api/admin/custom-intelligence/smtp-config/reveal-authorization-code",
+                headers=admin_headers,
+                json={"password": "route-audit-password"},
+            )
+            self.assertEqual(revealed_smtp.json(), {"authorization_code": smtp_secret})
+            replaced_smtp_secret = "test-smtp-replaced-code"
+            replaced_smtp = self.client.post(
+                "/api/admin/custom-intelligence/smtp-config",
+                headers=admin_headers,
+                json={
+                    "enabled": True,
+                    "username": "sender@126.com",
+                    "from_address": "sender@126.com",
+                    "authorization_code": replaced_smtp_secret,
+                    "timeout_seconds": 30,
+                },
+            )
+            self.assertEqual(replaced_smtp.status_code, 200)
+            self.assertNotIn(replaced_smtp_secret, replaced_smtp.text)
+            self.assertEqual(
+                self.client.post(
+                    "/api/admin/custom-intelligence/smtp-config/reveal-authorization-code",
+                    headers=admin_headers,
+                    json={"password": "route-audit-password"},
+                ).json(),
+                {"authorization_code": replaced_smtp_secret},
+            )
+            with patch.object(
+                custom_intelligence_routes,
+                "test_smtp_configuration",
+                return_value={"status": "success", "message": "SMTP mock ok"},
+            ):
+                tested_smtp = self.client.post(
+                    "/api/admin/custom-intelligence/smtp-config/test",
+                    headers=admin_headers,
+                )
+            self.assertEqual(tested_smtp.json()["status"], "success")
+
+            saved_rules = self.client.post(
+                "/api/admin/custom-intelligence/default-rules",
+                headers=admin_headers,
+                json={"analysis_instructions": "优先说明对证券公司的影响。"},
+            )
+            self.assertEqual(saved_rules.status_code, 200)
+            self.assertEqual(saved_rules.json()["analysis_instructions"], "优先说明对证券公司的影响。")
+
+            audit = self.client.get(
+                "/api/admin/audit/events?type=custom_intelligence_config_updated&page_size=100",
+                headers=admin_headers,
+            )
+            self.assertEqual(audit.status_code, 200)
+            self.assertNotIn(llm_secret, audit.text)
+            self.assertNotIn(smtp_secret, audit.text)
+            self.assertNotIn(replaced_llm_secret, audit.text)
+            self.assertNotIn(replaced_smtp_secret, audit.text)
+
+    def test_report_email_requires_external_confirmation_and_records_each_delivery(self) -> None:
+        headers = self._admin_headers()
+        email_db = Path(_RUNTIME_DIR.name) / f"email-route-{uuid.uuid4().hex}.db"
+        with patch.dict(os.environ, {"CUSTOM_INTELLIGENCE_DB_PATH": str(email_db)}):
+            custom_intelligence_service.store.ensure_schema()
+            execution = custom_intelligence_service.store.create_execution(
+                0,
+                {
+                    "audience": "management",
+                    "focus": "测试报告发送",
+                    "time_range": "month",
+                    "report_length": "standard",
+                },
+                "instant",
+                0,
+                original_query="测试报告发送",
+            )
+            source = {
+                "id": "source-1",
+                "title": "真实来源",
+                "url": "https://example.test/source",
+                "site_name": "example.test",
+                "date": "2026-08-01",
+                "snippet": "来源摘要",
+            }
+            report = {
+                "version": 2,
+                "title": "测试报告",
+                "audience": "management",
+                "executed_at": "2026-08-10T00:00:00+00:00",
+                "time_range": "month",
+                "report_length": "standard",
+                "core_judgment": [{"type": "fact", "text": "已核验事实", "source_ids": ["source-1"]}],
+                "key_developments": [],
+                "impact_analysis": [],
+                "company_implications": [],
+                "risks_and_watch_items": [],
+            }
+            custom_intelligence_service.store.update_execution(
+                int(execution["id"]),
+                status="succeeded",
+                search_status="succeeded",
+                analysis_status="succeeded",
+                sources_json=json.dumps([source], ensure_ascii=False),
+                report_json=json.dumps(report, ensure_ascii=False),
+                completed_at="2026-08-10T00:00:00+00:00",
+            )
+            unconfirmed = self.client.post(
+                f"/api/custom-intelligence/executions/{execution['id']}/email",
+                headers=headers,
+                json={
+                    "recipients": ["outside@example.com"],
+                    "format": "pdf",
+                    "external_confirmed": False,
+                },
+            )
+            self.assertEqual(unconfirmed.status_code, 409)
+
+            mock_results = [
+                {"recipient": "owner@csco.com.cn", "status": "sent", "message_id": "internal-message"},
+                {"recipient": "outside@example.com", "status": "sent", "message_id": "external-message"},
+            ]
+            with patch.object(custom_intelligence_routes, "send_report_email", return_value=mock_results) as sender:
+                sent = self.client.post(
+                    f"/api/custom-intelligence/executions/{execution['id']}/email",
+                    headers=headers,
+                    json={
+                        "recipients": ["owner@csco.com.cn", "outside@example.com"],
+                        "format": "pdf",
+                        "external_confirmed": True,
+                    },
+                )
+            self.assertEqual(sent.status_code, 200)
+            self.assertEqual(sent.json()["status"], "success")
+            self.assertEqual(len(sent.json()["deliveries"]), 2)
+            self.assertTrue(all("owner_user_id" not in item and "message_id" not in item for item in sent.json()["deliveries"]))
+            self.assertTrue(sender.call_args.kwargs["external_confirmed"])
+            self.assertEqual(sender.call_args.args[1], ["owner@csco.com.cn", "outside@example.com"])
+            self.assertEqual(
+                len(custom_intelligence_service.store.list_delivery_logs(int(execution["id"]))),
+                2,
+            )
+            self.assertEqual(
+                custom_intelligence_service.store.get_execution(0, int(execution["id"]))["status"],
+                "succeeded",
+            )
 
     def test_admin_user_and_audit_lists_support_search_and_pagination(self) -> None:
         headers = self._admin_headers()
@@ -531,42 +859,12 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(conditional.status_code, 304)
         self.assertEqual(compressed.headers["content-encoding"], "gzip")
 
-    def test_custom_intelligence_options_keywords_and_connection_test_routes(self) -> None:
+    def test_custom_intelligence_options_and_connection_test_routes(self) -> None:
         headers = self._admin_headers()
 
         options = self.client.get("/api/custom-intelligence/options", headers=headers)
         self.assertEqual(options.status_code, 200)
-        self.assertIn("analysis_configured", options.json())
-        self.assertIn("max_sources_by_depth", options.json())
-
-        keyword_payload = {
-            "question": "近期券商财富管理竞争变化",
-            "description": "关注头部券商的产品与客户体验",
-            "keywords": ["财富管理"],
-            "focus_objects": ["头部券商"],
-            "analysis_perspective": "product_business",
-            "max_suggestions": 8,
-        }
-        with patch.object(custom_intelligence_routes, "suggest_keywords", return_value=["投顾服务", "客户体验"]):
-            suggested = self.client.post(
-                "/api/custom-intelligence/keyword-suggestions",
-                headers=headers,
-                json=keyword_payload,
-            )
-        self.assertEqual(suggested.status_code, 200)
-        self.assertEqual(suggested.json(), {"suggestions": ["投顾服务", "客户体验"]})
-
-        with patch.object(
-            custom_intelligence_routes,
-            "suggest_keywords",
-            side_effect=custom_intelligence_service.AnalysisConfigurationError("not configured"),
-        ):
-            unavailable = self.client.post(
-                "/api/custom-intelligence/keyword-suggestions",
-                headers=headers,
-                json=keyword_payload,
-            )
-        self.assertEqual(unavailable.status_code, 503)
+        self.assertEqual(set(options.json()), {"service_status"})
 
         with patch.object(
             custom_intelligence_routes,
@@ -594,22 +892,18 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(failed_test.json()["status"], "failed")
         self.assertIn("连接测试失败", failed_test.json()["message"])
 
-    def test_custom_intelligence_topic_crud_enabled_guard_and_execute_route(self) -> None:
+    def test_custom_intelligence_topic_crud_and_execute_route(self) -> None:
         headers = self._admin_headers()
         marker = uuid.uuid4().hex
         payload = {
             "name": f"主题-{marker}",
-            "question": "近期证券行业监管变化",
-            "description": "跟踪监管与风险",
-            "keywords": ["监管"],
-            "focus_objects": ["证券公司"],
-            "analysis_perspective": "compliance_risk",
+            "audience": "compliance_risk",
+            "audience_detail": "",
+            "focus_tags": ["监管政策", "合规与风险"],
+            "focus": "近期证券行业监管变化",
+            "extra_focus": "区分事实和分析判断",
             "time_range": "month",
-            "source_preference": "authoritative",
-            "specified_sites": ["csrc.gov.cn"],
-            "report_type": "risk_monitoring",
-            "analysis_depth": "concise",
-            "extra_requirements": "区分事实和推测",
+            "report_length": "concise",
         }
         created = self.client.post("/api/custom-intelligence/topics", headers=headers, json=payload)
         self.assertEqual(created.status_code, 201)
@@ -624,35 +918,20 @@ class RouteOwnershipTests(unittest.TestCase):
         detail = self.client.get(f"/api/custom-intelligence/topics/{topic_id}", headers=headers)
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.json()["topic"]["name"], payload["name"])
+        self.assertNotIn("keywords", detail.json()["topic"])
+        self.assertNotIn("source_preference", detail.json()["topic"])
+        self.assertNotIn("specified_sites", detail.json()["topic"])
 
-        updated_payload = {**payload, "name": f"主题更新-{marker}", "analysis_depth": "deep"}
+        updated_payload = {**payload, "name": f"主题更新-{marker}", "report_length": "deep"}
         updated = self.client.post(
             f"/api/custom-intelligence/topics/{topic_id}",
             headers=headers,
             json=updated_payload,
         )
         self.assertEqual(updated.status_code, 200)
-        self.assertEqual(updated.json()["topic"]["analysis_depth"], "deep")
+        self.assertEqual(updated.json()["topic"]["report_length"], "deep")
 
-        disabled = self.client.post(
-            f"/api/custom-intelligence/topics/{topic_id}/enabled",
-            headers=headers,
-            json={"enabled": False},
-        )
-        self.assertEqual(disabled.status_code, 200)
-        self.assertFalse(disabled.json()["topic"]["enabled"])
-        blocked = self.client.post(
-            f"/api/custom-intelligence/topics/{topic_id}/execute",
-            headers=headers,
-        )
-        self.assertEqual(blocked.status_code, 409)
-
-        enabled = self.client.post(
-            f"/api/custom-intelligence/topics/{topic_id}/enabled",
-            headers=headers,
-            json={"enabled": True},
-        )
-        self.assertEqual(enabled.status_code, 200)
+        # V2 removes the old enable switch and keeps one-click execution.
         fake_execution = {"id": 9001, "topic_id": topic_id, "topic_name": updated_payload["name"], "status": "pending", "sources": []}
         with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_execution):
             executed = self.client.post(
@@ -674,24 +953,20 @@ class RouteOwnershipTests(unittest.TestCase):
         headers = self._admin_headers()
         owner_id = int(main.session_tokens[headers["Authorization"].removeprefix("Bearer ")]["user_id"])
         snapshot = {
-            "question": "近期证券行业动态",
-            "description": "路由矩阵测试",
-            "keywords": [],
-            "focus_objects": [],
-            "analysis_perspective": "industry_research",
+            "audience": "industry_research",
+            "audience_detail": "路由矩阵测试",
+            "focus_tags": [],
+            "focus": "近期证券行业动态",
+            "extra_focus": "",
             "time_range": "month",
-            "source_preference": "balanced",
-            "specified_sites": [],
-            "report_type": "industry_trends",
-            "analysis_depth": "concise",
-            "extra_requirements": "",
+            "report_length": "concise",
         }
         execution = custom_intelligence_service.store.create_execution(
             owner_id,
             snapshot,
             "instant",
             owner_id,
-            original_query=snapshot["question"],
+            original_query=snapshot["focus"],
         )
         execution_id = int(execution["id"])
         source = {
@@ -702,17 +977,17 @@ class RouteOwnershipTests(unittest.TestCase):
             "snippet": "来源摘要",
         }
         report = {
+            "version": 2,
             "title": "路由矩阵报告",
-            "core_conclusion": "综合结论",
+            "audience": "industry_research",
+            "core_judgment": [{"type": "analysis", "text": "综合结论", "source_ids": ["source-1"]}],
             "time_range": "month",
-            "report_type": "industry_trends",
+            "report_length": "concise",
             "executed_at": "2026-08-10T00:00:00+00:00",
-            "key_dynamics": [],
-            "focus_sections": [],
-            "opportunities": [],
-            "risks": [],
-            "watch_items": [],
-            "recommended_followups": [],
+            "key_developments": [],
+            "impact_analysis": [],
+            "company_implications": [],
+            "risks_and_watch_items": [],
         }
         custom_intelligence_service.store.update_execution(
             execution_id,
@@ -724,16 +999,16 @@ class RouteOwnershipTests(unittest.TestCase):
             request_payload_json=json.dumps(
                 {
                     "search_summary": {
-                        "requested_source_count": 20,
+                        "requested_source_count": 15,
                         "unique_source_count": 1,
-                        "round_count": 5,
-                        "supplemental_round_count": 4,
+                        "round_count": 1,
                         "reached_source_target": False,
                     },
                     "search_rounds": [
                         {
                             "round": 1,
-                            "facet": "primary",
+                            "query": "近期证券行业动态",
+                            "purpose": "行业动态",
                             "status": "succeeded",
                             "raw_reference_count": 1,
                             "new_source_count": 1,
@@ -756,15 +1031,21 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertNotIn("request_payload", detail.json()["execution"])
         self.assertEqual(detail.json()["execution"]["sources"][0]["id"], "source-1")
-        self.assertEqual(detail.json()["execution"]["search_coverage"]["round_count"], 5)
-        self.assertEqual(detail.json()["execution"]["search_coverage"]["rounds"][0]["new_source_count"], 1)
+        self.assertNotIn("search_coverage", detail.json()["execution"])
+        diagnostics = self.client.get(
+            f"/api/admin/custom-intelligence/executions/{execution_id}/diagnostics",
+            headers=headers,
+        )
+        self.assertEqual(diagnostics.status_code, 200)
+        self.assertEqual(diagnostics.json()["diagnostics"]["counts"]["round_count"], 1)
+        self.assertEqual(diagnostics.json()["diagnostics"]["search"]["rounds"][0]["new_source_count"], 1)
 
         fake_rerun = {"id": 9002, "topic_id": None, "trigger_type": "rerun", "status": "pending", "sources": []}
         with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_rerun) as rerun_submit:
             rerun = self.client.post(f"/api/custom-intelligence/executions/{execution_id}/rerun", headers=headers)
         self.assertEqual(rerun.status_code, 202)
         self.assertEqual(rerun_submit.call_args.kwargs["trigger_type"], "rerun")
-        self.assertEqual(rerun_submit.call_args.args[1]["question"], snapshot["question"])
+        self.assertEqual(rerun_submit.call_args.args[1]["focus"], snapshot["focus"])
 
         fake_reanalysis = {"id": execution_id, "status": "running", "sources": [source]}
         with patch.object(custom_intelligence_routes, "reanalyze_execution", return_value=fake_reanalysis):
@@ -780,6 +1061,28 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(pdf.headers["content-type"], "application/pdf")
         self.assertTrue(pdf.content.startswith(b"%PDF"))
         self.assertIn("filename*=UTF-8''", pdf.headers["content-disposition"])
+
+        legacy = custom_intelligence_service.store.create_execution(
+            owner_id,
+            snapshot,
+            "instant",
+            owner_id,
+            original_query="旧版报告",
+        )
+        legacy_id = int(legacy["id"])
+        custom_intelligence_service.store.update_execution(
+            legacy_id,
+            status="succeeded",
+            search_status="succeeded",
+            analysis_status="succeeded",
+            sources_json=json.dumps([source], ensure_ascii=False),
+            report_json=json.dumps({"title": "旧版报告", "core_conclusion": "旧版结论"}, ensure_ascii=False),
+            completed_at="2026-08-10T00:00:00+00:00",
+        )
+        self.assertEqual(
+            self.client.get(f"/api/custom-intelligence/executions/{legacy_id}/report/pdf", headers=headers).status_code,
+            409,
+        )
 
         empty = custom_intelligence_service.store.create_execution(
             owner_id,

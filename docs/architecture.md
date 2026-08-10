@@ -22,8 +22,8 @@
 - `shared/dashboard-data/contracts.ts`：标准数据包 Schema 类型，与后端导出层字段保持一致。
 - `frontend/src/features/`：采购看板、App Watch、管理员控制台和 AI 自定义情报中心的稳定入口。
 - `frontend/src/features/admin/use-job-runner.ts`：单活动任务的启动、SSE、轮询兜底、恢复、取消和资源清理。
-- `backend/api/custom_intelligence_service.py` 与 `qianfan_search.py`：AI 自定义情报中心的后台执行、主题/执行记录存储与百度千帆搜索封装。
-- `frontend/src/features/custom-intelligence/`：AI 自定义情报中心页面（即时搜索、主题管理、执行记录与结构化报告）。
+- `backend/api/custom_intelligence_service.py` 与 `qianfan_search.py`：AI 情报助手的 Query Planning、百度普通搜索、简单来源筛选与 Report V2 生成。
+- `frontend/src/features/custom-intelligence/`：AI 情报助手页面（生成报告、我的助手、历史报告与统一 Report V2 展示）。
 - 数据清洗、去重、券商归一化、标签/分类、排序字段、基础统计和筛选项在导出层一次完成；访问端只基于标准化记录做当前筛选、简单排序、分页和图表交互派生，避免前端重复解释原始 CSV。
 - dashboard-data GET 由后端内存缓存与 GZip 降低生成、传输成本；正式前端主动取最新包，避免跨页并发请求命中不完整的 304 缓存状态。接口仍保留 ETag 供其他兼容客户端使用。
 - 标准化 `dashboard-data` 数据包由 `GET /api/dashboard-data/*` 提供给正式前端；前端只读取 Manifest 和标准化 JSON，不读取 CSV、数据库或服务器路径。App 更新、AI 分析可在 Manifest 中标记为不可用。

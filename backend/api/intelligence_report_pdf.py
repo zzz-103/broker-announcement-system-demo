@@ -1,9 +1,8 @@
-"""Render a custom-intelligence execution report as a downloadable PDF.
+"""Render the persisted Report V2 as a downloadable PDF.
 
-The layout mirrors the on-screen report viewer (title, meta, core conclusion,
-key dynamics, focus sections, impact analysis, opportunities/risks/watch
-items, follow-ups and reference sources). Only user-visible report fields are
-included: no request payloads, request IDs or other internal fields.
+The section order, item text, citation numbers and sources mirror the Web and
+HTML-mail renderers. Internal plans, prompts, request IDs and diagnostics are
+never included.
 """
 
 from __future__ import annotations
@@ -180,6 +179,100 @@ def _dynamics_block(dynamic: dict, index: int, source_indexes: dict[str, int], s
     return KeepTogether([table, Spacer(1, 3 * mm)])
 
 
+ITEM_TYPE_LABELS = {"fact": "事实", "analysis": "分析", "recommendation": "分析建议"}
+AUDIENCE_LABELS = {
+    "management": "管理层",
+    "business_product": "业务 / 产品",
+    "technology": "技术",
+    "compliance_risk": "合规风控",
+    "industry_research": "行业研究",
+    "custom": "自定义",
+}
+REPORT_LENGTH_LABELS = {"concise": "简报", "standard": "标准", "deep": "深度"}
+
+
+def _legacy_items(report: dict, key: str) -> list[dict[str, object]]:
+    """Translate the pre-V2 report shape for PDF-only compatibility."""
+    if key == "core_judgment":
+        value = report.get("core_conclusion")
+        return [{"type": "analysis", "text": value, "source_ids": []}] if value else []
+    if key == "key_developments":
+        result: list[dict[str, object]] = []
+        for dynamic in report.get("key_dynamics") or []:
+            if not isinstance(dynamic, dict):
+                continue
+            text = dynamic.get("summary") or dynamic.get("impact_analysis") or dynamic.get("title")
+            if text:
+                result.append(
+                    {
+                        "type": "fact",
+                        "text": text,
+                        "source_ids": dynamic.get("source_ids") or [],
+                    }
+                )
+        return result
+    if key == "impact_analysis":
+        value = report.get("impact_analysis")
+        return [{"type": "analysis", "text": value, "source_ids": []}] if isinstance(value, str) and value else []
+    if key == "company_implications":
+        result = []
+        for section in report.get("focus_sections") or []:
+            if not isinstance(section, dict):
+                continue
+            for item in section.get("items") or []:
+                if str(item).strip():
+                    result.append({"type": "analysis", "text": item, "source_ids": []})
+        return result
+    if key == "risks_and_watch_items":
+        return [
+            *[
+                {"type": "analysis", "text": item, "source_ids": []}
+                for item in (report.get("risks") or [])
+                if str(item).strip()
+            ],
+            *[
+                {"type": "recommendation", "text": item, "source_ids": []}
+                for item in (report.get("watch_items") or [])
+                if str(item).strip()
+            ],
+        ]
+    return []
+
+
+def _report_items(report: dict, key: str) -> list[dict[str, object]]:
+    value = report.get(key)
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict) and str(item.get("text") or "").strip()]
+    return _legacy_items(report, key)
+
+
+def _content_block(item: dict[str, object], source_indexes: dict[str, int], styles: dict[str, ParagraphStyle]):
+    item_type = str(item.get("type") or "analysis").casefold()
+    label = ITEM_TYPE_LABELS.get(item_type, "分析")
+    text = _clean(item.get("text"), 4_000)
+    source_ids = [str(source_id) for source_id in (item.get("source_ids") or [])]
+    marks = [str(source_indexes[source_id]) for source_id in source_ids if source_id in source_indexes]
+    parts: list = [Paragraph(escape(label), styles["card_meta"])]
+    if text:
+        parts.append(Paragraph(escape(text).replace("\n", "<br/>"), styles["body_indent"]))
+    if marks:
+        parts.append(Paragraph(f"来源：{'、'.join(marks)}", styles["card_meta"]))
+    table = Table([[parts]], colWidths=[168 * mm])
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), CARD_BG),
+                ("BOX", (0, 0), (-1, -1), 0.5, CARD_BORDER),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ]
+        )
+    )
+    return KeepTogether([table, Spacer(1, 2.5 * mm)])
+
+
 def build_report_pdf(execution: dict) -> bytes:
     """Build the PDF document bytes for a search-succeeded execution."""
     _ensure_font()
@@ -189,88 +282,48 @@ def build_report_pdf(execution: dict) -> bytes:
     source_indexes = {str(item.get("id")): index + 1 for index, item in enumerate(sources)}
     snapshot = execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {}
 
-    title = _clean(report.get("title"), 200) or _clean(execution.get("original_query"), 200) or "即时情报报告"
+    title = _clean(report.get("title"), 500) or _clean(execution.get("original_query"), 500) or "即时情报报告"
     story: list = [Paragraph(escape(title), styles["title"]), Spacer(1, 2.5 * mm)]
 
     meta_bits = [
         f"完成时间：{escape(_format_date(report.get('executed_at') or execution.get('completed_at') or execution.get('created_at')))}",
         f"时间范围：{escape(TIME_RANGE_LABELS.get(str(report.get('time_range') or snapshot.get('time_range')), '—'))}",
-        f"报告类型：{escape(REPORT_TYPE_LABELS.get(str(report.get('report_type') or snapshot.get('report_type')), '—'))}",
+        f"报告篇幅：{escape(REPORT_LENGTH_LABELS.get(_clean(report.get('report_length'), 32), _clean(report.get('report_length'), 32) or '—'))}",
         f"有效来源：{len(sources)} 条",
     ]
+    audience = _clean(report.get("audience"), 120)
+    if audience:
+        meta_bits.append(f"受众：{escape(AUDIENCE_LABELS.get(audience, audience))}")
     story.append(Paragraph(" ｜ ".join(meta_bits), styles["meta"]))
-    question = _clean(execution.get("original_query") or snapshot.get("question"), 500)
+    question = _clean(execution.get("original_query") or snapshot.get("question") or snapshot.get("focus"), 500)
     if question:
         story.append(Spacer(1, 1.5 * mm))
-        story.append(Paragraph(f"业务问题：{escape(question)}", styles["meta"]))
+        story.append(Paragraph(f"研究重点：{escape(question)}", styles["meta"]))
 
-    core_conclusion = _clean(report.get("core_conclusion"), 4_000)
-    if core_conclusion:
-        _section_heading(story, styles, "核心结论")
-        story.append(Paragraph(escape(core_conclusion).replace("\n", "<br/>"), styles["body"]))
-
-    dynamics = [item for item in (report.get("key_dynamics") or []) if isinstance(item, dict)]
-    if dynamics:
-        _section_heading(story, styles, f"重点动态（{len(dynamics)}）")
-        for index, dynamic in enumerate(dynamics):
-            story.append(_dynamics_block(dynamic, index, source_indexes, styles))
-
-    focus_sections = [
-        item
-        for item in (report.get("focus_sections") or [])
-        if isinstance(item, dict) and str(item.get("title") or "").strip() and item.get("items")
-    ]
-    if focus_sections:
-        _section_heading(story, styles, "专属分析章节")
-        for section in focus_sections:
-            story.append(Paragraph(escape(_clean(section.get("title"), 120)), styles["card_title"]))
-            story.append(Spacer(1, 1 * mm))
-            _bullet_list(story, styles, [str(item) for item in (section.get("items") or [])])
-            story.append(Spacer(1, 3 * mm))
-
-    impact_analysis = _clean(report.get("impact_analysis"), 4_000)
-    if impact_analysis:
-        _section_heading(story, styles, "影响分析")
-        story.append(Paragraph(escape(impact_analysis).replace("\n", "<br/>"), styles["body"]))
-
-    columns: list[tuple[str, list[str]]] = []
-    for heading, key in (("机会", "opportunities"), ("风险", "risks"), ("关注事项", "watch_items")):
-        items = [str(item) for item in (report.get(key) or []) if str(item).strip()]
+    section_labels = (
+        ("核心判断", "core_judgment"),
+        ("关键动态与案例", "key_developments"),
+        ("影响分析", "impact_analysis"),
+        ("对公司的启示", "company_implications"),
+        ("风险与关注事项", "risks_and_watch_items"),
+    )
+    for heading, key in section_labels:
+        items = _report_items(report, key)
+        _section_heading(story, styles, f"{heading}（{len(items)}）")
         if items:
-            columns.append((heading, items))
-    if columns:
-        _section_heading(story, styles, "机会 · 风险 · 关注事项")
-        width = 168 * mm / len(columns)
-        cells = []
-        for heading, items in columns:
-            cell_parts = [Paragraph(escape(heading), styles["card_title"]), Spacer(1, 1.5 * mm)]
-            for item in items[:12]:
-                cell_parts.append(Paragraph(escape(_clean(item, 400)), styles["bullet"], bulletText="•"))
-            cells.append(cell_parts)
-        grid = Table([cells], colWidths=[width] * len(columns))
-        grid.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), CARD_BG),
-                    ("BOX", (0, 0), (-1, -1), 0.5, CARD_BORDER),
-                    ("LINEBEFORE", (1, 0), (-1, -1), 0.5, CARD_BORDER),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ]
-            )
-        )
-        story.append(grid)
+            for item in items:
+                story.append(_content_block(item, source_indexes, styles))
+        else:
+            story.append(Paragraph("暂无内容。", styles["small"]))
 
-    followups = [str(item) for item in (report.get("recommended_followups") or []) if str(item).strip()]
-    if followups:
-        _section_heading(story, styles, "推荐追问")
-        _bullet_list(story, styles, followups)
+    warnings = [str(item).strip() for item in (report.get("reference_warnings") or []) if str(item).strip()]
+    if warnings:
+        _section_heading(story, styles, "来源提示")
+        for warning in warnings:
+            story.append(Paragraph(escape(warning), styles["small"]))
 
     if sources:
-        _section_heading(story, styles, f"本次报告参考来源（{len(sources)}）")
+        _section_heading(story, styles, f"信息来源（{len(sources)}）")
         for index, source in enumerate(sources):
             parts: list = []
             source_title = _clean(source.get("title"), 200) or "未命名来源"

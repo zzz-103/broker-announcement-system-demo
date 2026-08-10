@@ -1,63 +1,30 @@
 "use client";
 
-import { Bookmark, Download, Loader2, RefreshCw } from "lucide-react";
+import { Download, Loader2, Mail, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { CustomIntelligenceExecution } from "@/lib/api/contracts";
-import { canSaveExecutionAsConfig, isActiveExecution } from "./custom-intelligence-utils";
+import type { IntelligenceAssistantExecution } from "@/lib/api/contracts";
 
 export interface ReportActionsProps {
-  execution: CustomIntelligenceExecution;
-  analysisAvailable: boolean;
-  serviceAvailable: boolean;
-  activeExecutionId: number | null;
+  execution: IntelligenceAssistantExecution;
   pdfExporting: boolean;
-  onExportPdf: (execution: CustomIntelligenceExecution) => void;
-  onSaveConfig?: (execution: CustomIntelligenceExecution) => void;
-  onReanalyze?: (execution: CustomIntelligenceExecution) => void;
-  onRerun?: (execution: CustomIntelligenceExecution) => void;
+  onExportPdf: (execution: IntelligenceAssistantExecution) => void;
+  onEmail: (execution: IntelligenceAssistantExecution) => void;
+  onRerun?: (execution: IntelligenceAssistantExecution) => void;
+  onReanalyze?: (execution: IntelligenceAssistantExecution) => void;
 }
 
-export function ReportActions({
-  execution,
-  analysisAvailable,
-  serviceAvailable,
-  activeExecutionId,
-  pdfExporting,
-  onExportPdf,
-  onSaveConfig,
-  onReanalyze,
-  onRerun,
-}: ReportActionsProps) {
-  const searchSucceeded = execution.search_status === "succeeded";
-  const analysisFailed = searchSucceeded && execution.analysis_status === "failed";
-  const terminal = !isActiveExecution(execution.status);
-  const hasCompleteReport = terminal
-    && searchSucceeded
-    && execution.sources.length > 0
-    && (execution.analysis_status === "succeeded" || execution.analysis_status === "failed");
-  const canSaveConfig = canSaveExecutionAsConfig(execution);
+export function ReportActions({ execution, pdfExporting, onExportPdf, onEmail, onRerun, onReanalyze }: ReportActionsProps) {
+  const active = execution.status === "pending" || execution.status === "running";
+  const searchSucceeded = execution.search_status === "succeeded" || (!execution.search_status && execution.status === "succeeded");
+  const analysisFailed = execution.analysis_status === "failed";
+  const reportV2 = Boolean(execution.report && "version" in execution.report && execution.report.version === 2);
+  const ready = !active && searchSucceeded && execution.status === "succeeded" && reportV2;
   return (
-    <>
-      {hasCompleteReport && (
-        <Button variant="outline" size="sm" onClick={() => onExportPdf(execution)} disabled={pdfExporting}>
-          {pdfExporting ? <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}导出 PDF
-        </Button>
-      )}
-      {canSaveConfig && onSaveConfig && (
-        <Button variant="outline" size="sm" onClick={() => onSaveConfig(execution)}>
-          <Bookmark className="size-3.5" aria-hidden="true" />保存为配置
-        </Button>
-      )}
-      {analysisFailed && onReanalyze && (
-        <Button variant="outline" size="sm" onClick={() => onReanalyze(execution)} disabled={!analysisAvailable || activeExecutionId !== null}>
-          <RefreshCw className="size-3.5" aria-hidden="true" />重新分析
-        </Button>
-      )}
-      {terminal && onRerun && (
-        <Button variant="outline" size="sm" onClick={() => onRerun(execution)} disabled={activeExecutionId !== null || !serviceAvailable}>
-          <RefreshCw className="size-3.5" aria-hidden="true" />重新执行
-        </Button>
-      )}
-    </>
+    <div className="flex flex-wrap items-center gap-2">
+      {ready && <Button variant="outline" size="sm" onClick={() => onExportPdf(execution)} disabled={pdfExporting}>{pdfExporting ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}下载 PDF</Button>}
+      {ready && <Button variant="outline" size="sm" onClick={() => onEmail(execution)}><Mail className="size-3.5" aria-hidden="true" />发送邮件</Button>}
+      {analysisFailed && onReanalyze && <Button variant="outline" size="sm" onClick={() => onReanalyze(execution)}><RefreshCw className="size-3.5" aria-hidden="true" />重新分析</Button>}
+      {!active && onRerun && <Button variant="outline" size="sm" onClick={() => onRerun(execution)}><RefreshCw className="size-3.5" aria-hidden="true" />再次生成</Button>}
+    </div>
   );
 }

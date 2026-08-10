@@ -11,7 +11,16 @@ from zoneinfo import ZoneInfo
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = PROJECT_ROOT / "backend" / "data" / "audit.db"
-EVENT_TYPES = {"qr_visit", "qualification_application", "login_success", "dashboard_view"}
+EVENT_TYPES = {
+    "qr_visit",
+    "qualification_application",
+    "login_success",
+    "dashboard_view",
+    "custom_intelligence_config_updated",
+    "custom_intelligence_secret_revealed",
+    "custom_intelligence_connection_tested",
+    "custom_intelligence_email_sent",
+}
 
 
 class AuditStoreError(Exception):

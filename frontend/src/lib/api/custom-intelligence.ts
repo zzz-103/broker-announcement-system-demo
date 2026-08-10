@@ -1,20 +1,25 @@
 import { BackendApiError, buildApiUrl, readError, requestJson } from "./core";
 import type {
-  CustomIntelligenceExecutionResponse,
-  CustomIntelligenceExecutionsResponse,
   CustomIntelligenceOptionsResponse,
-  CustomIntelligenceTopicResponse,
-  CustomIntelligenceTopicsResponse,
-  InstantSearchRequest,
   IntelligenceSearchConfigInput,
   IntelligenceSearchConfigResponse,
   IntelligenceSearchTestResponse,
-  IntelligenceTopic,
-  KeywordSuggestionRequest,
-  KeywordSuggestionsResponse,
+  IntelligenceAssistantEmailInput,
+  IntelligenceAssistantEmailResponse,
+  IntelligenceAssistantExecutionResponse,
+  IntelligenceAssistantExecutionsResponse,
+  IntelligenceAssistantRequest,
+  IntelligenceAssistantTopicResponse,
+  IntelligenceAssistantTopicsResponse,
+  IntelligenceAdminExecutionsResponse,
+  IntelligenceDefaultRulesInput,
+  IntelligenceDefaultRulesResponse,
+  IntelligenceExecutionDiagnosticsResponse,
+  IntelligenceLlmConfigInput,
+  IntelligenceLlmConfigResponse,
+  IntelligenceSmtpConfigInput,
+  IntelligenceSmtpConfigResponse,
 } from "./contracts";
-
-type TopicPayload = Omit<IntelligenceTopic, "id" | "enabled" | "created_at" | "updated_at">;
 
 export function fetchCustomIntelligenceOptions(
   token: string,
@@ -73,165 +78,6 @@ export function revealAdminSearchConfigKey(
   );
 }
 
-export function suggestCustomIntelligenceKeywords(
-  token: string,
-  payload: KeywordSuggestionRequest,
-  signal?: AbortSignal,
-): Promise<KeywordSuggestionsResponse> {
-  return requestJson<KeywordSuggestionsResponse>(
-    "/api/custom-intelligence/keyword-suggestions",
-    { method: "POST", body: JSON.stringify(payload), signal },
-    token,
-  );
-}
-
-export function fetchCustomIntelligenceTopics(
-  token: string,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceTopicsResponse> {
-  return requestJson<CustomIntelligenceTopicsResponse>(
-    "/api/custom-intelligence/topics",
-    { signal },
-    token,
-  );
-}
-
-export function createCustomIntelligenceTopic(
-  token: string,
-  payload: TopicPayload,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceTopicResponse> {
-  return requestJson<CustomIntelligenceTopicResponse>(
-    "/api/custom-intelligence/topics",
-    { method: "POST", body: JSON.stringify(payload), signal },
-    token,
-  );
-}
-
-export function fetchCustomIntelligenceTopic(
-  token: string,
-  topicId: number,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceTopicResponse> {
-  return requestJson<CustomIntelligenceTopicResponse>(
-    `/api/custom-intelligence/topics/${encodeURIComponent(String(topicId))}`,
-    { signal },
-    token,
-  );
-}
-
-export function updateCustomIntelligenceTopic(
-  token: string,
-  topicId: number,
-  payload: TopicPayload,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceTopicResponse> {
-  return requestJson<CustomIntelligenceTopicResponse>(
-    `/api/custom-intelligence/topics/${encodeURIComponent(String(topicId))}`,
-    { method: "POST", body: JSON.stringify(payload), signal },
-    token,
-  );
-}
-
-export function setCustomIntelligenceTopicEnabled(
-  token: string,
-  topicId: number,
-  enabled: boolean,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceTopicResponse> {
-  return requestJson<CustomIntelligenceTopicResponse>(
-    `/api/custom-intelligence/topics/${encodeURIComponent(String(topicId))}/enabled`,
-    { method: "POST", body: JSON.stringify({ enabled }), signal },
-    token,
-  );
-}
-
-export function deleteCustomIntelligenceTopic(
-  token: string,
-  topicId: number,
-  signal?: AbortSignal,
-): Promise<{ deleted: boolean; id: number }> {
-  return requestJson<{ deleted: boolean; id: number }>(
-    `/api/custom-intelligence/topics/${encodeURIComponent(String(topicId))}`,
-    { method: "DELETE", signal },
-    token,
-  );
-}
-
-export function executeCustomIntelligenceTopic(
-  token: string,
-  topicId: number,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceExecutionResponse> {
-  return requestJson<CustomIntelligenceExecutionResponse>(
-    `/api/custom-intelligence/topics/${encodeURIComponent(String(topicId))}/execute`,
-    { method: "POST", signal },
-    token,
-  );
-}
-
-export function fetchCustomIntelligenceExecutions(
-  token: string,
-  page = 1,
-  pageSize = 20,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceExecutionsResponse> {
-  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-  return requestJson<CustomIntelligenceExecutionsResponse>(
-    `/api/custom-intelligence/executions?${params.toString()}`,
-    { signal },
-    token,
-  );
-}
-
-export function createCustomIntelligenceExecution(
-  token: string,
-  payload: InstantSearchRequest,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceExecutionResponse> {
-  return requestJson<CustomIntelligenceExecutionResponse>(
-    "/api/custom-intelligence/executions",
-    { method: "POST", body: JSON.stringify(payload), signal },
-    token,
-  );
-}
-
-export function fetchCustomIntelligenceExecution(
-  token: string,
-  executionId: number,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceExecutionResponse> {
-  return requestJson<CustomIntelligenceExecutionResponse>(
-    `/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}`,
-    { signal },
-    token,
-  );
-}
-
-export function rerunCustomIntelligenceExecution(
-  token: string,
-  executionId: number,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceExecutionResponse> {
-  return requestJson<CustomIntelligenceExecutionResponse>(
-    `/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/rerun`,
-    { method: "POST", signal },
-    token,
-  );
-}
-
-export function reanalyzeCustomIntelligenceExecution(
-  token: string,
-  executionId: number,
-  signal?: AbortSignal,
-): Promise<CustomIntelligenceExecutionResponse> {
-  return requestJson<CustomIntelligenceExecutionResponse>(
-    `/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/reanalyze`,
-    { method: "POST", signal },
-    token,
-  );
-}
-
 export async function downloadCustomIntelligenceReportPdf(
   token: string,
   executionId: number,
@@ -263,4 +109,173 @@ export async function downloadCustomIntelligenceReportPdf(
     }
   }
   return { blob: await response.blob(), filename };
+}
+
+const assistantPath = (suffix = "") => `/api/custom-intelligence${suffix}`;
+
+export function createAssistantExecution(
+  token: string,
+  payload: IntelligenceAssistantRequest,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantExecutionResponse> {
+  return requestJson<IntelligenceAssistantExecutionResponse>(
+    assistantPath("/executions"),
+    { method: "POST", body: JSON.stringify(payload), signal },
+    token,
+  );
+}
+
+export function fetchAssistantExecutions(
+  token: string,
+  page = 1,
+  pageSize = 10,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantExecutionsResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return requestJson<IntelligenceAssistantExecutionsResponse>(
+    `${assistantPath("/executions")}?${params.toString()}`,
+    { signal },
+    token,
+  );
+}
+
+export function fetchAssistantExecution(
+  token: string,
+  executionId: number,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantExecutionResponse> {
+  return requestJson<IntelligenceAssistantExecutionResponse>(
+    assistantPath(`/executions/${encodeURIComponent(String(executionId))}`),
+    { signal },
+    token,
+  );
+}
+
+export function rerunAssistantExecution(
+  token: string,
+  executionId: number,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantExecutionResponse> {
+  return requestJson<IntelligenceAssistantExecutionResponse>(
+    assistantPath(`/executions/${encodeURIComponent(String(executionId))}/rerun`),
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function reanalyzeAssistantExecution(
+  token: string,
+  executionId: number,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantExecutionResponse> {
+  return requestJson<IntelligenceAssistantExecutionResponse>(
+    assistantPath(`/executions/${encodeURIComponent(String(executionId))}/reanalyze`),
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function fetchAssistantTopics(
+  token: string,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantTopicsResponse> {
+  return requestJson<IntelligenceAssistantTopicsResponse>(assistantPath("/topics"), { signal }, token);
+}
+
+export function createAssistantTopic(
+  token: string,
+  payload: IntelligenceAssistantRequest & { name: string },
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantTopicResponse> {
+  return requestJson<IntelligenceAssistantTopicResponse>(
+    assistantPath("/topics"),
+    { method: "POST", body: JSON.stringify(payload), signal },
+    token,
+  );
+}
+
+export function updateAssistantTopic(
+  token: string,
+  topicId: number,
+  payload: IntelligenceAssistantRequest & { name: string },
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantTopicResponse> {
+  return requestJson<IntelligenceAssistantTopicResponse>(
+    assistantPath(`/topics/${encodeURIComponent(String(topicId))}`),
+    { method: "POST", body: JSON.stringify(payload), signal },
+    token,
+  );
+}
+
+export function deleteAssistantTopic(token: string, topicId: number, signal?: AbortSignal): Promise<{ deleted: boolean; id: number }> {
+  return requestJson<{ deleted: boolean; id: number }>(
+    assistantPath(`/topics/${encodeURIComponent(String(topicId))}`),
+    { method: "DELETE", signal },
+    token,
+  );
+}
+
+export function executeAssistantTopic(
+  token: string,
+  topicId: number,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantExecutionResponse> {
+  return requestJson<IntelligenceAssistantExecutionResponse>(
+    assistantPath(`/topics/${encodeURIComponent(String(topicId))}/execute`),
+    { method: "POST", signal },
+    token,
+  );
+}
+
+export function sendAssistantExecutionEmail(
+  token: string,
+  executionId: number,
+  payload: IntelligenceAssistantEmailInput,
+  signal?: AbortSignal,
+): Promise<IntelligenceAssistantEmailResponse> {
+  return requestJson<IntelligenceAssistantEmailResponse>(
+    assistantPath(`/executions/${encodeURIComponent(String(executionId))}/email`),
+    { method: "POST", body: JSON.stringify(payload), signal },
+    token,
+  );
+}
+
+export function fetchAdminLlmConfig(token: string, signal?: AbortSignal): Promise<IntelligenceLlmConfigResponse> {
+  return requestJson<IntelligenceLlmConfigResponse>("/api/admin/custom-intelligence/llm-config", { signal }, token);
+}
+export function saveAdminLlmConfig(token: string, payload: IntelligenceLlmConfigInput, signal?: AbortSignal): Promise<IntelligenceLlmConfigResponse> {
+  return requestJson<IntelligenceLlmConfigResponse>("/api/admin/custom-intelligence/llm-config", { method: "POST", body: JSON.stringify(payload), signal }, token);
+}
+export function testAdminLlmConfig(token: string, signal?: AbortSignal): Promise<IntelligenceSearchTestResponse> {
+  return requestJson<IntelligenceSearchTestResponse>("/api/admin/custom-intelligence/llm-config/test", { method: "POST", signal }, token);
+}
+export function revealAdminLlmConfigKey(token: string, password: string, signal?: AbortSignal): Promise<{ api_key: string }> {
+  return requestJson<{ api_key: string }>("/api/admin/custom-intelligence/llm-config/reveal-key", { method: "POST", body: JSON.stringify({ password }), signal }, token);
+}
+
+export function fetchAdminSmtpConfig(token: string, signal?: AbortSignal): Promise<IntelligenceSmtpConfigResponse> {
+  return requestJson<IntelligenceSmtpConfigResponse>("/api/admin/custom-intelligence/smtp-config", { signal }, token);
+}
+export function saveAdminSmtpConfig(token: string, payload: IntelligenceSmtpConfigInput, signal?: AbortSignal): Promise<IntelligenceSmtpConfigResponse> {
+  return requestJson<IntelligenceSmtpConfigResponse>("/api/admin/custom-intelligence/smtp-config", { method: "POST", body: JSON.stringify(payload), signal }, token);
+}
+export function testAdminSmtpConfig(token: string, signal?: AbortSignal): Promise<IntelligenceSearchTestResponse> {
+  return requestJson<IntelligenceSearchTestResponse>("/api/admin/custom-intelligence/smtp-config/test", { method: "POST", signal }, token);
+}
+export function revealAdminSmtpAuthorizationCode(token: string, adminPassword: string, signal?: AbortSignal): Promise<{ authorization_code: string }> {
+  return requestJson<{ authorization_code: string }>("/api/admin/custom-intelligence/smtp-config/reveal-authorization-code", { method: "POST", body: JSON.stringify({ password: adminPassword }), signal }, token);
+}
+
+export function fetchAdminDefaultRules(token: string, signal?: AbortSignal): Promise<IntelligenceDefaultRulesResponse> {
+  return requestJson<IntelligenceDefaultRulesResponse>("/api/admin/custom-intelligence/default-rules", { signal }, token);
+}
+export function saveAdminDefaultRules(token: string, payload: IntelligenceDefaultRulesInput, signal?: AbortSignal): Promise<IntelligenceDefaultRulesResponse> {
+  return requestJson<IntelligenceDefaultRulesResponse>("/api/admin/custom-intelligence/default-rules", { method: "POST", body: JSON.stringify(payload), signal }, token);
+}
+export function fetchAdminAssistantExecutions(token: string, page = 1, pageSize = 10, signal?: AbortSignal): Promise<IntelligenceAdminExecutionsResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return requestJson<IntelligenceAdminExecutionsResponse>(`/api/admin/custom-intelligence/executions?${params.toString()}`, { signal }, token);
+}
+export function fetchAdminExecutionDiagnostics(token: string, executionId: number, signal?: AbortSignal): Promise<IntelligenceExecutionDiagnosticsResponse> {
+  return requestJson<IntelligenceExecutionDiagnosticsResponse>(`/api/admin/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/diagnostics`, { signal }, token);
 }

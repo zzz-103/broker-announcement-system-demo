@@ -1,1 +1,1 @@
-export type CustomIntelligenceTab = "instant" | "topics" | "executions";
+export type CustomIntelligenceTab = "generate" | "assistants" | "history";

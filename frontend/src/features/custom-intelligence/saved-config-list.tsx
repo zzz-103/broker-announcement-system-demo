@@ -1,141 +1,54 @@
 "use client";
 
-import {
-  BrainCircuit,
-  FileText,
-  Loader2,
-  Pencil,
-  Play,
-  Plus,
-} from "lucide-react";
-import type {
-  CustomIntelligenceExecution,
-  CustomIntelligenceOptionsResponse,
-  IntelligenceTopic,
-} from "@/lib/api/contracts";
-import { formatDateOnly } from "@/lib/display";
-import { optionLabel } from "./custom-intelligence-utils";
-import { RowMenu } from "./row-menu";
-
-interface SavedConfigListProps {
-  topics: IntelligenceTopic[];
-  loading: boolean;
-  options: CustomIntelligenceOptionsResponse;
-  serviceAvailable: boolean;
-  activeExecutionId: number | null;
-  topicUpdatingId: number | null;
-  recentExecutionsByTopic?: Map<number, CustomIntelligenceExecution>;
-  onCreate: () => void;
-  onToggle: (topic: IntelligenceTopic) => void;
-  onEdit: (topic: IntelligenceTopic) => void;
-  onDelete: (topic: IntelligenceTopic) => void;
-  onLoad: (topic: IntelligenceTopic) => void;
-  onLoadAndSearch: (topic: IntelligenceTopic) => void;
-  onOpenReport?: (execution: CustomIntelligenceExecution) => void;
-}
+import { Edit3, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import type { IntelligenceAssistantTopic } from "@/lib/api/contracts";
+import { AUDIENCE_LABEL, REPORT_LENGTH_LABEL, TIME_RANGE_LABEL } from "./custom-intelligence-constants";
 
 export function SavedConfigList({
   topics,
   loading,
-  options,
-  serviceAvailable,
   activeExecutionId,
-  topicUpdatingId,
-  recentExecutionsByTopic,
   onCreate,
-  onToggle,
   onEdit,
   onDelete,
-  onLoad,
-  onLoadAndSearch,
-  onOpenReport,
-}: SavedConfigListProps) {
-  if (loading && topics.length === 0) {
-    return (
-      <div className="flex items-center gap-2 py-10 text-sm text-[#667085]" role="status" aria-live="polite">
-        <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-        正在加载已保存配置…
-      </div>
-    );
-  }
-
-  if (topics.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed border-[#C8D7F0] bg-[#F8FAFD] py-8 text-center" role="status">
-        <BrainCircuit className="mx-auto size-7 text-[#9FB9E8]" aria-hidden="true" />
-        <p className="mt-2 text-sm font-semibold text-[#344054]">暂无已保存配置</p>
-        <p className="mt-1 text-xs text-[#98A2B3]">在即时搜索中保存常用参数组合，之后可一键载入或搜索。</p>
-        <button type="button" onClick={onCreate} className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]">
-          <Plus className="size-3.5" aria-hidden="true" />新建配置
-        </button>
-      </div>
-    );
-  }
-
+  onRun,
+}: {
+  topics: IntelligenceAssistantTopic[];
+  loading: boolean;
+  activeExecutionId: number | null;
+  onCreate: () => void;
+  onEdit: (topic: IntelligenceAssistantTopic) => void;
+  onDelete: (topic: IntelligenceAssistantTopic) => void;
+  onRun: (topic: IntelligenceAssistantTopic) => void;
+}) {
+  if (loading && topics.length === 0) return <div className="flex items-center gap-2 py-10 text-sm text-[#667085]" role="status"><Loader2 className="size-4 animate-spin" aria-hidden="true" />正在加载我的助手…</div>;
+  if (topics.length === 0) return (
+    <div className="rounded-lg border border-dashed border-[#C8D7F0] bg-[#F8FAFD] py-10 text-center">
+      <p className="text-sm font-semibold text-[#344054]">还没有保存助手</p>
+      <p className="mt-1 text-xs text-[#98A2B3]">把常用的提问保存下来，下次一键生成。</p>
+      <button type="button" onClick={onCreate} className="mt-4 inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8]"><Plus className="size-3.5" aria-hidden="true" />新建助手</button>
+    </div>
+  );
   return (
-    <div className="divide-y divide-[#E4EAF2]" aria-busy={loading}>
+    <div className="space-y-3" aria-busy={loading}>
       {topics.map((topic) => {
-        const recent = recentExecutionsByTopic?.get(topic.id);
-        const busy = topicUpdatingId === topic.id;
+        const busy = activeExecutionId !== null;
         return (
-          <article key={topic.id} className={`grid gap-3 px-3 py-3.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${topic.enabled ? "bg-white" : "bg-[#FAFBFC]"}`}>
-            <div className="min-w-0">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <h4 className="min-w-0 truncate text-sm font-semibold text-[#243B61]" title={topic.name}>{topic.name}</h4>
-                <span className={`shrink-0 rounded px-2 py-0.5 text-[10px] font-semibold ${topic.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                  {topic.enabled ? "已启用" : "已停用"}
-                </span>
+          <article key={topic.id} className="rounded-lg border border-[#E4EAF2] bg-white p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h4 className="truncate text-sm font-semibold text-[#243B61]" title={topic.name}>{topic.name}</h4>
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#475467]">{topic.focus}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px] text-[#98A2B3]">
+                  <span>{AUDIENCE_LABEL[topic.audience] || topic.audience}</span><span aria-hidden="true">·</span><span>{TIME_RANGE_LABEL[topic.time_range] || topic.time_range}</span><span aria-hidden="true">·</span><span>{REPORT_LENGTH_LABEL[topic.report_length] || topic.report_length}</span>
+                  {topic.focus_tags.map((tag) => <span key={tag} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[#315EA8]">{tag}</span>)}
+                </div>
               </div>
-              {topic.question && (
-                <p className="mt-1 truncate text-xs text-[#344054]" title={topic.question}>业务问题：{topic.question}</p>
-              )}
-              <p className="mt-1 truncate text-xs text-[#667085]" title={topic.description || "未填写业务背景"}>{topic.description || "未填写业务背景"}</p>
-              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-[10px] text-[#98A2B3]">
-                <span>{optionLabel(options.perspectives, topic.analysis_perspective)}</span>
-                <span aria-hidden="true">·</span>
-                <span>{optionLabel(options.time_ranges, topic.time_range)}</span>
-                <span aria-hidden="true">·</span>
-                <span>更新于 {topic.updated_at ? formatDateOnly(topic.updated_at) : "—"}</span>
-                {recent && (
-                  <>
-                    <span aria-hidden="true">·</span>
-                    <span className={recent.status === "succeeded" ? "text-emerald-600" : recent.status === "failed" ? "text-red-600" : "text-amber-600"}>
-                      {recent.status === "succeeded" ? "最近成功" : recent.status === "failed" && recent.search_status === "succeeded" ? "分析失败" : recent.status === "failed" ? "最近失败" : "最近执行中"}
-                    </span>
-                  </>
-                )}
-                {topic.keywords.slice(0, 4).map((keyword) => (
-                  <span key={keyword} className="rounded bg-[#EEF4FF] px-1.5 py-0.5 text-[#315EA8]" title={keyword}>{keyword}</span>
-                ))}
-                {topic.keywords.length > 4 && <span>+{topic.keywords.length - 4}</span>}
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button type="button" onClick={() => onRun(topic)} disabled={busy} className="inline-flex items-center gap-1 rounded-md bg-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-45"><Play className="size-3" aria-hidden="true" />一键生成</button>
+                <button type="button" onClick={() => onEdit(topic)} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFC]"><Edit3 className="size-3" aria-hidden="true" />编辑</button>
+                <button type="button" onClick={() => onDelete(topic)} disabled={busy} className="inline-flex items-center gap-1 rounded-md border border-transparent px-2.5 py-1.5 text-[11px] font-semibold text-[#B42318] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="size-3" aria-hidden="true" />删除</button>
               </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-[#F0F2F5] pt-2 lg:border-t-0 lg:pt-0">
-              {recent?.search_status === "succeeded" && (
-                <button type="button" onClick={() => onOpenReport?.(recent)} className="inline-flex items-center gap-1 rounded-md border border-[#C8D7F0] px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] hover:bg-[#EEF4FF]">
-                  <FileText className="size-3" aria-hidden="true" />{recent.analysis_status === "succeeded" ? "查看最近报告" : "查看原始结果"}
-                </button>
-              )}
-              <button type="button" onClick={() => onLoad(topic)} className="rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]">
-                载入
-              </button>
-              <button type="button" onClick={() => onEdit(topic)} className="inline-flex items-center gap-1 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]">
-                <Pencil className="size-3" aria-hidden="true" />编辑
-              </button>
-              <button type="button" onClick={() => onLoadAndSearch(topic)} disabled={!topic.enabled || activeExecutionId !== null || !serviceAvailable || busy} className="inline-flex items-center gap-1 rounded-md bg-[#2563EB] px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-45 lg:ml-auto">
-                <Play className="size-3" aria-hidden="true" />载入并搜索
-              </button>
-              <RowMenu
-                label={`配置「${topic.name}」更多操作`}
-                items={[
-                  {
-                    label: topic.enabled ? "停用配置" : "启用配置",
-                    disabled: busy || activeExecutionId !== null,
-                    onSelect: () => onToggle(topic),
-                  },
-                  { label: "删除配置", danger: true, disabled: busy || activeExecutionId !== null, onSelect: () => onDelete(topic) },
-                ]}
-              />
             </div>
           </article>
         );

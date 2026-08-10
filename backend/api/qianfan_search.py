@@ -11,6 +11,9 @@ from .config import settings
 from .custom_intelligence_store import store
 
 QIANFAN_WEB_SEARCH_ENDPOINT = "https://qianfan.baidubce.com/v2/ai_search/web_search"
+QIANFAN_AUTH_HEADER = "Authorization"
+QIANFAN_SEARCH_SOURCE = "baidu_search_v2"
+QIANFAN_QUERY_TOP_K = 10
 
 
 class QianfanError(Exception):
@@ -219,19 +222,18 @@ def build_search_payload(
     query: str,
     *,
     time_range: str = "month",
-    top_k: int = 20,
-    specified_sites: list[str] | None = None,
+    top_k: int = QIANFAN_QUERY_TOP_K,
 ) -> dict[str, Any]:
     """Build a stable, testable Baidu web_search request without an API key."""
     payload: dict[str, Any] = {
         "messages": [{"role": "user", "content": query}],
-        "search_source": "baidu_search_v2",
+        "search_source": QIANFAN_SEARCH_SOURCE,
         "search_recency_filter": time_range,
-        "resource_type_filter": [{"type": "web", "top_k": max(1, min(50, int(top_k)))}],
+        # Report V2 deliberately uses a small, predictable ordinary-search
+        # budget for every planned query.  Callers may ask for a smaller
+        # value, but never expand one round beyond the fixed top_k=10 budget.
+        "resource_type_filter": [{"type": "web", "top_k": max(1, min(QIANFAN_QUERY_TOP_K, int(top_k)))}],
     }
-    domains = [str(item).strip().lower() for item in (specified_sites or []) if str(item).strip()]
-    if domains:
-        payload["search_filter"] = {"match": {"site": domains[:5]}}
     return payload
 
 
@@ -245,12 +247,14 @@ def effective_search_config() -> EffectiveSearchConfig:
     row = store.get_search_config_row()
     if row is not None:
         saved_api_key = str(row.get("api_key") or "").strip()
-        saved_auth_header = str(row.get("auth_header") or "").strip()
         return EffectiveSearchConfig(
             enabled=bool(row.get("enabled")),
             api_key=saved_api_key or settings.baidu_qianfan_api_key,
             endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
-            auth_header=saved_auth_header or settings.baidu_qianfan_auth_header,
+            # V2 intentionally removes the alternate AppBuilder header.  The
+            # server always sends the documented bce-v3 Bearer credential in
+            # the standard Authorization header.
+            auth_header=QIANFAN_AUTH_HEADER,
             timeout_seconds=max(1.0, min(600.0, float(row.get("timeout_seconds") or 0))),
             config_source="admin",
         )
@@ -259,7 +263,7 @@ def effective_search_config() -> EffectiveSearchConfig:
         enabled=bool(api_key),
         api_key=api_key,
         endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
-        auth_header=settings.baidu_qianfan_auth_header,
+        auth_header=QIANFAN_AUTH_HEADER,
         timeout_seconds=settings.baidu_qianfan_timeout_seconds,
         config_source="env",
     )
@@ -279,8 +283,7 @@ def validate_configuration() -> None:
 
 
 def _authorization_value(api_key: str) -> str:
-    # Both documented variants accept bearer-style credentials; deployments
-    # can override the header name while the secret remains server-side.
+    # The first production version formally supports bce-v3 API keys only.
     return f"Bearer {api_key}"
 
 
@@ -292,7 +295,7 @@ class QianfanSearchClient:
         config = effective_search_config()
         validate_configuration()
         headers = {
-            config.auth_header: _authorization_value(config.api_key),
+            QIANFAN_AUTH_HEADER: _authorization_value(config.api_key),
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
@@ -361,7 +364,7 @@ def test_search_configuration() -> dict[str, object]:
     payload = build_search_payload(
         "百度千帆最新产品信息",
         time_range="month",
-        top_k=6,
+        top_k=QIANFAN_QUERY_TOP_K,
     )
     result = client.search(payload)
     return {

@@ -1,41 +1,9 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import type {
-  CustomIntelligenceOptionsResponse,
-  InstantSearchRequest,
-} from "@/lib/api/contracts";
-import { ConfigFields, FieldLabel } from "./config-fields";
-import { FIELD_INPUT_CLASS } from "./custom-intelligence-constants";
-import { KeywordSuggestionPicker } from "./keyword-suggestion-picker";
-
-export interface SavedConfigDialogProps {
-  open: boolean;
-  saving: boolean;
-  editorId: number | null;
-  name: string;
-  draft: InstantSearchRequest;
-  options: CustomIntelligenceOptionsResponse;
-  analysisAvailable: boolean;
-  suggesting: boolean;
-  keywordSuggestions: string[];
-  selectedSuggestions: string[];
-  onOpenChange: (open: boolean) => void;
-  onNameChange: (value: string) => void;
-  onDraftChange: (value: InstantSearchRequest) => void;
-  onRequestSuggestions: () => void;
-  onSelectedSuggestionsChange: (value: string[]) => void;
-  onMergeSuggestions: () => void;
-  onSave: () => void;
-}
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { IntelligenceAssistantRequest } from "@/lib/api/contracts";
+import { AUDIENCE_OPTIONS, FIELD_INPUT_CLASS, FOCUS_TAG_LIMIT, FOCUS_TAG_OPTIONS, REPORT_LENGTH_OPTIONS, TIME_RANGE_OPTIONS } from "./custom-intelligence-constants";
 
 export function SavedConfigDialog({
   open,
@@ -43,54 +11,46 @@ export function SavedConfigDialog({
   editorId,
   name,
   draft,
-  options,
-  analysisAvailable,
-  suggesting,
-  keywordSuggestions,
-  selectedSuggestions,
   onOpenChange,
   onNameChange,
   onDraftChange,
-  onRequestSuggestions,
-  onSelectedSuggestionsChange,
-  onMergeSuggestions,
   onSave,
-}: SavedConfigDialogProps) {
+}: {
+  open: boolean;
+  saving: boolean;
+  editorId: number | null;
+  name: string;
+  draft: IntelligenceAssistantRequest;
+  onOpenChange: (open: boolean) => void;
+  onNameChange: (value: string) => void;
+  onDraftChange: (value: IntelligenceAssistantRequest) => void;
+  onSave: () => void;
+}) {
+  const update = <K extends keyof IntelligenceAssistantRequest>(key: K, value: IntelligenceAssistantRequest[K]) => onDraftChange({ ...draft, [key]: value });
   return (
     <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
-      <DialogContent className="flex w-[calc(100%-1rem)] max-h-[calc(100dvh-1rem)] max-w-[900px] flex-col gap-0 overflow-hidden border-[#D9E2EC] bg-white p-0 sm:w-[calc(100%-2rem)] sm:max-h-[calc(100dvh-2rem)] sm:!max-w-[900px]">
-        <DialogHeader className="shrink-0 border-b border-[#E4EAF2] bg-[#F8FAFD] px-4 py-4 pr-12 sm:px-6 sm:py-5">
-          <DialogTitle className="text-base text-[#172033]">{editorId === null ? "保存搜索配置" : "编辑已保存配置"}</DialogTitle>
-          <DialogDescription className="text-[#667085]">配置保存后可在“已保存配置”中载入、编辑、停用或删除。</DialogDescription>
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-[720px] flex-col gap-0 overflow-hidden border-[#D9E2EC] bg-white p-0 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]">
+        <DialogHeader className="shrink-0 border-b border-[#E4EAF2] bg-[#F8FAFD] px-4 py-4 pr-12 sm:px-6">
+          <DialogTitle className="text-base text-[#172033]">{editorId === null ? "保存为我的助手" : "编辑我的助手"}</DialogTitle>
+          <DialogDescription className="text-[#667085]">保存后可在“我的助手”中一键生成，不会改变当前提问。</DialogDescription>
         </DialogHeader>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
-          <div className="mb-4">
-            <FieldLabel hint="必填">配置名称</FieldLabel>
-            <input value={name} onChange={(event) => onNameChange(event.target.value)} maxLength={120} placeholder="例如：券商财富管理竞争监测" className={FIELD_INPUT_CLASS} />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+          <div className="space-y-4">
+            <div><label htmlFor="assistant-config-name" className="mb-1.5 block text-xs font-semibold text-[#344054]">助手名称 <span className="font-normal text-[#98A2B3]">必填</span></label><input id="assistant-config-name" value={name} onChange={(event) => onNameChange(event.target.value)} maxLength={80} placeholder="例如：财富管理竞争监测" className={FIELD_INPUT_CLASS} /></div>
+            <div><label htmlFor="assistant-config-focus" className="mb-1.5 block text-xs font-semibold text-[#344054]">业务问题</label><textarea id="assistant-config-focus" value={draft.focus} onChange={(event) => update("focus", event.target.value)} rows={3} maxLength={1000} className="w-full resize-y rounded-md border border-[#D0D5DD] px-3 py-2.5 text-sm leading-6 outline-none focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15" /></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div><label htmlFor="assistant-config-audience" className="mb-1.5 block text-xs font-semibold text-[#344054]">读者</label><select id="assistant-config-audience" value={draft.audience} onChange={(event) => { const audience = event.target.value as IntelligenceAssistantRequest["audience"]; onDraftChange({ ...draft, audience, audience_detail: audience === "custom" ? draft.audience_detail : "" }); }} className={FIELD_INPUT_CLASS}>{AUDIENCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div><label htmlFor="assistant-config-time" className="mb-1.5 block text-xs font-semibold text-[#344054]">时间范围</label><select id="assistant-config-time" value={draft.time_range} onChange={(event) => update("time_range", event.target.value as IntelligenceAssistantRequest["time_range"])} className={FIELD_INPUT_CLASS}>{TIME_RANGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+              <div><label htmlFor="assistant-config-length" className="mb-1.5 block text-xs font-semibold text-[#344054]">报告篇幅</label><select id="assistant-config-length" value={draft.report_length} onChange={(event) => update("report_length", event.target.value as IntelligenceAssistantRequest["report_length"])} className={FIELD_INPUT_CLASS}>{REPORT_LENGTH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div>
+            </div>
+            <fieldset><legend className="mb-1.5 text-xs font-semibold text-[#344054]">业务主题 <span className="font-normal text-[#98A2B3]">最多 3 个</span></legend><div className="flex flex-wrap gap-1.5">{FOCUS_TAG_OPTIONS.map((tag) => { const selected = draft.focus_tags.includes(tag); return <button key={tag} type="button" aria-pressed={selected} disabled={!selected && draft.focus_tags.length >= FOCUS_TAG_LIMIT} onClick={() => update("focus_tags", selected ? draft.focus_tags.filter((item) => item !== tag) : [...draft.focus_tags, tag])} className={`rounded-full border px-2.5 py-1 text-[11px] ${selected ? "border-[#4F7CFF] bg-[#EEF4FF] text-[#2455AC]" : "border-[#E4EAF2] text-[#667085]"} disabled:opacity-40`}>{tag}</button>; })}</div></fieldset>
+            {draft.audience === "custom" && <div><label htmlFor="assistant-config-audience-detail" className="mb-1.5 block text-xs font-semibold text-[#344054]">自定义读者背景 <span className="font-normal text-[#98A2B3]">必填</span></label><input id="assistant-config-audience-detail" value={draft.audience_detail} onChange={(event) => update("audience_detail", event.target.value)} maxLength={240} className={FIELD_INPUT_CLASS} /></div>}
+            <div><label htmlFor="assistant-config-extra" className="mb-1.5 block text-xs font-semibold text-[#344054]">额外关注（可选）</label><textarea id="assistant-config-extra" value={draft.extra_focus} onChange={(event) => update("extra_focus", event.target.value)} rows={2} maxLength={600} className="w-full resize-y rounded-md border border-[#D0D5DD] px-3 py-2.5 text-sm leading-6 outline-none focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15" /></div>
           </div>
-          <div className="mb-4">
-            <FieldLabel hint="可选">业务问题</FieldLabel>
-            <textarea value={draft.question} onChange={(event) => onDraftChange({ ...draft, question: event.target.value })} rows={2} maxLength={1000} placeholder="载入配置时自动填充到即时搜索表单" className="w-full resize-y rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15" />
-          </div>
-          <ConfigFields value={draft} onChange={onDraftChange} options={options} showQuestion={false} />
-          <KeywordSuggestionPicker
-            title="生成的关键词"
-            description="根据配置描述、已有关键词和关注对象生成，确认后才合并。"
-            suggestions={keywordSuggestions}
-            selected={selectedSuggestions}
-            variant="dialog"
-            generateAction={(
-              <button type="button" onClick={() => void onRequestSuggestions()} disabled={suggesting || !analysisAvailable} className="inline-flex items-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#315EA8] disabled:opacity-50">
-                {suggesting ? "生成中…" : "补充关键词"}
-              </button>
-            )}
-            onSelectionChange={onSelectedSuggestionsChange}
-            onMerge={onMergeSuggestions}
-          />
         </div>
-        <DialogFooter className="relative z-10 shrink-0 border-t border-[#E4EAF2] bg-[#FBFCFE] px-4 py-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-4">
-          <button type="button" onClick={() => onOpenChange(false)} disabled={saving} className="rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-white">取消</button>
-          <button type="button" onClick={() => void onSave()} disabled={saving || !name.trim()} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50">{saving && <Loader2 className="size-4 animate-spin" />}保存配置</button>
+        <DialogFooter className="shrink-0 border-t border-[#E4EAF2] bg-[#FBFCFE] px-4 py-3.5 sm:px-6">
+          <button type="button" onClick={() => onOpenChange(false)} disabled={saving} className="rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467]">取消</button>
+          <button type="button" onClick={onSave} disabled={saving || !name.trim() || !draft.focus.trim() || (draft.audience === "custom" && !draft.audience_detail.trim())} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">{saving && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}保存助手</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

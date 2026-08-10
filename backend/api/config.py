@@ -165,15 +165,6 @@ class Settings:
         return os.getenv("BAIDU_QIANFAN_API_KEY", "").strip()
 
     @property
-    def baidu_qianfan_auth_header(self) -> str:
-        value = os.getenv("BAIDU_QIANFAN_AUTH_HEADER", "Authorization").strip()
-        supported = {
-            "authorization": "Authorization",
-            "x-appbuilder-authorization": "X-Appbuilder-Authorization",
-        }
-        return supported.get(value.casefold(), "Authorization")
-
-    @property
     def baidu_qianfan_timeout_seconds(self) -> float:
         try:
             value = float(os.getenv("BAIDU_QIANFAN_TIMEOUT_SECONDS", "120"))
@@ -184,6 +175,66 @@ class Settings:
     @property
     def custom_intelligence_max_workers(self) -> int:
         return bounded_int("CUSTOM_INTELLIGENCE_MAX_WORKERS", 2, 1, 8)
+
+    @property
+    def llm_config_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("LLM_CONFIG_PATH"),
+            PROJECT_ROOT / "backend" / "config" / "llm_api_config.json",
+        )
+
+    @property
+    def llm_config_override_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("LLM_CONFIG_OVERRIDE_PATH"),
+            PROJECT_ROOT / "backend" / "data" / "llm_api_config.override.json",
+        )
+
+    @property
+    def smtp_enabled(self) -> bool:
+        return os.getenv("CUSTOM_INTELLIGENCE_EMAIL_ENABLED", "false").strip().casefold() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    @property
+    def smtp_host(self) -> str:
+        return "smtp.126.com"
+
+    @property
+    def smtp_port(self) -> int:
+        # 126.com's administrator flow is intentionally SSL-only on 465.
+        return 465
+
+    @property
+    def smtp_username(self) -> str:
+        return os.getenv("SMTP_USERNAME", "").strip()
+
+    @property
+    def smtp_from_address(self) -> str:
+        return os.getenv("SMTP_FROM_ADDRESS", "").strip() or self.smtp_username
+
+    @property
+    def smtp_authorization_code(self) -> str:
+        return os.getenv("SMTP_AUTHORIZATION_CODE", "").strip()
+
+    @property
+    def smtp_timeout_seconds(self) -> float:
+        try:
+            value = float(os.getenv("SMTP_TIMEOUT_SECONDS", "30"))
+        except (TypeError, ValueError):
+            return 30.0
+        return value if 1 <= value <= 180 else 30.0
+
+    @property
+    def smtp_allowed_domain(self) -> str:
+        return "csco.com.cn"
+
+    @property
+    def smtp_max_recipients(self) -> int:
+        return 5
 
 
 settings = Settings()

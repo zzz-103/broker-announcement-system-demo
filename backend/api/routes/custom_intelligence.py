@@ -5,19 +5,40 @@ from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response as RawResponse
 
+from ..audit_store import AuditStoreError, record_event
 from ..auth import get_session, require_admin_token
 from ..config import settings
 from ..contracts import (
     InstantSearchRequest,
-    IntelligenceTopicCreate,
-    IntelligenceTopicEnabled,
-    IntelligenceTopicUpdate,
-    KeywordSuggestionRequest,
     SearchServiceConfigUpdate,
     VerifyPasswordRequest,
+)
+from ..intelligence_admin_config import (
+    AdminPasswordRequest,
+    DefaultRulesUpdate,
+    DeepSeekConfigUpdate,
+    EmailDeliveryRequest,
+    IntelligenceTopicCreateCompat,
+    IntelligenceTopicUpdateCompat,
+    SMTPConfigUpdate,
+    public_deepseek_config,
+    reveal_deepseek_key,
+    save_deepseek_config,
+    test_deepseek_configuration,
+    verify_admin_password,
+)
+from ..intelligence_email import (
+    EmailConfigurationError,
+    EmailRecipientError,
+    ExternalRecipientConfirmationRequired,
+    effective_smtp_config,
+    public_smtp_config,
+    send_report_email,
+    test_smtp_configuration,
+    validate_smtp_identity,
 )
 from ..custom_intelligence_service import (
     ActiveExecutionError,
@@ -30,7 +51,6 @@ from ..custom_intelligence_service import (
     reanalyze_execution,
     store,
     submit_execution,
-    suggest_keywords,
 )
 from ..custom_intelligence_store import TOPICS_PER_USER_LIMIT, TopicLimitError, TopicNameConflictError
 from ..intelligence_report_pdf import build_report_pdf, report_pdf_filename
@@ -41,13 +61,13 @@ from ..qianfan_search import (
     QianfanTimeoutError,
     QIANFAN_WEB_SEARCH_ENDPOINT,
     effective_search_config,
-    qianfan_error_message,
     qianfan_http_status,
     test_search_configuration,
 )
 
 
 router = APIRouter()
+DEFAULT_ANALYSIS_RULES: dict[str, object] = {"analysis_instructions": ""}
 
 
 def _owner_user_id(session: dict[str, object]) -> int:
@@ -61,82 +81,349 @@ def _owner_user_id(session: dict[str, object]) -> int:
     raise HTTPException(status_code=401, detail="session user identity is unavailable")
 
 
+def _admin_actor_id(authorization: str | None) -> int:
+    try:
+        session = get_session(authorization)
+    except HTTPException:
+        return 0
+    value = session.get("user_id")
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _audit_intelligence_event(
+    authorization: str | None,
+    event_type: str,
+    *,
+    action: str,
+    target: str,
+    result: str = "success",
+    metadata: dict[str, object] | None = None,
+) -> None:
+    """Write a credential-free audit event without breaking the primary action."""
+    try:
+        session = get_session(authorization)
+        event_metadata: dict[str, object] = {
+            "action": action,
+            "target": target,
+            "result": result,
+        }
+        if metadata:
+            event_metadata.update(metadata)
+        record_event(
+            event_type=event_type,
+            user_id=_admin_actor_id(authorization),
+            username=str(session.get("username") or ""),
+            role=str(session.get("role") or ""),
+            source="custom_intelligence",
+            metadata=event_metadata,
+        )
+    except (AuditStoreError, HTTPException, TypeError, ValueError):
+        pass
+
+
+def _public_assistant_fields(value: dict[str, object]) -> dict[str, object]:
+    allowed_audiences = {
+        "management",
+        "business_product",
+        "technology",
+        "compliance_risk",
+        "industry_research",
+        "custom",
+    }
+    audience_aliases = {
+        "product_business": "business_product",
+        "管理层": "management",
+        "业务/产品": "business_product",
+        "业务 / 产品": "business_product",
+        "技术": "technology",
+        "合规风控": "compliance_risk",
+        "行业研究": "industry_research",
+    }
+    raw_audience = str(value.get("audience") or value.get("analysis_perspective") or "industry_research").strip()
+    audience = audience_aliases.get(raw_audience, raw_audience)
+    if audience not in allowed_audiences:
+        audience = "industry_research"
+
+    raw_tags = value.get("focus_tags") or value.get("keywords") or []
+    focus_tags: list[str] = []
+    if isinstance(raw_tags, list):
+        for item in raw_tags:
+            tag = str(item).strip()[:80]
+            if tag and tag not in focus_tags:
+                focus_tags.append(tag)
+            if len(focus_tags) >= 3:
+                break
+    focus_objects = value.get("focus_objects")
+    legacy_focus = "、".join(str(item).strip() for item in focus_objects if str(item).strip()) if isinstance(focus_objects, list) else ""
+    focus = str(value.get("focus") or value.get("question") or legacy_focus or "").strip()[:1_000]
+    try:
+        is_legacy = value.get("config_version") is not None and int(value.get("config_version") or 1) < 2
+    except (TypeError, ValueError):
+        is_legacy = False
+    report_length = str(
+        value.get("analysis_depth") if is_legacy else value.get("report_length") or value.get("analysis_depth") or "standard"
+    ).strip()
+    if report_length not in {"concise", "standard", "deep"}:
+        report_length = "standard"
+    time_range = str(value.get("time_range") or "month").strip()
+    if time_range not in {"week", "month", "semiyear", "year"}:
+        time_range = "month"
+    return {
+        "audience": audience,
+        "audience_detail": str(value.get("audience_detail") or value.get("description") or "").strip()[:2_000],
+        "focus_tags": focus_tags,
+        "focus": focus,
+        "extra_focus": str(value.get("extra_focus") or value.get("extra_requirements") or "").strip()[:2_000],
+        "time_range": time_range,
+        "report_length": report_length,
+    }
+
+
 def _public_topic(topic: dict[str, object]) -> dict[str, object]:
     public = {
-        key: value
-        for key, value in topic.items()
-        if key not in {"owner_user_id", "created_by_user_id", "updated_by_user_id", "latest_execution"}
+        "id": topic.get("id"),
+        "name": topic.get("name"),
+        **_public_assistant_fields(topic),
+        "created_at": topic.get("created_at"),
+        "updated_at": topic.get("updated_at"),
     }
     latest = topic.get("latest_execution")
     public["latest_execution"] = _public_execution(latest) if isinstance(latest, dict) else None
     return public
 
 
-def _public_search_coverage(execution: dict[str, object]) -> dict[str, object] | None:
-    payload = execution.get("request_payload")
-    if not isinstance(payload, dict):
-        return None
-    summary = payload.get("search_summary")
-    if not isinstance(summary, dict):
-        return None
-
-    def count(value: object) -> int:
-        try:
-            return max(0, int(value))
-        except (TypeError, ValueError):
-            return 0
-
-    rounds: list[dict[str, object]] = []
-    raw_rounds = payload.get("search_rounds")
-    if isinstance(raw_rounds, list):
-        for item in raw_rounds:
-            if not isinstance(item, dict):
-                continue
-            rounds.append(
-                {
-                    "round": count(item.get("round")),
-                    "facet": str(item.get("facet") or ""),
-                    "status": str(item.get("status") or ""),
-                    "raw_reference_count": count(item.get("raw_reference_count")),
-                    "new_source_count": count(item.get("new_source_count")),
-                    "new_domain_count": count(item.get("new_domain_count")),
-                    "cumulative_source_count": count(item.get("cumulative_source_count")),
-                    **({"error": str(item["error"])} if item.get("error") else {}),
-                }
-            )
+def _public_delivery(delivery: dict[str, object]) -> dict[str, object]:
     return {
-        "requested_source_count": count(summary.get("requested_source_count")),
-        "unique_source_count": count(summary.get("unique_source_count")),
-        "round_count": count(summary.get("round_count")),
-        "supplemental_round_count": count(summary.get("supplemental_round_count")),
-        "reached_source_target": bool(summary.get("reached_source_target")),
-        "rounds": rounds,
+        key: delivery.get(key)
+        for key in (
+            "id",
+            "execution_id",
+            "recipient",
+            "format",
+            "status",
+            "error_message",
+            "external_confirmed",
+            "created_at",
+            "sent_at",
+        )
     }
 
 
 def _public_execution(execution: dict[str, object]) -> dict[str, object]:
-    search_coverage = _public_search_coverage(execution)
-    public = {
-        key: value
-        for key, value in execution.items()
-        if key not in {
-            "owner_user_id",
-            "created_by_user_id",
-            "executed_by_user_id",
-            "request_payload",
-            "reference_aliases",
-        }
+    snapshot = execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {}
+    report = execution.get("report") if isinstance(execution.get("report"), dict) else None
+    sources = execution.get("sources")
+    public: dict[str, object] = {
+        "id": execution.get("id"),
+        "topic_id": execution.get("topic_id"),
+        "topic_name": execution.get("topic_name"),
+        "trigger_type": execution.get("trigger_type"),
+        "snapshot": _public_assistant_fields(snapshot),
+        "original_query": execution.get("original_query") or snapshot.get("focus") or snapshot.get("question") or "",
+        "report": report,
+        "report_version": report.get("version") if report else None,
+        "sources": sources if isinstance(sources, list) else [],
+        "status": execution.get("status"),
+        "error_message": execution.get("error_message"),
+        "search_status": execution.get("search_status"),
+        "analysis_status": execution.get("analysis_status"),
+        "search_error_message": execution.get("search_error_message"),
+        "analysis_error_message": execution.get("analysis_error_message"),
+        "created_at": execution.get("created_at"),
+        "started_at": execution.get("started_at"),
+        "completed_at": execution.get("completed_at"),
     }
-    sources = public.get("sources")
     if isinstance(sources, list):
         public["sources"] = [
             {key: value for key, value in item.items() if key != "provider_reference_ids"}
             for item in sources
             if isinstance(item, dict)
         ]
-    if search_coverage is not None:
-        public["search_coverage"] = search_coverage
     return public
+
+
+def _admin_execution_summary(execution: dict[str, object]) -> dict[str, object]:
+    sources = execution.get("sources") if isinstance(execution.get("sources"), list) else []
+    domains: set[str] = set()
+    dates: set[str] = set()
+    source_rows: list[dict[str, object]] = []
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        site = str(source.get("site_name") or source.get("domain") or "").strip()
+        if site:
+            domains.add(site.casefold())
+        date = str(source.get("date") or "").strip()
+        if date:
+            dates.add(date[:10])
+        source_rows.append(
+            {
+                key: source.get(key)
+                for key in ("id", "title", "url", "site_name", "date")
+                if source.get(key) is not None
+            }
+        )
+    return {
+        "id": execution.get("id"),
+        "owner_user_id": execution.get("owner_user_id"),
+        "topic_id": execution.get("topic_id"),
+        "topic_name": execution.get("topic_name"),
+        "trigger_type": execution.get("trigger_type"),
+        "status": execution.get("status"),
+        "planning_status": execution.get("planning_status"),
+        "planning_error_message": execution.get("planning_error_message"),
+        "search_status": execution.get("search_status"),
+        "analysis_status": execution.get("analysis_status"),
+        "error_message": execution.get("error_message"),
+        "search_error_message": execution.get("search_error_message"),
+        "analysis_error_message": execution.get("analysis_error_message"),
+        "request_id": execution.get("request_id"),
+        "created_at": execution.get("created_at"),
+        "started_at": execution.get("started_at"),
+        "completed_at": execution.get("completed_at"),
+        "source_count": len(source_rows),
+        "domain_count": len(domains),
+        "time_count": len(dates),
+    }
+
+
+def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, object]:
+    summary = _admin_execution_summary(execution)
+    payload = execution.get("request_payload") if isinstance(execution.get("request_payload"), dict) else {}
+    search_summary = payload.get("search_summary") if isinstance(payload.get("search_summary"), dict) else {}
+    rounds = payload.get("search_rounds") if isinstance(payload.get("search_rounds"), list) else []
+    safe_rounds: list[dict[str, object]] = []
+    for item in rounds:
+        if not isinstance(item, dict):
+            continue
+        row: dict[str, object] = {}
+        for key in (
+            "round",
+            "query",
+            "purpose",
+            "status",
+            "requested_top_k",
+            "raw_reference_count",
+            "raw_reference_total",
+            "deduplicated_count",
+            "duplicate_removed_count",
+            "stale_removed_count",
+            "domain_removed_count",
+            "limit_removed_count",
+            "selected_count",
+            "new_source_count",
+            "new_domain_count",
+            "cumulative_source_count",
+            "request_id",
+            "error",
+        ):
+            if item.get(key) is not None:
+                value = item[key]
+                row[key] = str(value)[:500] if key in {"query", "purpose", "error", "request_id"} else value
+        safe_rounds.append(row)
+
+    plan = payload.get("query_plan") if isinstance(payload.get("query_plan"), dict) else {}
+    raw_queries = plan.get("queries") if isinstance(plan.get("queries"), list) else []
+    planner_queries = [
+        {
+            "query": str(item.get("query") or "")[:300],
+            "purpose": str(item.get("purpose") or "")[:200],
+        }
+        for item in raw_queries
+        if isinstance(item, dict) and str(item.get("query") or "").strip()
+    ]
+    report_sources = summary.pop("source_count", 0)
+    source_rows = []
+    for source in execution.get("sources") if isinstance(execution.get("sources"), list) else []:
+        if isinstance(source, dict):
+            source_rows.append(
+                {
+                    key: source.get(key)
+                    for key in ("id", "title", "url", "site_name", "date")
+                    if source.get(key) is not None
+                }
+            )
+    request_ids = list(
+        dict.fromkeys(
+            str(value)
+            for value in [execution.get("request_id"), *(item.get("request_id") for item in safe_rounds)]
+            if value
+        )
+    )
+    started_at = execution.get("started_at")
+    completed_at = execution.get("completed_at")
+    duration_seconds: float | None = None
+    if isinstance(started_at, str) and isinstance(completed_at, str):
+        try:
+            duration_seconds = max(
+                0.0,
+                round((datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at)).total_seconds(), 1),
+            )
+        except ValueError:
+            duration_seconds = None
+    if execution.get("status") in {"succeeded", "failed", "empty"}:
+        stage = "completed"
+    elif execution.get("analysis_status") == "running":
+        stage = "analysis"
+    elif execution.get("search_status") == "running":
+        stage = "search"
+    else:
+        stage = "planning"
+    return {
+        **summary,
+        "execution_id": execution.get("id"),
+        "source_count": report_sources,
+        "stage": stage,
+        "message": execution.get("error_message") or "执行信息已更新",
+        "duration_seconds": duration_seconds,
+        "planner": {
+            "status": execution.get("planning_status") or "not_run",
+            "error_message": execution.get("planning_error_message"),
+            "intent": str(plan.get("intent") or search_summary.get("planner_intent") or "")[:300],
+            "queries": planner_queries[:50],
+        },
+        "search": {
+            "rounds": safe_rounds,
+            "per_query": [
+                {
+                    key: item.get(key)
+                    for key in (
+                        "round",
+                        "query",
+                        "purpose",
+                        "status",
+                        "raw_reference_count",
+                        "selected_count",
+                        "request_id",
+                        "error",
+                    )
+                    if item.get(key) is not None
+                }
+                for item in safe_rounds
+            ],
+        },
+        "counts": {
+            "final_source_count": report_sources,
+            "final_domain_count": summary.get("domain_count", 0),
+            "final_time_count": summary.get("time_count", 0),
+            "raw_reference_count": int(search_summary.get("raw_reference_count") or 0),
+            "deduplicated_count": int(search_summary.get("deduplicated_count") or report_sources),
+            "duplicate_removed_count": int(search_summary.get("duplicate_removed_count") or 0),
+            "stale_removed_count": int(search_summary.get("stale_removed_count") or 0),
+            "domain_removed_count": int(search_summary.get("domain_removed_count") or 0),
+            "limit_removed_count": int(search_summary.get("limit_removed_count") or 0),
+            "selected_count": int(search_summary.get("selected_count") or report_sources),
+            "round_count": len(safe_rounds),
+        },
+        "final_sources": source_rows[:100],
+        "request_ids": request_ids,
+        "stage_errors": {
+            key: execution.get(key)
+            for key in ("error_message", "search_error_message", "analysis_error_message", "planning_error_message")
+            if execution.get(key)
+        },
+        "delivery_logs": store.list_delivery_logs(int(execution["id"])),
+    }
 
 
 def _mask_api_key(value: str) -> str:
@@ -201,27 +488,18 @@ def _handle_store_error(exc: Exception, fallback: str = "自定义情报服务�
     if isinstance(exc, TopicNameConflictError):
         return HTTPException(status_code=409, detail="同名已保存配置已存在")
     if isinstance(exc, QianfanDisabledError):
-        return HTTPException(status_code=409, detail="百度智能搜索服务已停用")
+        return HTTPException(status_code=409, detail="情报检索服务已停用")
     if isinstance(exc, QianfanConfigurationError):
-        return HTTPException(status_code=503, detail="百度智能搜索服务尚未配置")
+        return HTTPException(status_code=503, detail="情报检索服务尚未配置")
     if isinstance(exc, QianfanTimeoutError):
-        return HTTPException(status_code=504, detail="百度智能搜索请求超时，请稍后重试")
+        return HTTPException(status_code=504, detail="情报检索请求超时，请稍后重试")
     if isinstance(exc, QianfanError):
-        return HTTPException(status_code=qianfan_http_status(exc), detail=qianfan_error_message(exc))
+        return HTTPException(status_code=qianfan_http_status(exc), detail="情报检索服务暂不可用，请稍后重试")
+    if isinstance(exc, AnalysisConfigurationError):
+        return HTTPException(status_code=503, detail="AI 规划与分析服务尚未配置")
     if isinstance(exc, IntelligenceStoreError):
         return HTTPException(status_code=500, detail=fallback)
     return HTTPException(status_code=500, detail=fallback)
-
-
-def _suggest_error_message(exc: Exception) -> str:
-    text = f"{exc.__class__.__name__} {exc}".casefold()
-    if "timeout" in text:
-        return "LLM 关键词建议请求超时，请稍后重试。"
-    if "connection" in text:
-        return "LLM 服务连接失败，请检查服务网络或配置。"
-    if "unable to parse json" in text:
-        return "LLM 关键词建议结果解析失败，请重试。"
-    return "关键词建议服务暂不可用，请稍后重试。"
 
 
 @router.get(
@@ -239,19 +517,31 @@ def get_admin_search_config() -> dict[str, object]:
     "/api/admin/custom-intelligence/search-config",
     dependencies=[Depends(require_admin_token)],
 )
-def post_admin_search_config(payload: SearchServiceConfigUpdate) -> dict[str, object]:
+def post_admin_search_config(
+    payload: SearchServiceConfigUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
     try:
         current = effective_search_config()
         api_key = (payload.api_key or "").strip()
         if not api_key or "••" in api_key:
             api_key = current.api_key
+        if payload.enabled and not api_key:
+            raise QianfanConfigurationError("百度搜索 API Key 不能为空")
         store.save_search_config(
             enabled=payload.enabled,
             endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
-            auth_header=settings.baidu_qianfan_auth_header,
+            auth_header="Authorization",
             timeout_seconds=payload.timeout_seconds,
-            updated_by_user_id=0,
+            updated_by_user_id=_admin_actor_id(authorization),
             api_key=api_key,
+        )
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_config_updated",
+            action="replace" if payload.api_key and "••" not in payload.api_key else "update",
+            target="baidu_search",
+            metadata={"enabled": payload.enabled},
         )
         return _admin_search_config_payload()
     except Exception as exc:
@@ -262,7 +552,9 @@ def post_admin_search_config(payload: SearchServiceConfigUpdate) -> dict[str, ob
     "/api/admin/custom-intelligence/search-config/test",
     dependencies=[Depends(require_admin_token)],
 )
-def post_admin_search_config_test() -> dict[str, object]:
+def post_admin_search_config_test(
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
     tested_at = datetime.now(timezone.utc).isoformat()
     try:
         result = test_search_configuration()
@@ -272,6 +564,13 @@ def post_admin_search_config_test() -> dict[str, object]:
             store.save_search_test(status="failed", message=message, tested_at=tested_at)
         except Exception:
             pass
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_connection_tested",
+            action="test",
+            target="baidu_search",
+            result="failed",
+        )
         return {
             "status": "failed",
             "message": message,
@@ -285,6 +584,12 @@ def post_admin_search_config_test() -> dict[str, object]:
         )
     except Exception:
         pass
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_connection_tested",
+        action="test",
+        target="baidu_search",
+    )
     return {
         "status": "success",
         "message": str(result.get("message") or "连接测试成功，服务可用。"),
@@ -297,11 +602,298 @@ def post_admin_search_config_test() -> dict[str, object]:
     "/api/admin/custom-intelligence/search-config/reveal-key",
     dependencies=[Depends(require_admin_token)],
 )
-def post_admin_search_config_reveal_key(payload: VerifyPasswordRequest) -> dict[str, str]:
+def post_admin_search_config_reveal_key(
+    payload: VerifyPasswordRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, str]:
     expected_password = settings.admin_password
     if expected_password and secrets.compare_digest(payload.password, expected_password):
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_secret_revealed",
+            action="reveal",
+            target="baidu_search",
+        )
         return {"api_key": effective_search_config().api_key}
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_secret_revealed",
+        action="reveal",
+        target="baidu_search",
+        result="denied",
+    )
     raise HTTPException(status_code=401, detail="管理员密码不正确")
+
+
+@router.get(
+    "/api/admin/custom-intelligence/llm-config",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_llm_config() -> dict[str, object]:
+    return public_deepseek_config()
+
+
+@router.post(
+    "/api/admin/custom-intelligence/llm-config",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_llm_config(
+    payload: DeepSeekConfigUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    if not payload.enabled:
+        raise HTTPException(status_code=400, detail="DeepSeek 是情报规划与分析的必需服务，不能停用")
+    try:
+        result = save_deepseek_config(payload)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="DeepSeek 配置无效或无法保存") from exc
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_config_updated",
+        action="replace" if payload.api_key and "••" not in payload.api_key else "update",
+        target="deepseek",
+        metadata={"model": payload.model},
+    )
+    return result
+
+
+@router.post(
+    "/api/admin/custom-intelligence/llm-config/test",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_llm_config_test(
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    tested_at = datetime.now(timezone.utc).isoformat()
+    try:
+        result = test_deepseek_configuration()
+    except Exception:
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_connection_tested",
+            action="test",
+            target="deepseek",
+            result="failed",
+        )
+        return {"status": "failed", "message": "DeepSeek 连接测试失败，请检查配置与网络。", "tested_at": tested_at}
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_connection_tested",
+        action="test",
+        target="deepseek",
+    )
+    return {**result, "tested_at": tested_at}
+
+
+@router.post(
+    "/api/admin/custom-intelligence/llm-config/reveal-key",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_llm_config_reveal_key(
+    payload: AdminPasswordRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, str]:
+    try:
+        api_key = reveal_deepseek_key(payload.password)
+    except PermissionError as exc:
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_secret_revealed",
+            action="reveal",
+            target="deepseek",
+            result="denied",
+        )
+        raise HTTPException(status_code=401, detail="管理员密码不正确") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="DeepSeek 尚未配置") from exc
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_secret_revealed",
+        action="reveal",
+        target="deepseek",
+    )
+    return {"api_key": api_key}
+
+
+@router.get(
+    "/api/admin/custom-intelligence/smtp-config",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_smtp_config() -> dict[str, object]:
+    return public_smtp_config(store)
+
+
+@router.post(
+    "/api/admin/custom-intelligence/smtp-config",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_smtp_config(
+    payload: SMTPConfigUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    current = effective_smtp_config(store)
+    username = payload.username.strip()
+    from_address = payload.from_address.strip() or username
+    authorization_code = (payload.authorization_code or "").strip()
+    replacing_secret = bool(authorization_code and "••" not in authorization_code)
+    if not replacing_secret:
+        authorization_code = current.authorization_code
+    try:
+        if payload.enabled or username or from_address:
+            validate_smtp_identity(username, from_address)
+        if payload.enabled and not authorization_code:
+            raise EmailConfigurationError("SMTP 客户端授权码不能为空")
+        store.save_smtp_config(
+            enabled=payload.enabled,
+            username=username,
+            from_address=from_address,
+            authorization_code=authorization_code,
+            timeout_seconds=payload.timeout_seconds,
+            updated_by_user_id=_admin_actor_id(authorization),
+        )
+    except (EmailConfigurationError, IntelligenceStoreError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_config_updated",
+        action="replace" if replacing_secret else "update",
+        target="smtp_126",
+        metadata={"enabled": payload.enabled},
+    )
+    return public_smtp_config(store)
+
+
+@router.post(
+    "/api/admin/custom-intelligence/smtp-config/test",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_smtp_config_test(
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    tested_at = datetime.now(timezone.utc).isoformat()
+    try:
+        result = test_smtp_configuration(effective_smtp_config(store))
+    except EmailConfigurationError:
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_connection_tested",
+            action="test",
+            target="smtp_126",
+            result="failed",
+        )
+        return {"status": "failed", "message": "网易 SMTP 连接测试失败，请检查授权码与网络。", "tested_at": tested_at}
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_connection_tested",
+        action="test",
+        target="smtp_126",
+    )
+    return {**result, "tested_at": tested_at}
+
+
+@router.post(
+    "/api/admin/custom-intelligence/smtp-config/reveal-authorization-code",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_smtp_config_reveal_authorization_code(
+    payload: AdminPasswordRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, str]:
+    if not verify_admin_password(payload.password):
+        _audit_intelligence_event(
+            authorization,
+            "custom_intelligence_secret_revealed",
+            action="reveal",
+            target="smtp_126",
+            result="denied",
+        )
+        raise HTTPException(status_code=401, detail="管理员密码不正确")
+    authorization_code = effective_smtp_config(store).authorization_code
+    if not authorization_code:
+        raise HTTPException(status_code=404, detail="SMTP 客户端授权码尚未配置")
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_secret_revealed",
+        action="reveal",
+        target="smtp_126",
+    )
+    return {"authorization_code": authorization_code}
+
+
+@router.get(
+    "/api/admin/custom-intelligence/default-rules",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_default_rules() -> dict[str, object]:
+    stored = store.get_default_rules()
+    rules = stored.get("rules") if isinstance(stored.get("rules"), dict) else {}
+    return {
+        **DEFAULT_ANALYSIS_RULES,
+        **rules,
+        "updated_at": stored.get("updated_at"),
+    }
+
+
+@router.post(
+    "/api/admin/custom-intelligence/default-rules",
+    dependencies=[Depends(require_admin_token)],
+)
+def post_admin_default_rules(
+    payload: DefaultRulesUpdate,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    rules = payload.model_dump()
+    try:
+        stored = store.save_default_rules(
+            rules=rules,
+            updated_by_user_id=_admin_actor_id(authorization),
+        )
+    except IntelligenceStoreError as exc:
+        raise _handle_store_error(exc, "无法保存默认分析规则") from exc
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_config_updated",
+        action="update",
+        target="default_rules",
+    )
+    return {**rules, "updated_at": stored.get("updated_at")}
+
+
+@router.get(
+    "/api/admin/custom-intelligence/executions",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_executions(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=50),
+) -> dict[str, object]:
+    recent = store.list_recent_executions(limit=200)
+    total = len(recent)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    effective_page = min(page, total_pages)
+    start = (effective_page - 1) * page_size
+    executions = recent[start : start + page_size]
+    return {
+        "executions": [_admin_execution_summary(execution) for execution in executions],
+        "meta": {
+            "page": effective_page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+        },
+    }
+
+
+@router.get(
+    "/api/admin/custom-intelligence/executions/{execution_id}/diagnostics",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_execution_diagnostics(execution_id: int) -> dict[str, object]:
+    try:
+        execution = store.get_execution_by_id(execution_id)
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法加载情报执行诊断") from exc
+    return {"diagnostics": _admin_execution_diagnostics(execution)}
 
 
 @router.get("/api/custom-intelligence/options")
@@ -314,21 +906,6 @@ def get_custom_intelligence_options(
         return options_payload()
     except Exception as exc:
         raise _handle_store_error(exc) from exc
-
-
-@router.post("/api/custom-intelligence/keyword-suggestions")
-def post_keyword_suggestions(
-    payload: KeywordSuggestionRequest,
-    authorization: Annotated[str | None, Header()] = None,
-) -> dict[str, object]:
-    get_session(authorization)
-    try:
-        suggestions = suggest_keywords(payload.model_dump(), payload.max_suggestions)
-    except AnalysisConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=_suggest_error_message(exc)) from exc
-    return {"suggestions": suggestions}
 
 
 @router.get("/api/custom-intelligence/topics")
@@ -345,7 +922,7 @@ def get_topics(
 
 @router.post("/api/custom-intelligence/topics", status_code=status.HTTP_201_CREATED)
 def post_topic(
-    payload: IntelligenceTopicCreate,
+    payload: IntelligenceTopicCreateCompat,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     session = get_session(authorization)
@@ -373,7 +950,7 @@ def get_topic(
 @router.post("/api/custom-intelligence/topics/{topic_id}")
 def post_topic_update(
     topic_id: int,
-    payload: IntelligenceTopicUpdate,
+    payload: IntelligenceTopicUpdateCompat,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     session = get_session(authorization)
@@ -382,21 +959,6 @@ def post_topic_update(
         topic = store.update_topic(owner_id, topic_id, payload.model_dump(), owner_id)
     except Exception as exc:
         raise _handle_store_error(exc, "无法更新情报主题") from exc
-    return {"topic": _public_topic(topic)}
-
-
-@router.post("/api/custom-intelligence/topics/{topic_id}/enabled")
-def post_topic_enabled(
-    topic_id: int,
-    payload: IntelligenceTopicEnabled,
-    authorization: Annotated[str | None, Header()] = None,
-) -> dict[str, object]:
-    session = get_session(authorization)
-    owner_id = _owner_user_id(session)
-    try:
-        topic = store.set_topic_enabled(owner_id, topic_id, payload.enabled, owner_id)
-    except Exception as exc:
-        raise _handle_store_error(exc, "无法更新已保存配置状态") from exc
     return {"topic": _public_topic(topic)}
 
 
@@ -417,36 +979,15 @@ def delete_topic(
 @router.post("/api/custom-intelligence/topics/{topic_id}/execute", status_code=status.HTTP_202_ACCEPTED)
 def post_topic_execute(
     topic_id: int,
-    response: Response,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     session = get_session(authorization)
     owner_id = _owner_user_id(session)
     try:
         topic = store.get_topic(owner_id, topic_id)
-        if not bool(topic.get("enabled")):
-            raise HTTPException(status_code=409, detail="该配置已停用，请先启用后执行")
-        snapshot = {
-            key: value
-            for key, value in topic.items()
-            if key
-            in {
-                "name",
-                "question",
-                "description",
-                "keywords",
-                "focus_objects",
-                "analysis_perspective",
-                "time_range",
-                "source_preference",
-                "specified_sites",
-                "report_type",
-                "analysis_depth",
-                "extra_requirements",
-            }
-        }
+        snapshot = {"name": topic.get("name"), **_public_assistant_fields(topic)}
         saved_question = str(topic.get("question") or "").strip()
-        snapshot["question"] = saved_question or f"请分析情报主题：{str(topic.get('name') or '证券行业近期动态')}"
+        snapshot["question"] = saved_question or str(topic.get("focus") or "").strip() or f"请分析情报主题：{str(topic.get('name') or '证券行业近期动态')}"
         execution = submit_execution(
             owner_id,
             snapshot,
@@ -548,6 +1089,70 @@ def post_execution_reanalyze(
     return {"execution": _public_execution(execution)}
 
 
+@router.post("/api/custom-intelligence/executions/{execution_id}/email")
+def post_execution_email(
+    execution_id: int,
+    payload: EmailDeliveryRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    session = get_session(authorization)
+    owner_id = _owner_user_id(session)
+    try:
+        execution = store.get_execution(owner_id, execution_id)
+        results = send_report_email(
+            execution,
+            payload.recipients,
+            payload.format,
+            external_confirmed=payload.external_confirmed,
+            config=effective_smtp_config(store),
+        )
+    except ExternalRecipientConfirmationRequired as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except EmailRecipientError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except EmailConfigurationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise _handle_store_error(exc, "报告邮件发送失败") from exc
+
+    sent_at = datetime.now(timezone.utc).isoformat()
+    delivery_rows: list[dict[str, object]] = []
+    for result in results:
+        status_value = str(result.get("status") or "failed")
+        delivery_rows.append(
+            store.create_delivery_log(
+                execution_id=execution_id,
+                owner_user_id=owner_id,
+                recipient=str(result.get("recipient") or ""),
+                format=payload.format,
+                status=status_value,
+                message_id=str(result.get("message_id") or "") or None,
+                error_message=str(result.get("error_message") or "") or None,
+                external_confirmed=payload.external_confirmed,
+                sent_at=sent_at if status_value == "sent" else None,
+            )
+        )
+    sent_count = sum(1 for item in delivery_rows if item.get("status") == "sent")
+    _audit_intelligence_event(
+        authorization,
+        "custom_intelligence_email_sent",
+        action="send",
+        target="report_email",
+        result="success" if sent_count == len(delivery_rows) else "partial_failed",
+        metadata={
+            "execution_id": execution_id,
+            "format": payload.format,
+            "recipient_count": len(delivery_rows),
+            "sent_count": sent_count,
+            "external_confirmed": payload.external_confirmed,
+        },
+    )
+    return {
+        "status": "success" if sent_count == len(delivery_rows) else "partial_failed",
+        "deliveries": [_public_delivery(item) for item in delivery_rows],
+    }
+
+
 @router.get("/api/custom-intelligence/executions/{execution_id}/report/pdf")
 def get_execution_report_pdf(
     execution_id: int,
@@ -558,7 +1163,14 @@ def get_execution_report_pdf(
         execution = store.get_execution(_owner_user_id(session), execution_id)
     except Exception as exc:
         raise _handle_store_error(exc, "无法加载情报记录") from exc
-    if execution.get("search_status") != "succeeded" or not execution.get("sources"):
+    if (
+        execution.get("status") != "succeeded"
+        or execution.get("analysis_status") != "succeeded"
+        or execution.get("search_status") != "succeeded"
+        or not execution.get("sources")
+        or not isinstance(execution.get("report"), dict)
+        or execution["report"].get("version") != 2
+    ):
         raise HTTPException(status_code=409, detail="该记录没有可导出的搜索结果")
     try:
         pdf_bytes = build_report_pdf(execution)

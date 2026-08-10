@@ -21,6 +21,10 @@ const EVENT_LABELS: Record<AuditEventType, string> = {
   qualification_application: "资格申请",
   login_success: "成功登录",
   dashboard_view: "进入看板",
+  custom_intelligence_config_updated: "情报配置更新",
+  custom_intelligence_secret_revealed: "情报密钥查看",
+  custom_intelligence_connection_tested: "情报连接测试",
+  custom_intelligence_email_sent: "情报邮件发送",
 };
 
 function formatTime(value: string): string {

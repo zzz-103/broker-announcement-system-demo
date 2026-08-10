@@ -3,9 +3,59 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_LLM_OVERRIDE_PATH = PROJECT_ROOT / "backend" / "data" / "llm_api_config.override.json"
+
+
+def resolve_llm_override_path() -> Path:
+    """Return the server-side DeepSeek/LLM override path.
+
+    The override intentionally lives below ``backend/data`` so it can be
+    ignored by deployments and never needs to be exposed to the frontend.
+    Tests may point it at a temporary file with ``LLM_CONFIG_OVERRIDE_PATH``.
+    """
+    configured = os.getenv("LLM_CONFIG_OVERRIDE_PATH")
+    path = Path(configured) if configured else DEFAULT_LLM_OVERRIDE_PATH
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve()
+
+
+def write_llm_config_override(payload: dict[str, object], path: Path | None = None) -> Path:
+    """Atomically write an administrator-supplied LLM config override."""
+    destination = (path or resolve_llm_override_path()).resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, destination)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return destination
 
 
 @dataclass(slots=True)
@@ -23,8 +73,12 @@ class LLMApiConfig:
 
     @classmethod
     def load(cls, config_path: Path) -> "LLMApiConfig":
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-        api_key = os.environ.get("LLM_API_KEY")
+        override_path = resolve_llm_override_path()
+        source_path = override_path if override_path.exists() else config_path
+        payload = json.loads(source_path.read_text(encoding="utf-8"))
+        # An administrator-saved override is authoritative.  Keep the legacy
+        # environment-key precedence only for the original fallback file.
+        api_key = None if source_path == override_path else os.environ.get("LLM_API_KEY")
         if api_key is None:
             api_key = str(payload.get("api_key", "")).strip()
         else:
@@ -45,10 +99,20 @@ class LLMApiConfig:
     def validate(self) -> None:
         if not self.base_url:
             raise ValueError("llm_api_config.json 缺少 base_url")
+        try:
+            parsed_base_url = urlsplit(self.base_url)
+        except ValueError as exc:
+            raise ValueError("llm_api_config.json 的 base_url 无效") from exc
+        if parsed_base_url.scheme not in {"http", "https"} or not parsed_base_url.hostname:
+            raise ValueError("llm_api_config.json 的 base_url 必须是有效的 HTTP(S) 地址")
         if not self.api_key:
             raise ValueError("llm_api_config.json 缺少 api_key")
         if not self.model:
             raise ValueError("llm_api_config.json 缺少 model")
+        if not 1 <= self.timeout_seconds <= 600:
+            raise ValueError("llm_api_config.json 的 timeout_seconds 必须在 1 到 600 之间")
+        if not 1 <= self.max_tokens <= 1_000_000:
+            raise ValueError("llm_api_config.json 的 max_tokens 必须在 1 到 1000000 之间")
 
 
 class OpenAICompatibleClient:

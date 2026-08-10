@@ -5,16 +5,15 @@ import { useRouter } from "next/navigation";
 import { LoginPageWithApply } from "@/components/login-page-with-apply";
 import { SessionLoading } from "@/components/session-loading";
 import { DashboardHeader } from "@/components/dashboard-header";
-import {
-  CustomIntelligenceTabs,
-  ExecutionList,
-  SavedConfigList,
-} from "./custom-intelligence-components";
 import { TOPIC_LIMIT } from "./custom-intelligence-constants";
+import { CustomIntelligenceTabs } from "./custom-intelligence-tabs";
+import { EmailDialog } from "./email-dialog";
+import { ExecutionList } from "./execution-list";
 import { InstantSearchPanel } from "./instant-search-panel";
+import { ReportDialog } from "./report-dialog";
 import { ReportPanel } from "./report-panel";
 import { SavedConfigDialog } from "./saved-config-dialog";
-import { ReportDialog } from "./report-dialog";
+import { SavedConfigList } from "./saved-config-list";
 import { useCustomIntelligencePage } from "./use-custom-intelligence-page";
 
 export default function CustomIntelligencePage() {
@@ -24,6 +23,10 @@ export default function CustomIntelligencePage() {
   if (!page.isHydrated) return <SessionLoading />;
   if (!page.isLoggedIn) return <LoginPageWithApply />;
 
+  const running = page.activeExecutionId !== null;
+  const statusText = running ? "执行中" : page.optionsLoading ? "加载中" : page.serviceAvailable ? "服务正常" : "服务不可用";
+  const statusTone = running || page.optionsLoading ? "loading" : page.serviceAvailable ? "ready" : "unavailable";
+
   return (
     <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#F4F7FB]">
       <DashboardHeader
@@ -31,46 +34,21 @@ export default function CustomIntelligencePage() {
         isAdmin={page.isAdmin}
         activeModule="custom-intelligence"
         statusLabel="当前状态"
-        statusText={
-          page.activeExecutionId !== null
-            ? "执行中"
-            : page.optionsLoading
-              ? "加载中"
-              : page.serviceAvailable
-                ? "服务正常"
-                : "服务不可用"
-        }
-        statusTone={page.activeExecutionId !== null || page.optionsLoading ? "loading" : page.serviceAvailable ? "ready" : "unavailable"}
-        statusDescription={
-          page.activeExecutionId !== null
-            ? "当前有一条自定义情报正在执行"
-            : page.serviceAvailable
-              ? "自定义情报搜索服务可用"
-              : "当前情报搜索服务暂不可用"
-        }
-        exportOptions={[
-          {
-            id: "executions-csv",
-            label: "执行记录（表格）",
-            description: `最近 ${page.executionsTotal} 条记录`,
-            disabled: page.executionsTotal === 0,
-            onSelect: () => void page.exportAllExecutions("csv"),
-          },
-          {
-            id: "executions-json",
-            label: "已保留记录（JSON）",
-            description: "最多保留最近 30 条，含报告与来源",
-            disabled: page.executionsTotal === 0,
-            onSelect: () => void page.exportAllExecutions("json"),
-          },
-        ]}
+        statusText={statusText}
+        statusTone={statusTone}
+        statusDescription={running ? "当前有一份情报报告正在生成" : page.serviceAvailable ? "AI 情报助手可以开始工作" : "情报服务暂不可用"}
+        exportOptions={[]}
         onOpenAdmin={() => router.push("/admin")}
         onLogout={page.logout}
       />
 
       <main className="mx-auto max-w-[1600px] min-w-0 space-y-4 px-3 py-4 sm:px-8 sm:py-5">
         {(page.pageError || page.notice) && (
-          <div role={page.pageError ? "alert" : "status"} aria-live={page.pageError ? "assertive" : "polite"} className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${page.pageError ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700"}`}>
+          <div
+            role={page.pageError ? "alert" : "status"}
+            aria-live={page.pageError ? "assertive" : "polite"}
+            className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${page.pageError ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700"}`}
+          >
             <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0 whitespace-pre-wrap break-words">{page.pageError || page.notice}</span>
             <button type="button" className="ml-auto shrink-0 opacity-60 hover:opacity-100" onClick={page.clearMessages} aria-label="关闭提示">
@@ -78,117 +56,102 @@ export default function CustomIntelligencePage() {
             </button>
           </div>
         )}
-        {!page.optionsLoading && !page.serviceAvailable && <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">当前情报搜索服务暂不可用，请联系管理员。</div>}
+
+        {!page.optionsLoading && !page.serviceAvailable && (
+          <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            当前情报服务暂不可用，请联系管理员。
+          </div>
+        )}
+
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-[#172033] sm:text-[26px]">自定义情报</h2>
-            <p className="mt-1 text-xs text-[#667085]">按业务问题检索公开信息，并保存常用搜索与分析配置。</p>
+            <h2 className="text-2xl font-bold tracking-tight text-[#172033] sm:text-[26px]">AI 情报助手</h2>
+            <p className="mt-1 text-xs text-[#667085]">告诉我业务问题，助手会检索公开资料并整理成可执行的报告。</p>
           </div>
-          {page.activeExecutionId !== null && (
+          {running && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite"><Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />有一条情报正在执行</span>
+              <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite">
+                <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />报告生成中
+              </span>
             </div>
           )}
         </div>
 
         <CustomIntelligenceTabs activeTab={page.activeTab} executionCount={page.executionsTotal} onChange={page.setActiveTab} />
 
-        {page.activeTab === "instant" && (
-          <section id="custom-intelligence-panel-instant" role="tabpanel" aria-label="即时搜索" aria-busy={page.optionsLoading} className="surface-panel px-3 py-4 sm:px-4">
+        {page.activeTab === "generate" && (
+          <section id="custom-intelligence-panel-generate" role="tabpanel" aria-label="生成报告" aria-busy={page.optionsLoading} className="surface-panel px-3 py-4 sm:px-4">
             <InstantSearchPanel
               topics={page.topics}
               selectedConfigId={page.selectedConfigId}
-              selectedConfig={page.selectedConfig}
               form={page.form}
-              options={page.visibleOptions}
-              optionsLoading={page.optionsLoading}
-              serviceAvailable={page.serviceAvailable}
-              analysisAvailable={page.analysisAvailable}
               activeExecutionId={page.activeExecutionId}
               workspaceMode={page.workspaceMode}
-              suggesting={page.suggesting}
-              keywordSuggestions={page.keywordSuggestions}
-              selectedSuggestions={page.selectedSuggestions}
+              optionsLoading={page.optionsLoading}
+              serviceAvailable={page.serviceAvailable}
               onFormChange={page.setForm}
               onApplyConfig={page.applySavedConfigValue}
               onStartSearch={() => void page.submitInstant()}
-              onSuggestKeywords={() => void page.requestKeywordSuggestions()}
-              onSelectedSuggestionsChange={page.setSelectedSuggestions}
-              onMergeKeywords={page.mergeKeywordSuggestions}
               onSaveCurrentConfig={page.openSaveCurrentConfig}
               onResetWorkspace={page.resetWorkspace}
             >
-              {page.workspaceMode && (
+              {page.workspaceMode && page.workspaceExecution && (
                 <ReportPanel
                   execution={page.workspaceExecution}
-                  options={page.visibleOptions}
-                  analysisAvailable={page.analysisAvailable}
-                  serviceAvailable={page.serviceAvailable}
-                  activeExecutionId={page.activeExecutionId}
                   pdfExporting={page.pdfExporting}
-                  onExpand={(execution) => void page.openReport(execution)}
                   onExportPdf={(execution) => void page.exportReportPdf(execution)}
-                  onRerun={(execution) => void page.rerun(execution, false, true)}
-                  onReanalyze={(execution) => void page.reanalyze(execution, false, true)}
-                  onSaveConfig={page.openSaveConfigFromExecution}
+                  onEmail={page.openEmail}
+                  onRerun={(execution) => void page.rerun(execution)}
+                  onReanalyze={(execution) => void page.reanalyze(execution)}
                   onNewSearch={page.resetWorkspace}
+                  onOpenReport={(execution) => void page.openReport(execution)}
                 />
               )}
             </InstantSearchPanel>
           </section>
         )}
 
-        {page.activeTab === "topics" && (
-          <section id="custom-intelligence-panel-topics" role="tabpanel" aria-label="已保存配置" className="surface-panel px-3 py-4 sm:px-4">
+        {page.activeTab === "assistants" && (
+          <section id="custom-intelligence-panel-assistants" role="tabpanel" aria-label="我的助手" className="surface-panel px-3 py-4 sm:px-4">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-[#172033]">已保存配置</h3>
-                <p className="mt-1 text-xs text-[#667085]">保存常用的搜索与分析参数组合，最多 {TOPIC_LIMIT} 个。</p>
+                <h3 className="text-base font-semibold text-[#172033]">我的助手</h3>
+                <p className="mt-1 text-xs text-[#667085]">保存常用问题，一键生成最新报告，最多 {TOPIC_LIMIT} 个。</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] tabular-nums text-[#98A2B3]">{page.topics.length}/{TOPIC_LIMIT}</span>
-                <button type="button" onClick={page.openCreateConfig} disabled={page.configsLimitReached} title={page.configsLimitReached ? `已达上限（${TOPIC_LIMIT} 个），请先删除或修改已有配置` : undefined} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
-                  <span aria-hidden="true">＋</span>新建配置
+                <button type="button" onClick={page.openCreateConfig} disabled={page.configsLimitReached} className="rounded-md bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
+                  ＋新建助手
                 </button>
               </div>
             </div>
             <SavedConfigList
               topics={page.topics}
               loading={page.optionsLoading}
-              options={page.visibleOptions}
-              serviceAvailable={page.serviceAvailable}
               activeExecutionId={page.activeExecutionId}
-              topicUpdatingId={page.configUpdatingId}
-              recentExecutionsByTopic={page.recentExecutionsByTopic}
               onCreate={page.openCreateConfig}
-              onToggle={(topic) => void page.toggleConfig(topic)}
-              onEdit={(topic) => void page.openEditConfig(topic)}
+              onEdit={page.openEditConfig}
               onDelete={(topic) => void page.deleteConfig(topic)}
-              onLoad={page.loadConfigIntoForm}
-              onLoadAndSearch={(topic) => void page.loadAndSearchConfig(topic)}
-              onOpenReport={(execution) => void page.openReport(execution)}
+              onRun={(topic) => void page.loadAndSearchConfig(topic)}
             />
           </section>
         )}
 
-        {page.activeTab === "executions" && (
-          <section id="custom-intelligence-panel-executions" role="tabpanel" aria-label="执行记录" className="surface-panel px-3 py-4 sm:px-4">
+        {page.activeTab === "history" && (
+          <section id="custom-intelligence-panel-history" role="tabpanel" aria-label="历史报告" className="surface-panel px-3 py-4 sm:px-4">
             <ExecutionList
               executions={page.executions}
               loading={page.loadingExecutions}
-              serviceAvailable={page.serviceAvailable}
-              analysisAvailable={page.analysisAvailable}
+              total={page.executionsTotal}
               page={page.executionsPage}
               totalPages={page.executionsTotalPages}
-              total={page.executionsTotal}
+              activeExecutionId={page.activeExecutionId}
               onPageChange={(nextPage) => void page.loadExecutions(nextPage)}
               onRefresh={() => void page.loadExecutions(page.executionsPage)}
-              onStartSearch={() => page.setActiveTab("instant")}
-              onSaveTopic={page.openSaveConfigFromExecution}
+              onStartSearch={() => page.setActiveTab("generate")}
               onOpenReport={(execution) => void page.openReport(execution)}
               onRerun={(execution) => void page.rerun(execution)}
               onReanalyze={(execution) => void page.reanalyze(execution)}
-              activeExecutionId={page.activeExecutionId}
             />
           </section>
         )}
@@ -200,17 +163,9 @@ export default function CustomIntelligencePage() {
         editorId={page.configEditorId}
         name={page.configName}
         draft={page.configDraft}
-        options={page.visibleOptions}
-        analysisAvailable={page.analysisAvailable}
-        suggesting={page.configSuggesting}
-        keywordSuggestions={page.configKeywordSuggestions}
-        selectedSuggestions={page.selectedConfigSuggestions}
         onOpenChange={page.setConfigDialogOpen}
         onNameChange={page.setConfigName}
         onDraftChange={page.setConfigDraft}
-        onRequestSuggestions={() => void page.requestConfigKeywordSuggestions()}
-        onSelectedSuggestionsChange={page.setSelectedConfigSuggestions}
-        onMergeSuggestions={page.mergeConfigKeywordSuggestions}
         onSave={() => void page.saveConfig()}
       />
 
@@ -218,25 +173,22 @@ export default function CustomIntelligencePage() {
         execution={page.selectedExecution}
         open={page.reportDialogOpen}
         loading={page.reportLoading}
-        options={page.visibleOptions}
         pdfExporting={page.pdfExporting}
-        activeExecutionId={page.activeExecutionId}
-        serviceAvailable={page.serviceAvailable}
         onOpenChange={page.setReportDialogOpen}
         onExportPdf={(execution) => void page.exportReportPdf(execution)}
-        onRerun={(execution) => {
-          page.setReportDialogOpen(false);
-          void page.rerun(execution);
+        onEmail={page.openEmail}
+        onRerun={(execution) => void page.rerun(execution)}
+        onReanalyze={(execution) => void page.reanalyze(execution)}
+      />
+
+      <EmailDialog
+        execution={page.emailExecution}
+        open={page.emailDialogOpen}
+        sending={page.emailSending}
+        onOpenChange={(open) => {
+          if (!open) page.openEmail(null);
         }}
-        onSaveConfig={(execution) => {
-          page.setReportDialogOpen(false);
-          page.openSaveConfigFromExecution(execution);
-        }}
-        onReanalyze={(execution) => {
-          page.setReportDialogOpen(false);
-          void page.reanalyze(execution);
-        }}
-        analysisAvailable={page.analysisAvailable}
+        onSend={page.sendEmail}
       />
     </div>
   );
