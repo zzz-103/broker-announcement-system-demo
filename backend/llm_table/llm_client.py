@@ -66,9 +66,15 @@ class OpenAICompatibleClient:
             timeout=self.config.timeout_seconds,
         )
 
-    def _request_json(self, request_kwargs: dict[str, Any]) -> Any:
+    def _request_json(self, request_kwargs: dict[str, Any], *, fallback_to_text: bool = False) -> Any:
         response = self.client.chat.completions.create(**request_kwargs)
-        return parse_json_text(self._extract_message_content(response))
+        content = self._extract_message_content(response)
+        try:
+            return parse_json_text(content)
+        except ValueError:
+            if fallback_to_text:
+                return content
+            raise
 
     @staticmethod
     def _extract_message_content(response: Any) -> str:

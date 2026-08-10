@@ -5,13 +5,19 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import httpx
 
 from backend.api import custom_intelligence_service as service
 from backend.api.custom_intelligence_service import normalize_report, normalize_sources
-from backend.api.custom_intelligence_store import ActiveExecutionError, IntelligenceNotFoundError, IntelligenceStore
+from backend.api.custom_intelligence_store import (
+    EXECUTIONS_RETENTION,
+    ActiveExecutionError,
+    IntelligenceNotFoundError,
+    IntelligenceStore,
+)
 from backend.api.qianfan_search import (
     QianfanReference,
     QianfanConfigurationError,
@@ -101,6 +107,61 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         with self.assertRaises(ActiveExecutionError):
             self.store.delete_topic(5, int(topic["id"]))
 
+    def test_execution_history_retains_30_per_user_and_prunes_oldest(self) -> None:
+        self.assertEqual(EXECUTIONS_RETENTION, 30)
+        created_ids: list[int] = []
+        for index in range(EXECUTIONS_RETENTION + 1):
+            snapshot = {"question": f"历史问题 {index}"}
+            execution = self.store.create_execution(
+                5,
+                snapshot,
+                "instant",
+                5,
+                original_query=snapshot["question"],
+            )
+            created_ids.append(int(execution["id"]))
+            if index == EXECUTIONS_RETENTION:
+                active_executions, active_meta = self.store.list_executions(5, 1, 100)
+                self.assertEqual(active_meta["total"], EXECUTIONS_RETENTION)
+                self.assertIn(int(execution["id"]), {int(item["id"]) for item in active_executions})
+                self.assertNotIn(created_ids[0], {int(item["id"]) for item in active_executions})
+            self.store.update_execution(
+                int(execution["id"]),
+                status="succeeded",
+                search_status="succeeded",
+                analysis_status="succeeded",
+                completed_at=f"2026-08-10T00:00:{index:02d}+00:00",
+            )
+
+        executions, meta = self.store.list_executions(5, 1, 100)
+        self.assertEqual(meta["total"], EXECUTIONS_RETENTION)
+        self.assertEqual({int(item["id"]) for item in executions}, set(created_ids[1:]))
+        with self.assertRaises(IntelligenceNotFoundError):
+            self.store.get_execution(5, created_ids[0])
+
+        first_page, first_meta = self.store.list_executions(5, 1, 10)
+        second_page, second_meta = self.store.list_executions(5, 2, 10)
+        third_page, third_meta = self.store.list_executions(5, 3, 10)
+        self.assertEqual(first_meta["total_pages"], 3)
+        self.assertEqual(second_meta["page"], 2)
+        self.assertEqual(third_meta["page"], 3)
+        self.assertEqual([len(first_page), len(second_page), len(third_page)], [10, 10, 10])
+        self.assertEqual(
+            {item["id"] for item in first_page + second_page + third_page},
+            {item["id"] for item in executions},
+        )
+
+        other_user_execution = self.store.create_execution(
+            6,
+            {"question": "其他用户记录"},
+            "instant",
+            6,
+            original_query="其他用户记录",
+        )
+        other_user_executions, other_meta = self.store.list_executions(6, 1, 100)
+        self.assertEqual(other_meta["total"], 1)
+        self.assertEqual(other_user_executions[0]["id"], other_user_execution["id"])
+
     def test_deep_analysis_only_changes_top_k(self) -> None:
         for depth, top_k in (("concise", 10), ("standard", 20), ("deep", 30)):
             payload = build_search_payload("test", top_k=top_k)
@@ -186,6 +247,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             return fake_result
 
         for depth, expected_top_k in (("standard", 20), ("deep", 30)):
+            seen_payloads.clear()
             snapshot = {
                 "question": "近期证券行业变化",
                 "analysis_perspective": "industry_research",
@@ -208,10 +270,61 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
                 service._run_execution(int(execution["id"]))
 
             self.assertEqual(
-                seen_payloads[-1]["resource_type_filter"][0]["top_k"],
+                seen_payloads[0]["resource_type_filter"][0]["top_k"],
                 expected_top_k,
             )
-            self.assertNotIn("source_preference", seen_payloads[-1])
+            self.assertNotIn("source_preference", seen_payloads[0])
+            self.assertEqual(len(seen_payloads), 5)
+            self.assertEqual(seen_payloads[1]["resource_type_filter"][0]["top_k"], 50)
+            self.assertEqual(
+                len({payload["messages"][0]["content"] for payload in seen_payloads}),
+                5,
+            )
+
+    def test_execution_supplements_search_until_unique_source_limit(self) -> None:
+        primary_result = QianfanSearchResult(
+            answer="首轮结论",
+            references=[
+                QianfanReference("1", "同一来源", "https://example.com/article"),
+                QianfanReference("2", "同一来源", "https://example.com/article/"),
+            ],
+            request_id="request-primary",
+        )
+        supplemental_result = QianfanSearchResult(
+            answer="补充结论",
+            references=[
+                QianfanReference(str(index), f"补充来源 {index}", f"https://supplement.example.com/{index}")
+                for index in range(1, 21)
+            ],
+            request_id="request-supplement",
+        )
+        snapshot = {
+            "question": "近期证券行业变化",
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "report_type": "industry_trends",
+            "analysis_depth": "standard",
+        }
+        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+        with (
+            patch.object(service.client, "search", side_effect=[primary_result, supplemental_result]),
+            patch.object(service, "_request_analysis", return_value={"title": "报告", "core_conclusion": "结论"}),
+        ):
+            service._run_execution(int(execution["id"]))
+
+        stored = self.store.get_execution(5, int(execution["id"]))
+        self.assertEqual(stored["status"], "succeeded")
+        self.assertEqual(len(stored["sources"]), 20)
+        self.assertEqual(stored["request_id"], "request-supplement")
+        request_payload = stored["request_payload"]
+        self.assertEqual(request_payload["resource_type_filter"][0]["top_k"], 20)
+        self.assertEqual(request_payload["supplemental_searches"][0]["resource_type_filter"][0]["top_k"], 50)
+        self.assertEqual(request_payload["search_summary"]["round_count"], 2)
+        self.assertEqual(request_payload["search_summary"]["unique_source_count"], 20)
+        self.assertTrue(request_payload["search_summary"]["reached_source_target"])
+        self.assertEqual(request_payload["search_rounds"][1]["new_source_count"], 20)
+        self.assertNotIn("source_preference", request_payload)
 
     def test_disabled_service_blocks_execution_before_creation(self) -> None:
         self.store.save_search_config(
@@ -297,6 +410,30 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(sources[0]["provider_reference_ids"], ["r1", "r2"])
         self.assertEqual(aliases, {"r1": "source-1", "r2": "source-1"})
 
+    def test_same_title_on_different_hosts_is_not_collapsed(self) -> None:
+        result = QianfanSearchResult(
+            answer="",
+            references=[
+                QianfanReference("r1", "证券行业数字化转型最新进展", "https://first.example.com/a"),
+                QianfanReference("r2", "证券行业数字化转型最新进展", "https://second.example.com/b"),
+            ],
+        )
+        sources, aliases = normalize_sources(result)
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(aliases, {"r1": "source-1", "r2": "source-2"})
+
+    def test_tracking_query_parameters_do_not_create_duplicate_sources(self) -> None:
+        result = QianfanSearchResult(
+            answer="",
+            references=[
+                QianfanReference("r1", "来源", "https://example.com/article?utm_source=baidu"),
+                QianfanReference("r2", "来源", "https://example.com/article?utm_medium=search"),
+            ],
+        )
+        sources, aliases = normalize_sources(result)
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(aliases, {"r1": "source-1", "r2": "source-1"})
+
     def test_duplicate_provider_id_does_not_create_duplicate_canonical_ids(self) -> None:
         result = QianfanSearchResult(
             answer="",
@@ -370,6 +507,32 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(report["request_id"], "request-real")
         self.assertFalse(report["is_fallback"])
 
+    def test_report_accepts_canonical_source_ids_from_model(self) -> None:
+        snapshot = {
+            "question": "原始问题",
+            "time_range": "month",
+            "report_type": "industry_trends",
+        }
+        sources = [
+            {
+                "id": "source-1",
+                "provider_reference_ids": ["ref-1"],
+                "title": "来源",
+                "url": "https://example.com",
+            }
+        ]
+        answer = json.dumps(
+            {
+                "title": "报告",
+                "core_conclusion": "结论",
+                "key_dynamics": [{"title": "动态", "source_ids": ["source-1"]}],
+            },
+            ensure_ascii=False,
+        )
+        report = normalize_report(answer, snapshot, sources, {"ref-1": "source-1"}, [], "now", "request-1")
+        self.assertFalse(report["is_fallback"])
+        self.assertEqual(report["key_dynamics"][0]["source_ids"], ["source-1"])
+
     def test_report_missing_core_conclusion_uses_fallback(self) -> None:
         report = normalize_report(
             '{"title":"只有标题"}',
@@ -381,6 +544,37 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         )
         self.assertTrue(report["is_fallback"])
         self.assertNotEqual(report["core_conclusion"], "")
+
+    def test_analysis_uses_json_mode_and_falls_back_for_plain_text(self) -> None:
+        request: dict[str, object] = {}
+        config = SimpleNamespace(
+            model="test-model",
+            temperature=0.1,
+            top_p=1.0,
+            max_tokens=1024,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+            use_json_object=True,
+        )
+
+        class FakeAnalysisClient:
+            def __init__(self) -> None:
+                self.config = config
+
+            def _request_json(self, request_kwargs: dict[str, object], *, fallback_to_text: bool = False) -> str:
+                request.update(request_kwargs)
+                request["fallback_to_text"] = fallback_to_text
+                return "模型返回的普通文本结论"
+
+        snapshot = {"question": "q", "time_range": "month", "report_type": "industry_trends"}
+        sources = [{"id": "source-1", "title": "来源", "url": "https://example.com"}]
+        with patch.object(service, "_load_analysis_client", return_value=FakeAnalysisClient()):
+            report = service._request_analysis(snapshot, sources, {}, "request-1")
+
+        self.assertEqual(request["response_format"], {"type": "json_object"})
+        self.assertTrue(request["fallback_to_text"])
+        self.assertTrue(report["is_fallback"])
+        self.assertEqual(report["core_conclusion"], "模型返回的普通文本结论")
 
     def test_recover_stale_execution_closes_active_phase(self) -> None:
         snapshot = {"question": "q"}
@@ -475,6 +669,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         sources = [{"id": "source-1", "provider_reference_ids": ["ref-1"], "title": "来源", "url": "https://example.com"}]
         self.store.update_execution(
             int(execution["id"]),
+            status="failed",
             search_status="succeeded",
             analysis_status="failed",
             sources_json=json.dumps(sources, ensure_ascii=False),
@@ -500,6 +695,59 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             self.assertEqual(stored["status"], "succeeded")
             self.assertEqual(stored["analysis_status"], "succeeded")
             search.assert_not_called()
+
+    def test_reanalyze_claim_is_atomic_and_blocks_active_execution(self) -> None:
+        service.initialize_service()
+        snapshot = {
+            "question": "近期证券行业变化",
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "report_type": "industry_trends",
+            "analysis_depth": "concise",
+        }
+        sources = [
+            {
+                "id": "source-1",
+                "provider_reference_ids": ["ref-1"],
+                "title": "来源",
+                "url": "https://example.com",
+            }
+        ]
+        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+        self.store.update_execution(
+            int(execution["id"]),
+            status="failed",
+            search_status="succeeded",
+            analysis_status="failed",
+            sources_json=json.dumps(sources, ensure_ascii=False),
+            reference_aliases_json=json.dumps({"ref-1": "source-1"}, ensure_ascii=False),
+            error_message="previous analysis failed",
+            completed_at="2026-08-10T00:00:00+00:00",
+        )
+        active = self.store.create_execution(5, snapshot, "instant", 5, original_query="active")
+        with self.assertRaises(ActiveExecutionError):
+            service.reanalyze_execution(5, int(execution["id"]))
+        self.store.update_execution(
+            int(active["id"]),
+            status="failed",
+            search_status="failed",
+            analysis_status="not_run",
+            error_message="cleanup",
+            completed_at="2026-08-10T00:00:01+00:00",
+        )
+        with patch.object(service._executor, "submit", return_value=None):
+            claimed = service.reanalyze_execution(5, int(execution["id"]))
+        self.assertEqual(claimed["status"], "running")
+        with self.assertRaises(ActiveExecutionError):
+            service.reanalyze_execution(5, int(execution["id"]))
+        self.store.update_execution(
+            int(execution["id"]),
+            status="failed",
+            analysis_status="failed",
+            error_message="cleanup",
+            completed_at="2026-08-10T00:00:02+00:00",
+        )
 
     def test_search_success_analysis_failure_keeps_sources(self) -> None:
         snapshot = {

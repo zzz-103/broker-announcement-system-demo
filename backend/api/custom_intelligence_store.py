@@ -38,9 +38,9 @@ TOPICS_PER_USER_LIMIT = 10
 
 
 # Per-user execution history retention. Oldest finished records beyond this
-# limit are pruned when a new execution is created; pending/running records
-# are never deleted.
-EXECUTIONS_RETENTION = 50
+# limit are pruned when a new execution is created or completed; pending/running
+# records are never deleted.
+EXECUTIONS_RETENTION = 30
 
 
 def utc_now() -> str:
@@ -222,6 +222,11 @@ class IntelligenceStore:
                 WHERE endpoint = 'https://qianfan.baidubce.com/v2/ai_search/chat/completions'
                 """
             )
+            owners = connection.execute(
+                "SELECT DISTINCT owner_user_id FROM intelligence_executions"
+            ).fetchall()
+            for owner in owners:
+                self._prune_executions(connection, int(owner["owner_user_id"]))
             connection.commit()
         if owns_connection:
             connection.close()
@@ -644,11 +649,22 @@ class IntelligenceStore:
 
     @staticmethod
     def _prune_executions(connection: sqlite3.Connection, owner_user_id: int) -> None:
-        """Keep only the newest EXECUTIONS_RETENTION finished records per user.
+        """Keep at most EXECUTIONS_RETENTION records per user.
 
-        Pending/running records are never touched, and the caller is expected
-        to run this inside the transaction that changes execution state.
+        Pending/running records are never touched. If an execution is active,
+        finished records are reduced to leave room for that active record.
+        The caller is expected to run this inside the current transaction.
         """
+        active_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*) FROM intelligence_executions
+                WHERE owner_user_id = ? AND status IN ('pending', 'running')
+                """,
+                (owner_user_id,),
+            ).fetchone()[0]
+        )
+        finished_limit = max(0, EXECUTIONS_RETENTION - active_count)
         connection.execute(
             """
             DELETE FROM intelligence_executions
@@ -662,7 +678,7 @@ class IntelligenceStore:
                   LIMIT ?
               )
             """,
-            (owner_user_id, owner_user_id, EXECUTIONS_RETENTION),
+            (owner_user_id, owner_user_id, finished_limit),
         )
 
     def create_execution(
@@ -729,6 +745,56 @@ class IntelligenceStore:
         if row is None:
             raise IntelligenceNotFoundError("execution not found")
         return self._execution_from_row(row)
+
+    def start_reanalysis(self, owner_user_id: int, execution_id: int) -> dict[str, object]:
+        """Atomically claim a completed execution for one analysis retry."""
+        try:
+            with self._connection() as connection:
+                self.ensure_schema(connection)
+                row = connection.execute(
+                    """
+                    SELECT * FROM intelligence_executions
+                    WHERE id = ? AND owner_user_id = ?
+                    """,
+                    (execution_id, owner_user_id),
+                ).fetchone()
+                if row is None:
+                    raise IntelligenceNotFoundError("execution not found")
+                if str(row["status"]) in ACTIVE_STATUSES:
+                    raise ActiveExecutionError("an intelligence execution is already active")
+                sources = _decode(row["sources_json"], [])
+                if row["search_status"] != "succeeded" or not isinstance(sources, list) or not sources:
+                    raise IntelligenceNotFoundError("execution has no search results to reanalyze")
+                try:
+                    cursor = connection.execute(
+                        """
+                        UPDATE intelligence_executions
+                        SET status = 'running',
+                            analysis_status = 'running',
+                            analysis_error_message = NULL,
+                            error_message = NULL
+                        WHERE id = ? AND owner_user_id = ?
+                          AND status NOT IN ('pending', 'running')
+                        """,
+                        (execution_id, owner_user_id),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise ActiveExecutionError("an intelligence execution is already active") from exc
+                if cursor.rowcount == 0:
+                    raise ActiveExecutionError("an intelligence execution is already active")
+                updated = connection.execute(
+                    "SELECT * FROM intelligence_executions WHERE id = ?",
+                    (execution_id,),
+                ).fetchone()
+        except (ActiveExecutionError, IntelligenceNotFoundError):
+            raise
+        except sqlite3.IntegrityError as exc:
+            raise ActiveExecutionError("an intelligence execution is already active") from exc
+        except sqlite3.Error as exc:
+            raise IntelligenceStoreError("failed to start intelligence reanalysis") from exc
+        if updated is None:
+            raise IntelligenceNotFoundError("execution not found")
+        return self._execution_from_row(updated)
 
     def list_executions(self, owner_user_id: int, page: int = 1, page_size: int = 20) -> tuple[list[dict[str, object]], dict[str, object]]:
         page = max(1, page)

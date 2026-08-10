@@ -32,6 +32,10 @@ export function DeploymentVersionGuard() {
         if (!deployedVersion || deployedVersion === APP_VERSION) return;
 
         const target = new URL(window.location.href);
+        // If the browser has already retried this exact deployment version,
+        // do not create an infinite reload loop when the served bundle is
+        // stale or the deployment cannot be refreshed immediately.
+        if (target.searchParams.get(VERSION_QUERY_KEY)?.trim() === deployedVersion) return;
         target.searchParams.set(VERSION_QUERY_KEY, deployedVersion);
         window.location.replace(target.toString());
       } catch {

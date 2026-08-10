@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, Loader2, Play } from "lucide-react";
+import { Bookmark, Play } from "lucide-react";
 import type {
   CustomIntelligenceOptionsResponse,
   IntelligenceTopic,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import csv
+import json
 import threading
 import tempfile
 import time
@@ -24,6 +25,7 @@ from backend.api import main  # noqa: E402
 from backend.api.routes import accounts  # noqa: E402
 from backend.api.routes import ai  # noqa: E402
 from backend.api.routes import datasets  # noqa: E402
+from backend.api.routes import custom_intelligence as custom_intelligence_routes  # noqa: E402
 from backend.api import custom_intelligence_service as custom_intelligence_service  # noqa: E402
 from backend.api.qianfan_search import QianfanReference, QianfanSearchResult  # noqa: E402
 
@@ -87,12 +89,14 @@ class RouteOwnershipTests(unittest.TestCase):
             ("GET", "/api/custom-intelligence/topics/{topic_id}"),
             ("POST", "/api/custom-intelligence/topics/{topic_id}"),
             ("POST", "/api/custom-intelligence/topics/{topic_id}/enabled"),
+            ("DELETE", "/api/custom-intelligence/topics/{topic_id}"),
             ("POST", "/api/custom-intelligence/topics/{topic_id}/execute"),
             ("GET", "/api/custom-intelligence/executions"),
             ("POST", "/api/custom-intelligence/executions"),
             ("GET", "/api/custom-intelligence/executions/{execution_id}"),
             ("POST", "/api/custom-intelligence/executions/{execution_id}/rerun"),
             ("POST", "/api/custom-intelligence/executions/{execution_id}/reanalyze"),
+            ("GET", "/api/custom-intelligence/executions/{execution_id}/report/pdf"),
             ("GET", "/api/admin/custom-intelligence/search-config"),
             ("POST", "/api/admin/custom-intelligence/search-config"),
             ("POST", "/api/admin/custom-intelligence/search-config/test"),
@@ -261,6 +265,21 @@ class RouteOwnershipTests(unittest.TestCase):
             self.client.get("/api/admin/custom-intelligence/search-config", headers=user_headers).status_code,
             403,
         )
+        self.assertEqual(
+            self.client.post(
+                "/api/admin/custom-intelligence/search-config/reveal-key",
+                json={"password": "route-audit-password"},
+            ).status_code,
+            401,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/admin/custom-intelligence/search-config/reveal-key",
+                headers=user_headers,
+                json={"password": "route-audit-password"},
+            ).status_code,
+            403,
+        )
         with patch.dict(
             os.environ,
             {
@@ -288,13 +307,20 @@ class RouteOwnershipTests(unittest.TestCase):
             self.assertEqual(body["config_source"], "admin")
             self.assertNotIn("route-secret-key", saved.text)
 
+            loaded = self.client.get(
+                "/api/admin/custom-intelligence/search-config",
+                headers=admin_headers,
+            )
+            self.assertEqual(loaded.status_code, 200)
+            self.assertEqual(loaded.json()["api_key_mask"], "bce-v3/••••••••••••••••")
+            self.assertNotIn("route-secret-key", loaded.text)
+
             wrong_password = self.client.post(
                 "/api/admin/custom-intelligence/search-config/reveal-key",
                 headers=admin_headers,
                 json={"password": "anything-wrong"},
             )
             self.assertEqual(wrong_password.status_code, 401)
-
             revealed = self.client.post(
                 "/api/admin/custom-intelligence/search-config/reveal-key",
                 headers=admin_headers,
@@ -320,10 +346,7 @@ class RouteOwnershipTests(unittest.TestCase):
                 json={"password": "route-audit-password"},
             )
             self.assertEqual(revealed_changed.status_code, 200)
-            self.assertEqual(
-                revealed_changed.json(),
-                {"api_key": "bce-v3/changed-secret-key"},
-            )
+            self.assertEqual(revealed_changed.json(), {"api_key": "bce-v3/changed-secret-key"})
 
     def test_admin_user_and_audit_lists_support_search_and_pagination(self) -> None:
         headers = self._admin_headers()
@@ -507,6 +530,277 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(response.headers["vary"], "Accept-Encoding")
         self.assertEqual(conditional.status_code, 304)
         self.assertEqual(compressed.headers["content-encoding"], "gzip")
+
+    def test_custom_intelligence_options_keywords_and_connection_test_routes(self) -> None:
+        headers = self._admin_headers()
+
+        options = self.client.get("/api/custom-intelligence/options", headers=headers)
+        self.assertEqual(options.status_code, 200)
+        self.assertIn("analysis_configured", options.json())
+        self.assertIn("max_sources_by_depth", options.json())
+
+        keyword_payload = {
+            "question": "近期券商财富管理竞争变化",
+            "description": "关注头部券商的产品与客户体验",
+            "keywords": ["财富管理"],
+            "focus_objects": ["头部券商"],
+            "analysis_perspective": "product_business",
+            "max_suggestions": 8,
+        }
+        with patch.object(custom_intelligence_routes, "suggest_keywords", return_value=["投顾服务", "客户体验"]):
+            suggested = self.client.post(
+                "/api/custom-intelligence/keyword-suggestions",
+                headers=headers,
+                json=keyword_payload,
+            )
+        self.assertEqual(suggested.status_code, 200)
+        self.assertEqual(suggested.json(), {"suggestions": ["投顾服务", "客户体验"]})
+
+        with patch.object(
+            custom_intelligence_routes,
+            "suggest_keywords",
+            side_effect=custom_intelligence_service.AnalysisConfigurationError("not configured"),
+        ):
+            unavailable = self.client.post(
+                "/api/custom-intelligence/keyword-suggestions",
+                headers=headers,
+                json=keyword_payload,
+            )
+        self.assertEqual(unavailable.status_code, 503)
+
+        with patch.object(
+            custom_intelligence_routes,
+            "test_search_configuration",
+            return_value={"message": "mock connection ok", "request_id": "test-1"},
+        ):
+            tested = self.client.post(
+                "/api/admin/custom-intelligence/search-config/test",
+                headers=headers,
+            )
+        self.assertEqual(tested.status_code, 200)
+        self.assertEqual(tested.json()["status"], "success")
+        self.assertEqual(tested.json()["request_id"], "test-1")
+
+        with patch.object(
+            custom_intelligence_routes,
+            "test_search_configuration",
+            side_effect=TimeoutError("mock timeout"),
+        ):
+            failed_test = self.client.post(
+                "/api/admin/custom-intelligence/search-config/test",
+                headers=headers,
+            )
+        self.assertEqual(failed_test.status_code, 200)
+        self.assertEqual(failed_test.json()["status"], "failed")
+        self.assertIn("连接测试失败", failed_test.json()["message"])
+
+    def test_custom_intelligence_topic_crud_enabled_guard_and_execute_route(self) -> None:
+        headers = self._admin_headers()
+        marker = uuid.uuid4().hex
+        payload = {
+            "name": f"主题-{marker}",
+            "question": "近期证券行业监管变化",
+            "description": "跟踪监管与风险",
+            "keywords": ["监管"],
+            "focus_objects": ["证券公司"],
+            "analysis_perspective": "compliance_risk",
+            "time_range": "month",
+            "source_preference": "authoritative",
+            "specified_sites": ["csrc.gov.cn"],
+            "report_type": "risk_monitoring",
+            "analysis_depth": "concise",
+            "extra_requirements": "区分事实和推测",
+        }
+        created = self.client.post("/api/custom-intelligence/topics", headers=headers, json=payload)
+        self.assertEqual(created.status_code, 201)
+        topic = created.json()["topic"]
+        topic_id = int(topic["id"])
+        self.assertNotIn("owner_user_id", topic)
+
+        listed = self.client.get("/api/custom-intelligence/topics", headers=headers)
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(any(int(item["id"]) == topic_id for item in listed.json()["topics"]))
+
+        detail = self.client.get(f"/api/custom-intelligence/topics/{topic_id}", headers=headers)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["topic"]["name"], payload["name"])
+
+        updated_payload = {**payload, "name": f"主题更新-{marker}", "analysis_depth": "deep"}
+        updated = self.client.post(
+            f"/api/custom-intelligence/topics/{topic_id}",
+            headers=headers,
+            json=updated_payload,
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["topic"]["analysis_depth"], "deep")
+
+        disabled = self.client.post(
+            f"/api/custom-intelligence/topics/{topic_id}/enabled",
+            headers=headers,
+            json={"enabled": False},
+        )
+        self.assertEqual(disabled.status_code, 200)
+        self.assertFalse(disabled.json()["topic"]["enabled"])
+        blocked = self.client.post(
+            f"/api/custom-intelligence/topics/{topic_id}/execute",
+            headers=headers,
+        )
+        self.assertEqual(blocked.status_code, 409)
+
+        enabled = self.client.post(
+            f"/api/custom-intelligence/topics/{topic_id}/enabled",
+            headers=headers,
+            json={"enabled": True},
+        )
+        self.assertEqual(enabled.status_code, 200)
+        fake_execution = {"id": 9001, "topic_id": topic_id, "topic_name": updated_payload["name"], "status": "pending", "sources": []}
+        with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_execution):
+            executed = self.client.post(
+                f"/api/custom-intelligence/topics/{topic_id}/execute",
+                headers=headers,
+            )
+        self.assertEqual(executed.status_code, 202)
+        self.assertEqual(executed.json()["execution"]["topic_id"], topic_id)
+
+        deleted = self.client.delete(f"/api/custom-intelligence/topics/{topic_id}", headers=headers)
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json(), {"deleted": True, "id": topic_id})
+        self.assertEqual(
+            self.client.get(f"/api/custom-intelligence/topics/{topic_id}", headers=headers).status_code,
+            404,
+        )
+
+    def test_custom_intelligence_execution_detail_rerun_reanalyze_and_pdf_routes(self) -> None:
+        headers = self._admin_headers()
+        owner_id = int(main.session_tokens[headers["Authorization"].removeprefix("Bearer ")]["user_id"])
+        snapshot = {
+            "question": "近期证券行业动态",
+            "description": "路由矩阵测试",
+            "keywords": [],
+            "focus_objects": [],
+            "analysis_perspective": "industry_research",
+            "time_range": "month",
+            "source_preference": "balanced",
+            "specified_sites": [],
+            "report_type": "industry_trends",
+            "analysis_depth": "concise",
+            "extra_requirements": "",
+        }
+        execution = custom_intelligence_service.store.create_execution(
+            owner_id,
+            snapshot,
+            "instant",
+            owner_id,
+            original_query=snapshot["question"],
+        )
+        execution_id = int(execution["id"])
+        source = {
+            "id": "source-1",
+            "title": "监管动态",
+            "url": "https://example.com/article",
+            "site_name": "示例网",
+            "snippet": "来源摘要",
+        }
+        report = {
+            "title": "路由矩阵报告",
+            "core_conclusion": "综合结论",
+            "time_range": "month",
+            "report_type": "industry_trends",
+            "executed_at": "2026-08-10T00:00:00+00:00",
+            "key_dynamics": [],
+            "focus_sections": [],
+            "opportunities": [],
+            "risks": [],
+            "watch_items": [],
+            "recommended_followups": [],
+        }
+        custom_intelligence_service.store.update_execution(
+            execution_id,
+            status="succeeded",
+            search_status="succeeded",
+            analysis_status="succeeded",
+            sources_json=json.dumps([source], ensure_ascii=False),
+            reference_aliases_json=json.dumps({"ref-1": "source-1"}),
+            request_payload_json=json.dumps(
+                {
+                    "search_summary": {
+                        "requested_source_count": 20,
+                        "unique_source_count": 1,
+                        "round_count": 5,
+                        "supplemental_round_count": 4,
+                        "reached_source_target": False,
+                    },
+                    "search_rounds": [
+                        {
+                            "round": 1,
+                            "facet": "primary",
+                            "status": "succeeded",
+                            "raw_reference_count": 1,
+                            "new_source_count": 1,
+                            "new_domain_count": 1,
+                            "cumulative_source_count": 1,
+                        }
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            report_json=json.dumps(report, ensure_ascii=False),
+            completed_at="2026-08-10T00:00:00+00:00",
+        )
+
+        listed = self.client.get("/api/custom-intelligence/executions?page=1&page_size=10", headers=headers)
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(any(int(item["id"]) == execution_id for item in listed.json()["executions"]))
+
+        detail = self.client.get(f"/api/custom-intelligence/executions/{execution_id}", headers=headers)
+        self.assertEqual(detail.status_code, 200)
+        self.assertNotIn("request_payload", detail.json()["execution"])
+        self.assertEqual(detail.json()["execution"]["sources"][0]["id"], "source-1")
+        self.assertEqual(detail.json()["execution"]["search_coverage"]["round_count"], 5)
+        self.assertEqual(detail.json()["execution"]["search_coverage"]["rounds"][0]["new_source_count"], 1)
+
+        fake_rerun = {"id": 9002, "topic_id": None, "trigger_type": "rerun", "status": "pending", "sources": []}
+        with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_rerun) as rerun_submit:
+            rerun = self.client.post(f"/api/custom-intelligence/executions/{execution_id}/rerun", headers=headers)
+        self.assertEqual(rerun.status_code, 202)
+        self.assertEqual(rerun_submit.call_args.kwargs["trigger_type"], "rerun")
+        self.assertEqual(rerun_submit.call_args.args[1]["question"], snapshot["question"])
+
+        fake_reanalysis = {"id": execution_id, "status": "running", "sources": [source]}
+        with patch.object(custom_intelligence_routes, "reanalyze_execution", return_value=fake_reanalysis):
+            reanalyzed = self.client.post(
+                f"/api/custom-intelligence/executions/{execution_id}/reanalyze",
+                headers=headers,
+            )
+        self.assertEqual(reanalyzed.status_code, 202)
+        self.assertEqual(reanalyzed.json()["execution"]["status"], "running")
+
+        pdf = self.client.get(f"/api/custom-intelligence/executions/{execution_id}/report/pdf", headers=headers)
+        self.assertEqual(pdf.status_code, 200)
+        self.assertEqual(pdf.headers["content-type"], "application/pdf")
+        self.assertTrue(pdf.content.startswith(b"%PDF"))
+        self.assertIn("filename*=UTF-8''", pdf.headers["content-disposition"])
+
+        empty = custom_intelligence_service.store.create_execution(
+            owner_id,
+            snapshot,
+            "instant",
+            owner_id,
+            original_query="无来源记录",
+        )
+        empty_id = int(empty["id"])
+        self.assertEqual(
+            self.client.get(f"/api/custom-intelligence/executions/{empty_id}/report/pdf", headers=headers).status_code,
+            409,
+        )
+        custom_intelligence_service.store.update_execution(
+            empty_id,
+            status="failed",
+            search_status="failed",
+            analysis_status="not_run",
+            error_message="route test cleanup",
+            completed_at="2026-08-10T00:00:01+00:00",
+        )
 
 
 if __name__ == "__main__":

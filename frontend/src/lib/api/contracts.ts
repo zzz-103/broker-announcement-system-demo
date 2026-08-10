@@ -274,6 +274,26 @@ export interface IntelligenceReport {
 export type CustomIntelligenceExecutionStatus = "pending" | "running" | "succeeded" | "empty" | "failed";
 export type CustomIntelligenceTrigger = "instant" | "topic" | "rerun" | string;
 
+export interface CustomIntelligenceSearchRound {
+  round: number;
+  facet: string;
+  status: string;
+  raw_reference_count: number;
+  new_source_count: number;
+  new_domain_count: number;
+  cumulative_source_count: number;
+  error?: string;
+}
+
+export interface CustomIntelligenceSearchCoverage {
+  requested_source_count: number;
+  unique_source_count: number;
+  round_count: number;
+  supplemental_round_count: number;
+  reached_source_target: boolean;
+  rounds: CustomIntelligenceSearchRound[];
+}
+
 export interface CustomIntelligenceExecution {
   id: number;
   topic_id: number | null;
@@ -293,6 +313,7 @@ export interface CustomIntelligenceExecution {
   search_error_message: string | null;
   analysis_error_message: string | null;
   request_id?: string | null;
+  search_coverage?: CustomIntelligenceSearchCoverage;
   created_at: string;
   started_at: string | null;
   completed_at: string | null;

@@ -125,7 +125,7 @@ export function ExecutionList({
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-[#172033]">执行记录</h3>
-          <p className="mt-1 text-xs text-[#667085]">按时间查看状态和报告，低频操作收纳在行末菜单。</p>
+          <p className="mt-1 text-xs text-[#667085]">最多保留最近 30 条，支持分页查看；低频操作收纳在行末菜单。</p>
         </div>
         <button type="button" onClick={onRefresh} disabled={loading} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3 py-1.5 text-xs font-semibold text-[#475467] hover:bg-[#F8FAFD] disabled:cursor-not-allowed disabled:opacity-50">
           <RefreshCw className={`size-3.5 ${loading ? "animate-spin motion-reduce:animate-none" : ""}`} aria-hidden="true" />刷新
@@ -169,6 +169,7 @@ export function ExecutionList({
                 const active = isActiveExecution(execution.status);
                 const analysisFailed = execution.search_status === "succeeded" && execution.analysis_status === "failed";
                 const searchSucceeded = execution.search_status === "succeeded";
+                const coverage = execution.search_coverage;
                 const title = execution.topic_name || (execution.trigger_type === "instant" ? "即时搜索" : "自定义情报执行");
                 const query = execution.original_query || execution.snapshot.question || "未记录问题";
                 const triggerLabel = execution.trigger_type === "topic" ? "配置" : execution.trigger_type === "rerun" ? "重新执行" : "即时";
@@ -204,7 +205,11 @@ export function ExecutionList({
                             <span className="block truncate text-[11px] text-[#667085]" title={resultSummary(execution)}>{resultSummary(execution)}</span>
                           )}
                           {!active && searchSucceeded && (
-                            <span className="mt-1 block text-[10px] text-[#98A2B3]">来源 {execution.sources.length} 条</span>
+                            <span className="mt-1 block text-[10px] text-[#98A2B3]">
+                              来源 {execution.sources.length} 条
+                              {coverage ? ` · ${coverage.round_count} 轮检索` : ""}
+                              {coverage && !coverage.reached_source_target ? " · 时间范围内未达到来源上限" : ""}
+                            </span>
                           )}
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">

@@ -72,7 +72,50 @@ def _public_topic(topic: dict[str, object]) -> dict[str, object]:
     return public
 
 
+def _public_search_coverage(execution: dict[str, object]) -> dict[str, object] | None:
+    payload = execution.get("request_payload")
+    if not isinstance(payload, dict):
+        return None
+    summary = payload.get("search_summary")
+    if not isinstance(summary, dict):
+        return None
+
+    def count(value: object) -> int:
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return 0
+
+    rounds: list[dict[str, object]] = []
+    raw_rounds = payload.get("search_rounds")
+    if isinstance(raw_rounds, list):
+        for item in raw_rounds:
+            if not isinstance(item, dict):
+                continue
+            rounds.append(
+                {
+                    "round": count(item.get("round")),
+                    "facet": str(item.get("facet") or ""),
+                    "status": str(item.get("status") or ""),
+                    "raw_reference_count": count(item.get("raw_reference_count")),
+                    "new_source_count": count(item.get("new_source_count")),
+                    "new_domain_count": count(item.get("new_domain_count")),
+                    "cumulative_source_count": count(item.get("cumulative_source_count")),
+                    **({"error": str(item["error"])} if item.get("error") else {}),
+                }
+            )
+    return {
+        "requested_source_count": count(summary.get("requested_source_count")),
+        "unique_source_count": count(summary.get("unique_source_count")),
+        "round_count": count(summary.get("round_count")),
+        "supplemental_round_count": count(summary.get("supplemental_round_count")),
+        "reached_source_target": bool(summary.get("reached_source_target")),
+        "rounds": rounds,
+    }
+
+
 def _public_execution(execution: dict[str, object]) -> dict[str, object]:
+    search_coverage = _public_search_coverage(execution)
     public = {
         key: value
         for key, value in execution.items()
@@ -91,6 +134,8 @@ def _public_execution(execution: dict[str, object]) -> dict[str, object]:
             for item in sources
             if isinstance(item, dict)
         ]
+    if search_coverage is not None:
+        public["search_coverage"] = search_coverage
     return public
 
 

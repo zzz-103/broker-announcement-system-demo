@@ -59,7 +59,7 @@ export default function CustomIntelligencePage() {
           {
             id: "executions-json",
             label: "已保留记录（JSON）",
-            description: "最多保留最近 50 条，含报告与来源",
+            description: "最多保留最近 30 条，含报告与来源",
             disabled: page.executionsTotal === 0,
             onSelect: () => void page.exportAllExecutions("json"),
           },

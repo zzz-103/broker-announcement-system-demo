@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import ValidationError
 
@@ -25,6 +25,7 @@ from .custom_intelligence_store import (
 )
 from .qianfan_search import (
     QianfanError,
+    QianfanReference,
     QianfanSearchResult,
     build_search_payload,
     client as qianfan_client,
@@ -144,6 +145,34 @@ PRESET_QUESTIONS = [
 ]
 
 MAX_SOURCES_BY_DEPTH = {"concise": 10, "standard": 20, "deep": 30}
+MAX_SUPPLEMENTAL_SEARCHES = 4
+SUPPLEMENTAL_SEARCH_TOP_K = 50
+SEARCH_QUERY_MAX_LENGTH = 96
+MAX_SOURCES_PER_DOMAIN = 4
+SEARCH_FACET_TERMS = {
+    "official_risk": "官方监管政策 合规风险 处罚通知",
+    "institutions": "券商证券公司 机构案例 业务动态",
+    "technology": "数字化 金融科技 智能投顾 技术产品 落地",
+    "research_media": "行业研究 报告 数据 专业媒体",
+}
+SEARCH_FACET_ORDER = {
+    "authoritative": ("official_risk", "institutions", "research_media", "technology"),
+    "balanced": ("official_risk", "institutions", "technology", "research_media"),
+    "news": ("institutions", "research_media", "official_risk", "technology"),
+    "research": ("research_media", "official_risk", "institutions", "technology"),
+}
+TRACKING_QUERY_PARAMETERS = {
+    "bd_vid",
+    "from",
+    "mkt",
+    "spm",
+    "utm_campaign",
+    "utm_content",
+    "utm_medium",
+    "utm_source",
+    "utm_term",
+}
+GENERIC_SOURCE_TITLES = {"首页", "公告", "通知", "详情", "新闻", "资讯", "文章"}
 MAX_TEXT = 8_000
 _init_lock = threading.Lock()
 _initialized = False
@@ -349,26 +378,72 @@ def _extract_json_object(answer: str) -> dict[str, object] | None:
     return value if isinstance(value, dict) else None
 
 
+def _canonical_source_host(url: str) -> str:
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").casefold()
+        if host.startswith("www."):
+            host = host[4:]
+        return host
+    except ValueError:
+        return ""
+
+
+def _canonical_source_url(url: str) -> str:
+    try:
+        parsed = urlsplit(url.strip())
+    except ValueError:
+        return ""
+    scheme = parsed.scheme.casefold()
+    host = _canonical_source_host(url)
+    if not scheme or not host:
+        return ""
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    if port and not ((scheme == "http" and port == 80) or (scheme == "https" and port == 443)):
+        host = f"{host}:{port}"
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.casefold() not in TRACKING_QUERY_PARAMETERS
+    ]
+    query = urlencode(sorted(query_items), doseq=True)
+    return urlunsplit((scheme, host, parsed.path.rstrip("/"), query, ""))
+
+
+def _normalized_source_title(title: object) -> str:
+    return re.sub(r"\s+", " ", clean_text(title, 500)).strip().casefold()
+
+
+def _safe_title_dedupe_key(host: str, title: str) -> tuple[str, str] | None:
+    if not host or not title or len(title) < 8 or title in GENERIC_SOURCE_TITLES:
+        return None
+    return host, title
+
+
 def normalize_sources(result: QianfanSearchResult) -> tuple[list[dict[str, object]], dict[str, str]]:
     canonical: list[dict[str, object]] = []
     aliases: dict[str, str] = {}
     by_url: dict[str, dict[str, object]] = {}
-    by_title: dict[str, dict[str, object]] = {}
+    by_title: dict[tuple[str, str], dict[str, object]] = {}
     by_provider_id: dict[str, dict[str, object]] = {}
     for reference in result.references:
         url = reference.url.strip()
         if not re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
             continue
-        split_url = urlsplit(url)
-        normalized_url = urlunsplit(
-            (split_url.scheme.casefold(), split_url.netloc.casefold(), split_url.path.rstrip("/"), split_url.query, "")
-        )
-        normalized_title = clean_text(reference.title, 500).casefold()
+        normalized_url = _canonical_source_url(url)
+        if not normalized_url:
+            continue
+        normalized_host = _canonical_source_host(url)
+        normalized_title = _normalized_source_title(reference.title)
+        title_key = _safe_title_dedupe_key(normalized_host, normalized_title)
         provider_id = clean_text(reference.provider_reference_id, 100) or str(len(aliases) + 1)
         existing = (
             by_provider_id.get(provider_id)
             or by_url.get(normalized_url)
-            or (by_title.get(normalized_title) if normalized_title else None)
+            or (by_title.get(title_key) if title_key else None)
         )
         if existing is None:
             canonical_id = f"source-{len(canonical) + 1}"
@@ -383,14 +458,205 @@ def normalize_sources(result: QianfanSearchResult) -> tuple[list[dict[str, objec
             }
             canonical.append(existing)
             by_url[normalized_url] = existing
-            if normalized_title:
-                by_title[normalized_title] = existing
+            if title_key:
+                by_title[title_key] = existing
+        elif not existing.get("title") and reference.title:
+            existing["title"] = clean_text(reference.title, 500)
+        if not existing.get("site_name") and reference.site_name:
+            existing["site_name"] = clean_text(reference.site_name, 300)
+        if not existing.get("date") and reference.date:
+            existing["date"] = clean_text(reference.date, 100)
+        if not existing.get("snippet") and reference.snippet:
+            existing["snippet"] = clean_text(reference.snippet, 2_000)
         by_provider_id[provider_id] = existing
         ids = existing["provider_reference_ids"]
         if isinstance(ids, list) and provider_id not in ids:
             ids.append(provider_id)
         aliases[provider_id] = str(existing["id"])
     return canonical, aliases
+
+
+def _merge_search_results(results: list[QianfanSearchResult]) -> QianfanSearchResult:
+    answers: list[str] = []
+    references = []
+    followups: list[str] = []
+    request_id: str | None = None
+    raw: dict[str, Any] = {}
+    for result in results:
+        if result.answer.strip() and result.answer.strip() not in answers:
+            answers.append(result.answer.strip())
+        references.extend(result.references)
+        for followup in result.followups:
+            if followup not in followups:
+                followups.append(followup)
+        if result.request_id:
+            request_id = result.request_id
+        if result.raw:
+            raw = result.raw
+    return QianfanSearchResult(
+        answer="\n\n".join(answers)[:8_000],
+        references=references,
+        followups=followups[:20],
+        request_id=request_id,
+        raw=raw,
+    )
+
+
+def _namespace_search_result(result: QianfanSearchResult, namespace: str) -> QianfanSearchResult:
+    return QianfanSearchResult(
+        answer=result.answer,
+        references=[
+            QianfanReference(
+                provider_reference_id=f"{namespace}:{reference.provider_reference_id}",
+                title=reference.title,
+                url=reference.url,
+                site_name=reference.site_name,
+                date=reference.date,
+                snippet=reference.snippet,
+            )
+            for reference in result.references
+        ],
+        followups=result.followups,
+        request_id=result.request_id,
+        raw=result.raw,
+    )
+
+
+def _limit_sources(
+    sources: list[dict[str, object]],
+    aliases: dict[str, str],
+    limit: int,
+) -> tuple[list[dict[str, object]], dict[str, str]]:
+    if len(sources) <= limit:
+        limited_sources = sources
+    else:
+        selected: list[dict[str, object]] = []
+        deferred: list[dict[str, object]] = []
+        domain_counts: dict[str, int] = {}
+        for source in sources:
+            domain = _canonical_source_host(str(source.get("url") or "")) or "unknown"
+            if domain_counts.get(domain, 0) < MAX_SOURCES_PER_DOMAIN and len(selected) < limit:
+                selected.append(source)
+                domain_counts[domain] = domain_counts.get(domain, 0) + 1
+            else:
+                deferred.append(source)
+        limited_sources = (selected + deferred)[:limit]
+    source_ids = {str(item.get("id") or "") for item in limited_sources}
+    limited_aliases = {
+        provider_id: source_id
+        for provider_id, source_id in aliases.items()
+        if source_id in source_ids
+    }
+    return limited_sources, limited_aliases
+
+
+def _supplement_query(query: str, suffix: str = "补充不同来源") -> str:
+    available = max(1, SEARCH_QUERY_MAX_LENGTH - len(suffix) - 1)
+    return f"{clean_text(query, 1_000)[:available].rstrip()} {suffix}".strip()
+
+
+def _ordered_search_facets(source_preference: str) -> list[str]:
+    order = SEARCH_FACET_ORDER.get(source_preference, SEARCH_FACET_ORDER["balanced"])
+    return list(order[:MAX_SUPPLEMENTAL_SEARCHES])
+
+
+def _source_domains(sources: list[dict[str, object]]) -> set[str]:
+    return {
+        domain
+        for domain in (_canonical_source_host(str(source.get("url") or "")) for source in sources)
+        if domain
+    }
+
+
+def _search_with_supplements(
+    query: str,
+    *,
+    time_range: str,
+    specified_sites: list[str],
+    target_sources: int,
+    primary_payload: dict[str, Any],
+    source_preference: str = "balanced",
+) -> tuple[
+    QianfanSearchResult,
+    list[dict[str, object]],
+    dict[str, str],
+    list[dict[str, Any]],
+    list[str],
+    list[dict[str, object]],
+]:
+    results: list[QianfanSearchResult] = []
+    payloads: list[dict[str, Any]] = []
+    supplement_errors: list[str] = []
+    search_rounds: list[dict[str, object]] = []
+    facets = _ordered_search_facets(source_preference)
+    queries = [query, *[_supplement_query(query, SEARCH_FACET_TERMS[facet]) for facet in facets]]
+    previous_sources: list[dict[str, object]] = []
+    previous_domains: set[str] = set()
+
+    for attempt in range(len(queries)):
+        if attempt == 0:
+            payload = primary_payload
+            facet = "primary"
+        else:
+            payload = build_search_payload(
+                queries[attempt],
+                time_range=time_range,
+                top_k=SUPPLEMENTAL_SEARCH_TOP_K,
+                specified_sites=specified_sites,
+            )
+            facet = facets[attempt - 1]
+        requested_top_k = payload.get("resource_type_filter", [{}])[0].get("top_k", 0)
+        try:
+            result = client.search(payload)
+        except Exception as exc:
+            if attempt == 0:
+                raise
+            error_message = _error_message(exc)
+            supplement_errors.append(error_message)
+            search_rounds.append(
+                {
+                    "round": attempt + 1,
+                    "facet": facet,
+                    "query": queries[attempt],
+                    "status": "failed",
+                    "requested_top_k": requested_top_k,
+                    "raw_reference_count": 0,
+                    "new_source_count": 0,
+                    "new_domain_count": 0,
+                    "cumulative_source_count": len(previous_sources),
+                    "error": error_message,
+                }
+            )
+            continue
+        if attempt > 0:
+            result = _namespace_search_result(result, f"supplement-{attempt}")
+        payloads.append(payload)
+        results.append(result)
+        merged = _merge_search_results(results)
+        sources, _ = normalize_sources(merged)
+        domains = _source_domains(sources)
+        search_rounds.append(
+            {
+                "round": attempt + 1,
+                "facet": facet,
+                "query": queries[attempt],
+                "status": "succeeded",
+                "requested_top_k": requested_top_k,
+                "raw_reference_count": len(result.references),
+                "new_source_count": max(0, len(sources) - len(previous_sources)),
+                "new_domain_count": len(domains - previous_domains),
+                "cumulative_source_count": len(sources),
+            }
+        )
+        previous_sources = sources
+        previous_domains = domains
+        if len(sources) >= target_sources:
+            break
+
+    merged = _merge_search_results(results)
+    sources, aliases = normalize_sources(merged)
+    sources, aliases = _limit_sources(sources, aliases, target_sources)
+    return merged, sources, aliases, payloads, supplement_errors, search_rounds
 
 
 def _fallback_report(
@@ -471,13 +737,20 @@ def normalize_report(
     raw["focus_sections"] = focus_sections[:6]
     dynamics: list[dict[str, object]] = []
     invalid_reference_ids: list[str] = []
+    canonical_source_ids = {
+        str(source.get("id"))
+        for source in sources
+        if isinstance(source, dict) and source.get("id")
+    }
     if isinstance(raw.get("key_dynamics"), list):
         for item in raw["key_dynamics"]:
             if not isinstance(item, dict):
                 continue
             source_ids: list[str] = []
             for source_id in clean_list(item.get("source_ids"), 30):
-                canonical_id = aliases.get(source_id)
+                canonical_id = aliases.get(source_id) or (
+                    source_id if source_id in canonical_source_ids else None
+                )
                 if canonical_id and canonical_id not in source_ids:
                     source_ids.append(canonical_id)
                 elif not canonical_id and source_id not in invalid_reference_ids:
@@ -549,7 +822,7 @@ def _request_analysis(
     }
     if config.use_json_object:
         request_kwargs["response_format"] = {"type": "json_object"}
-    raw = client._request_json(request_kwargs)
+    raw = client._request_json(request_kwargs, fallback_to_text=True)
     answer = raw if isinstance(raw, str) else json.dumps(raw, ensure_ascii=False)
     return normalize_report(
         answer,
@@ -648,8 +921,31 @@ def _run_execution(execution_id: int) -> None:
             final_query=final_query,
             request_payload_json=json.dumps(request_payload, ensure_ascii=False),
         )
-        result = client.search(request_payload)
-        sources, aliases = normalize_sources(result)
+        result, sources, aliases, search_payloads, supplement_errors, search_rounds = _search_with_supplements(
+            final_query,
+            time_range=str(snapshot.get("time_range") or "month"),
+            specified_sites=[str(item) for item in snapshot.get("specified_sites", [])],
+            target_sources=top_k,
+            primary_payload=request_payload,
+            source_preference=str(snapshot.get("source_preference") or "balanced"),
+        )
+        request_payload_record = dict(search_payloads[0] if search_payloads else request_payload)
+        if len(search_payloads) > 1:
+            request_payload_record["supplemental_searches"] = search_payloads[1:]
+        if supplement_errors:
+            request_payload_record["supplemental_errors"] = supplement_errors
+        request_payload_record["search_rounds"] = search_rounds
+        request_payload_record["search_summary"] = {
+            "requested_source_count": top_k,
+            "unique_source_count": len(sources),
+            "round_count": len(search_rounds),
+            "supplemental_round_count": max(0, len(search_rounds) - 1),
+            "reached_source_target": len(sources) >= top_k,
+        }
+        store.update_execution(
+            execution_id,
+            request_payload_json=json.dumps(request_payload_record, ensure_ascii=False),
+        )
         search_answer = clean_text(result.answer, 8_000)
         search_followups = clean_list(result.followups, 20)
         if not sources:
@@ -737,30 +1033,10 @@ def submit_execution(
 
 def reanalyze_execution(owner_user_id: int, execution_id: int) -> dict[str, object]:
     initialize_service()
-    execution = store.get_execution(owner_user_id, execution_id)
-    if execution.get("search_status") != "succeeded" or not execution.get("sources"):
-        raise IntelligenceNotFoundError("execution has no search results to reanalyze")
-    active = next(
-        (
-            item
-            for item in store.list_executions(owner_user_id, 1, 100)[0]
-            if item.get("id") != execution_id
-            and item.get("status") in {"pending", "running"}
-        ),
-        None,
-    )
-    if active is not None:
-        raise ActiveExecutionError("an intelligence execution is already active")
+    execution = store.start_reanalysis(owner_user_id, execution_id)
     sources = [item for item in execution.get("sources", []) if isinstance(item, dict)]
     aliases = execution.get("reference_aliases") if isinstance(execution.get("reference_aliases"), dict) else {}
     search_request_id = str(execution.get("request_id") or "") or None
-    updated = store.update_execution(
-        execution_id,
-        status="running",
-        analysis_status="running",
-        analysis_error_message=None,
-        error_message=None,
-    )
     assert _executor is not None
     try:
         _executor.submit(_run_analysis, execution_id, sources, aliases, search_request_id)
@@ -774,7 +1050,7 @@ def reanalyze_execution(owner_user_id: int, execution_id: int) -> dict[str, obje
             completed_at=datetime.now(timezone.utc).isoformat(),
         )
         raise
-    return updated
+    return execution
 
 
 def suggest_keywords(payload: dict[str, object], max_suggestions: int = 8) -> list[str]:
