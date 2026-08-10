@@ -7,9 +7,11 @@ import os
 import secrets
 import sqlite3
 import csv
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -175,6 +177,20 @@ def _connect() -> sqlite3.Connection:
     return connection
 
 
+@contextmanager
+def _connection() -> Iterator[sqlite3.Connection]:
+    connection = _connect()
+    try:
+        yield connection
+    except Exception:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def ensure_schema(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
@@ -250,7 +266,7 @@ def create_feedback(
 ) -> FeedbackEntry:
     created_at = datetime.now(timezone.utc).isoformat()
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             cursor = connection.execute(
                 """
@@ -278,7 +294,7 @@ def create_feedback(
 
 def list_feedback() -> list[FeedbackEntry]:
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             rows = connection.execute(
                 """
@@ -296,7 +312,7 @@ def list_feedback() -> list[FeedbackEntry]:
 def update_feedback_status(feedback_id: int, feedback_status: str) -> FeedbackEntry:
     processed_at = datetime.now(timezone.utc).isoformat() if feedback_status == "processed" else None
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             cursor = connection.execute(
                 "UPDATE feedback_entries SET status = ?, processed_at = ? WHERE id = ?",
@@ -355,7 +371,7 @@ def list_users(page: int, page_size: int, query: str | None = None) -> tuple[lis
         """
         parameters.extend([pattern, pattern, pattern, pattern])
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             total = int(
                 connection.execute(
@@ -386,7 +402,7 @@ def get_user_names_by_ids(user_ids: set[int]) -> dict[int, str]:
         return {}
     placeholders = ",".join("?" for _ in user_ids)
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             rows = connection.execute(
                 f"SELECT id, name FROM approved_users WHERE id IN ({placeholders})",
@@ -414,7 +430,7 @@ def create_user_with_username(
     created_at = datetime.now(timezone.utc).isoformat()
 
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             existing = _fetch_user_by_email_or_username(connection, normalized_email, resolved_username)
             if existing is not None:
@@ -502,7 +518,7 @@ def apply_for_user(name: str, email: str, department: str) -> tuple[ApprovedUser
 
 def authenticate_user(username: str, password: str) -> ApprovedUser:
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             row = connection.execute(
                 """
@@ -522,7 +538,7 @@ def authenticate_user(username: str, password: str) -> ApprovedUser:
 
 def delete_user(user_id: int) -> None:
     try:
-        with _connect() as connection:
+        with _connection() as connection:
             ensure_schema(connection)
             cursor = connection.execute("DELETE FROM approved_users WHERE id = ?", (user_id,))
             connection.commit()

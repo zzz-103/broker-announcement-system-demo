@@ -245,11 +245,12 @@ def effective_search_config() -> EffectiveSearchConfig:
     row = store.get_search_config_row()
     if row is not None:
         saved_api_key = str(row.get("api_key") or "").strip()
+        saved_auth_header = str(row.get("auth_header") or "").strip()
         return EffectiveSearchConfig(
             enabled=bool(row.get("enabled")),
             api_key=saved_api_key or settings.baidu_qianfan_api_key,
             endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
-            auth_header=settings.baidu_qianfan_auth_header,
+            auth_header=saved_auth_header or settings.baidu_qianfan_auth_header,
             timeout_seconds=max(1.0, min(600.0, float(row.get("timeout_seconds") or 0))),
             config_source="admin",
         )

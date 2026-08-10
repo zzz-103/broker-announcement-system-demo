@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterator
 
 from .config import settings
 
@@ -78,6 +79,19 @@ class IntelligenceStore:
         connection = sqlite3.connect(path, timeout=30, check_same_thread=False)
         connection.row_factory = sqlite3.Row
         return connection
+
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        connection = self._connect()
+        try:
+            yield connection
+        except Exception:
+            connection.rollback()
+            raise
+        else:
+            connection.commit()
+        finally:
+            connection.close()
 
     def ensure_schema(self, connection: sqlite3.Connection | None = None) -> None:
         owns_connection = connection is None
@@ -219,7 +233,7 @@ class IntelligenceStore:
                 return 0
             self._recovered = True
             try:
-                with self._connect() as connection:
+                with self._connection() as connection:
                     self.ensure_schema(connection)
                     search_cursor = connection.execute(
                         """
@@ -311,7 +325,7 @@ class IntelligenceStore:
     def create_topic(self, owner_user_id: int, payload: dict[str, object], actor_user_id: int) -> dict[str, object]:
         now = utc_now()
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 existing = connection.execute(
                     "SELECT COUNT(*) AS total FROM intelligence_topics WHERE owner_user_id = ?",
@@ -361,7 +375,7 @@ class IntelligenceStore:
 
     def list_topics(self, owner_user_id: int) -> list[dict[str, object]]:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 rows = connection.execute(
                     "SELECT * FROM intelligence_topics WHERE owner_user_id = ? ORDER BY updated_at DESC, id DESC",
@@ -394,7 +408,7 @@ class IntelligenceStore:
 
     def get_topic(self, owner_user_id: int, topic_id: int) -> dict[str, object]:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 row = connection.execute(
                     "SELECT * FROM intelligence_topics WHERE id = ? AND owner_user_id = ?",
@@ -415,7 +429,7 @@ class IntelligenceStore:
     ) -> dict[str, object]:
         now = utc_now()
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 cursor = connection.execute(
                     """
@@ -463,7 +477,7 @@ class IntelligenceStore:
 
     def delete_topic(self, owner_user_id: int, topic_id: int) -> None:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 active = connection.execute(
                     """
@@ -489,7 +503,7 @@ class IntelligenceStore:
 
     def set_topic_enabled(self, owner_user_id: int, topic_id: int, enabled: bool, actor_user_id: int) -> dict[str, object]:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 cursor = connection.execute(
                     "UPDATE intelligence_topics SET enabled = ?, updated_by_user_id = ?, updated_at = ? WHERE id = ? AND owner_user_id = ?",
@@ -522,7 +536,7 @@ class IntelligenceStore:
 
     def get_search_config_row(self) -> dict[str, object] | None:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 row = connection.execute(
                     "SELECT * FROM intelligence_search_config WHERE id = 1"
@@ -543,7 +557,7 @@ class IntelligenceStore:
     ) -> dict[str, object]:
         now = utc_now()
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 connection.execute(
                     """
@@ -584,7 +598,7 @@ class IntelligenceStore:
 
     def get_search_test(self) -> dict[str, object] | None:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 row = connection.execute(
                     "SELECT * FROM intelligence_search_test WHERE id = 1"
@@ -601,7 +615,7 @@ class IntelligenceStore:
 
     def save_search_test(self, *, status: str, message: str, tested_at: str) -> dict[str, object]:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 connection.execute(
                     """
@@ -665,7 +679,7 @@ class IntelligenceStore:
     ) -> dict[str, object]:
         now = utc_now()
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 cursor = connection.execute(
                     """
@@ -704,7 +718,7 @@ class IntelligenceStore:
 
     def get_execution(self, owner_user_id: int, execution_id: int) -> dict[str, object]:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 row = connection.execute(
                     "SELECT * FROM intelligence_executions WHERE id = ? AND owner_user_id = ?",
@@ -720,7 +734,7 @@ class IntelligenceStore:
         page = max(1, page)
         page_size = max(1, min(100, page_size))
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 total = int(
                     connection.execute(
@@ -773,7 +787,7 @@ class IntelligenceStore:
         parameters = [values[key] for key in values]
         parameters.append(execution_id)
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 cursor = connection.execute(
                     f"UPDATE intelligence_executions SET {assignments} WHERE id = ?",
@@ -797,7 +811,7 @@ class IntelligenceStore:
 
     def get_execution_by_id(self, execution_id: int) -> dict[str, object]:
         try:
-            with self._connect() as connection:
+            with self._connection() as connection:
                 self.ensure_schema(connection)
                 row = connection.execute("SELECT * FROM intelligence_executions WHERE id = ?", (execution_id,)).fetchone()
         except sqlite3.Error as exc:
