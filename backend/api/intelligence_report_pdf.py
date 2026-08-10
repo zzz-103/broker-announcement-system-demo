@@ -19,6 +19,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (
+    CondPageBreak,
     HRFlowable,
     KeepTogether,
     Paragraph,
@@ -125,8 +126,15 @@ def _format_date(value: object) -> str:
 
 
 def _section_heading(story: list, styles: dict[str, ParagraphStyle], title: str) -> None:
-    story.append(Paragraph(escape(title), styles["section"]))
-    story.append(HRFlowable(width="100%", thickness=0.6, color=CARD_BORDER, spaceAfter=6))
+    # Reserve enough room for the heading and at least one short report card;
+    # otherwise start the section on the next page instead of orphaning the
+    # heading at the bottom margin.
+    story.append(CondPageBreak(42 * mm))
+    heading = Paragraph(escape(title), styles["section"])
+    heading.keepWithNext = True
+    divider = HRFlowable(width="100%", thickness=0.6, color=CARD_BORDER, spaceAfter=6)
+    divider.keepWithNext = True
+    story.extend((heading, divider))
 
 
 def _bullet_list(story: list, styles: dict[str, ParagraphStyle], items: list[str]) -> None:
@@ -191,59 +199,11 @@ AUDIENCE_LABELS = {
 REPORT_LENGTH_LABELS = {"concise": "简报", "standard": "标准", "deep": "深度"}
 
 
-def _legacy_items(report: dict, key: str) -> list[dict[str, object]]:
-    """Translate the pre-V2 report shape for PDF-only compatibility."""
-    if key == "core_judgment":
-        value = report.get("core_conclusion")
-        return [{"type": "analysis", "text": value, "source_ids": []}] if value else []
-    if key == "key_developments":
-        result: list[dict[str, object]] = []
-        for dynamic in report.get("key_dynamics") or []:
-            if not isinstance(dynamic, dict):
-                continue
-            text = dynamic.get("summary") or dynamic.get("impact_analysis") or dynamic.get("title")
-            if text:
-                result.append(
-                    {
-                        "type": "fact",
-                        "text": text,
-                        "source_ids": dynamic.get("source_ids") or [],
-                    }
-                )
-        return result
-    if key == "impact_analysis":
-        value = report.get("impact_analysis")
-        return [{"type": "analysis", "text": value, "source_ids": []}] if isinstance(value, str) and value else []
-    if key == "company_implications":
-        result = []
-        for section in report.get("focus_sections") or []:
-            if not isinstance(section, dict):
-                continue
-            for item in section.get("items") or []:
-                if str(item).strip():
-                    result.append({"type": "analysis", "text": item, "source_ids": []})
-        return result
-    if key == "risks_and_watch_items":
-        return [
-            *[
-                {"type": "analysis", "text": item, "source_ids": []}
-                for item in (report.get("risks") or [])
-                if str(item).strip()
-            ],
-            *[
-                {"type": "recommendation", "text": item, "source_ids": []}
-                for item in (report.get("watch_items") or [])
-                if str(item).strip()
-            ],
-        ]
-    return []
-
-
 def _report_items(report: dict, key: str) -> list[dict[str, object]]:
     value = report.get(key)
     if isinstance(value, list):
         return [item for item in value if isinstance(item, dict) and str(item.get("text") or "").strip()]
-    return _legacy_items(report, key)
+    return []
 
 
 def _content_block(item: dict[str, object], source_indexes: dict[str, int], styles: dict[str, ParagraphStyle]):
@@ -274,10 +234,12 @@ def _content_block(item: dict[str, object], source_indexes: dict[str, int], styl
 
 
 def build_report_pdf(execution: dict) -> bytes:
-    """Build the PDF document bytes for a search-succeeded execution."""
+    """Build PDF bytes from the same persisted Report V2 used by Web/email."""
     _ensure_font()
     styles = _styles()
     report = execution.get("report") if isinstance(execution.get("report"), dict) else {}
+    if report.get("version") != 2:
+        raise ValueError("旧版报告不支持 PDF，请先再次生成 Report V2")
     sources = [item for item in (execution.get("sources") or []) if isinstance(item, dict)]
     source_indexes = {str(item.get("id")): index + 1 for index, item in enumerate(sources)}
     snapshot = execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {}
@@ -295,7 +257,7 @@ def build_report_pdf(execution: dict) -> bytes:
     if audience:
         meta_bits.append(f"受众：{escape(AUDIENCE_LABELS.get(audience, audience))}")
     story.append(Paragraph(" ｜ ".join(meta_bits), styles["meta"]))
-    question = _clean(execution.get("original_query") or snapshot.get("question") or snapshot.get("focus"), 500)
+    question = _clean(execution.get("original_query") or snapshot.get("focus"), 500)
     if question:
         story.append(Spacer(1, 1.5 * mm))
         story.append(Paragraph(f"研究重点：{escape(question)}", styles["meta"]))

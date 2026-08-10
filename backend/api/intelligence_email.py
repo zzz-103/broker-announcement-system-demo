@@ -157,18 +157,13 @@ def _items(report: dict[str, object], key: str, limit: int = 12) -> list[str]:
 
 
 def render_report_html(execution: dict[str, object]) -> tuple[str, str]:
-    """Return (subject, html) using only persisted Report V2 fields.
-
-    V2 uses ``core_judgment``, ``key_developments``, ``company_implications``
-    and ``risks_and_watch_items``.  A short legacy branch keeps already-saved
-    reports deliverable during migration, but no request/prompt/raw response
-    fields are ever copied into the message.
-    """
+    """Return ``(subject, html)`` from one persisted Report V2 object."""
     report = execution.get("report") if isinstance(execution.get("report"), dict) else {}
+    if report.get("version") != 2:
+        raise EmailConfigurationError("旧版报告不支持邮件发送，请先再次生成 Report V2")
     snapshot = execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {}
     sources = execution.get("sources") if isinstance(execution.get("sources"), list) else []
     source_indexes = {str(item.get("id")): index for index, item in enumerate(sources, 1) if isinstance(item, dict) and item.get("id") is not None}
-    legacy = not any(key in report for key in ("core_judgment", "key_developments", "company_implications", "risks_and_watch_items"))
     title = _text(report.get("title"), 500) or _text(execution.get("original_query"), 500) or "即时情报报告"
     sections: list[str] = []
 
@@ -189,45 +184,21 @@ def render_report_html(execution: dict[str, object]) -> tuple[str, str]:
     judgment_items = report_items(report.get("core_judgment"))
     if judgment_items:
         sections.append("<h2>核心判断</h2><ul>" + "".join(item_html(item) for item in judgment_items) + "</ul>")
-    elif legacy and _text(report.get("core_conclusion")):
-        sections.append(f"<h2>核心判断</h2><p>{html.escape(_text(report.get('core_conclusion'))).replace(chr(10), '<br>')}</p>")
-    elif not legacy:
+    else:
         sections.append("<h2>核心判断</h2><p>暂无内容。</p>")
 
     development_items = report_items(report.get("key_developments"))
     if development_items:
         sections.append("<h2>关键动态与案例</h2><ul>" + "".join(item_html(item) for item in development_items) + "</ul>")
-    elif legacy:
-        legacy_dynamics = report.get("key_dynamics")
-        if isinstance(legacy_dynamics, list):
-            values = []
-            for item in legacy_dynamics[:20]:
-                if isinstance(item, dict):
-                    text = _text(item.get("summary")) or _text(item.get("impact_analysis"))
-                    if text:
-                        values.append(f"<li>{html.escape(text)}</li>")
-            if values:
-                sections.append("<h2>关键动态与案例（历史格式）</h2><ul>" + "".join(values) + "</ul>")
-    elif not legacy:
+    else:
         sections.append("<h2>关键动态与案例</h2><p>暂无内容。</p>")
 
     for heading, key in (("影响分析", "impact_analysis"), ("对公司的启示", "company_implications"), ("风险与关注事项", "risks_and_watch_items")):
         values = report_items(report.get(key))
         if values:
             sections.append(f"<h2>{heading}</h2><ul>" + "".join(item_html(item) for item in values) + "</ul>")
-        elif not legacy:
+        else:
             sections.append(f"<h2>{heading}</h2><p>暂无内容。</p>")
-    if legacy and not report_items(report.get("impact_analysis")):
-        old_impact = _text(report.get("impact_analysis"))
-        if old_impact:
-            sections.append(f"<h2>影响分析（历史格式）</h2><p>{html.escape(old_impact)}</p>")
-        legacy_groups = []
-        for heading, key in (("机会", "opportunities"), ("风险", "risks"), ("关注事项", "watch_items"), ("推荐追问", "recommended_followups")):
-            values = _items(report, key)
-            if values:
-                legacy_groups.append(f"<h3>{heading}</h3><ul>" + "".join(f"<li>{html.escape(item)}</li>" for item in values) + "</ul>")
-        if legacy_groups:
-            sections.append("<h2>行动提示（历史格式）</h2>" + "".join(legacy_groups))
 
     warning_items = _items(report, "reference_warnings")
     if warning_items:
@@ -244,8 +215,7 @@ def render_report_html(execution: dict[str, object]) -> tuple[str, str]:
         source_items.append(f"<li value=\"{index}\">{label}</li>")
     if source_items:
         sections.append("<h2>信息来源</h2><ol>" + "".join(source_items) + "</ol>")
-    question = _text(execution.get("original_query") or snapshot.get("question"), 500)
-    legacy_note = "（历史报告兼容格式）" if legacy else ""
+    question = _text(execution.get("original_query") or snapshot.get("focus"), 500)
     audience = _text(report.get("audience") or snapshot.get("audience"), 120)
     time_range = _text(report.get("time_range") or snapshot.get("time_range"), 32)
     report_length = _text(report.get("report_length") or snapshot.get("report_length"), 32)
@@ -254,7 +224,7 @@ def render_report_html(execution: dict[str, object]) -> tuple[str, str]:
         f"受众：{html.escape(AUDIENCE_LABELS.get(audience, audience) or '—')} ｜ "
         f"时间范围：{html.escape(TIME_RANGE_LABELS.get(time_range, time_range) or '—')} ｜ "
         f"报告篇幅：{html.escape(REPORT_LENGTH_LABELS.get(report_length, report_length) or '—')} ｜ "
-        f"有效来源：{len(source_items)} 条 {legacy_note}</p>"
+        f"有效来源：{len(source_items)} 条</p>"
     )
     document = (
         "<!doctype html><html><head><meta charset=\"utf-8\"><style>"

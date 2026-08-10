@@ -28,6 +28,17 @@ def resolve_llm_override_path() -> Path:
     return path.resolve()
 
 
+def resolve_llm_config_source(config_path: Path) -> Path:
+    """Resolve the administrator override before the legacy config path."""
+    override_path = resolve_llm_override_path()
+    return override_path if override_path.exists() else config_path
+
+
+def llm_config_available(config_path: Path) -> bool:
+    """Return whether either the shared override or fallback config exists."""
+    return resolve_llm_config_source(config_path).exists()
+
+
 def write_llm_config_override(payload: dict[str, object], path: Path | None = None) -> Path:
     """Atomically write an administrator-supplied LLM config override."""
     destination = (path or resolve_llm_override_path()).resolve()
@@ -74,7 +85,7 @@ class LLMApiConfig:
     @classmethod
     def load(cls, config_path: Path) -> "LLMApiConfig":
         override_path = resolve_llm_override_path()
-        source_path = override_path if override_path.exists() else config_path
+        source_path = resolve_llm_config_source(config_path)
         payload = json.loads(source_path.read_text(encoding="utf-8"))
         # An administrator-saved override is authoritative.  Keep the legacy
         # environment-key precedence only for the original fallback file.

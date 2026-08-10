@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from backend.llm_table.llm_client import llm_config_available
+
 from .config import PROJECT_ROOT, resolve_project_path
 
 
@@ -201,7 +203,7 @@ class JobCommandFactory:
         if not working_dir.is_dir():
             raise JobStartError("App-watch working directory not found")
         self._validate_app_watch_dependencies(python_executable)
-        if not config_path.exists():
+        if not llm_config_available(config_path):
             raise JobStartError("App-watch LLM config file not found")
         export_path.parent.mkdir(parents=True, exist_ok=True)
         env = self._job_env()
@@ -300,7 +302,7 @@ class JobCommandFactory:
         )
         if not input_dir.exists():
             raise JobStartError("LLM input directory not found")
-        if not config_path.exists():
+        if not llm_config_available(config_path):
             raise JobStartError("LLM config file not found")
         output_dir.mkdir(parents=True, exist_ok=True)
         command = [

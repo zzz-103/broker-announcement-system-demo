@@ -55,6 +55,7 @@ class QianfanReference:
     site_name: str = ""
     date: str = ""
     snippet: str = ""
+    provider_reference_id_is_fallback: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,14 +128,13 @@ def _parse_reference(item: dict[str, Any], index: int) -> QianfanReference | Non
     url = _coerce_text(item.get("url") or item.get("link") or item.get("href")).strip()
     if not re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
         return None
-    provider_id = _coerce_text(
+    explicit_provider_id = _coerce_text(
         item.get("id")
         or item.get("reference_id")
         or item.get("referenceId")
         or item.get("citation_id")
-        or item.get("index")
-        or index
     ).strip()
+    provider_id = explicit_provider_id or _coerce_text(item.get("index") or index).strip()
     title = _coerce_text(item.get("title") or item.get("name")).strip()
     return QianfanReference(
         provider_reference_id=provider_id or str(index),
@@ -149,6 +149,7 @@ def _parse_reference(item: dict[str, Any], index: int) -> QianfanReference | Non
         ).strip(),
         date=_coerce_text(item.get("date") or item.get("publish_time") or item.get("published_at")).strip(),
         snippet=_coerce_text(item.get("snippet") or item.get("summary") or item.get("content")).strip(),
+        provider_reference_id_is_fallback=not bool(explicit_provider_id),
     )
 
 

@@ -14,7 +14,10 @@ class DualScraperJobTests(unittest.TestCase):
     def test_legacy_result_input_env_is_migrated_to_selected_directory(self) -> None:
         manager = JobManager()
         legacy_path = str(PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices")
-        with patch.dict(os.environ, {"LLM_RESULT_INPUT_DIR": legacy_path}):
+        with (
+            patch.dict(os.environ, {"LLM_RESULT_INPUT_DIR": legacy_path}),
+            patch("backend.api.job_commands.llm_config_available", return_value=True),
+        ):
             command, _working_dir, _env = manager._build_llm_command(notice_type="result")
         input_index = command.index("--input-dir") + 1
         self.assertTrue(

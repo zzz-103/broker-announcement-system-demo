@@ -107,9 +107,9 @@ function TestResult({ result }: { result: IntelligenceSearchTestRecord | null | 
 
 function SectionCard({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]">
+    <section className="min-w-0 rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]">
       <div className="border-b border-[#E4E9F0] p-5"><h2 className="text-base font-bold text-[#172033]">{title}</h2><p className="mt-1 text-xs leading-5 text-[#667085]">{description}</p></div>
-      <div className="space-y-4 p-5">{children}</div>
+      <div className="min-w-0 space-y-4 p-5">{children}</div>
     </section>
   );
 }
@@ -250,17 +250,17 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
       {(message || error) && <div role={error ? "alert" : "status"} className={cn("flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm", error ? "border-red-100 bg-red-50 text-red-700" : "border-blue-100 bg-blue-50 text-blue-700")}><span>{error ? <AlertTriangle className="mt-0.5 size-4" aria-hidden="true" /> : <CheckCircle2 className="mt-0.5 size-4" aria-hidden="true" />}</span><span className="whitespace-pre-wrap break-words">{error || message}</span></div>}
 
       <SectionCard title="百度公开检索" description="配置 AI 情报助手使用的百度公开资料检索服务。密钥只显示掩码，查看和替换都需要管理员确认。">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-4 [&>*]:min-w-0 lg:grid-cols-2">
           <Field label="服务状态"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={searchEnabled} onChange={(event) => setSearchEnabled(event.target.checked)} className="size-4 accent-[#2563EB]" />{searchEnabled ? "已启用" : "已停用"}</label></Field>
           <Field label="请求超时（秒）"><input type="number" min={1} max={600} value={searchTimeout} onChange={(event) => setSearchTimeout(Number(event.target.value))} className={INPUT_CLASS} /></Field>
           <SecretField label="百度 API Key" masked={searchConfig?.api_key_mask || ""} value={searchKey} touched={searchKeyTouched} onChange={(value) => { setSearchKey(value); setSearchKeyTouched(true); }} onReveal={() => setRevealTarget("search")} />
-          <Field label="Endpoint"><div className="rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 py-2.5 font-mono text-xs text-[#475467]">{searchConfig?.endpoint || "https://qianfan.baidubce.com/v2/ai_search/web_search"}</div></Field>
+          <Field label="Endpoint"><div className="break-all rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 py-2.5 font-mono text-xs text-[#475467]">{searchConfig?.endpoint || "https://qianfan.baidubce.com/v2/ai_search/web_search"}</div></Field>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveSearch()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "search" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("search")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "search" ? "测试中…" : "测试连接"}</button></div><TestResult result={searchTest} />
       </SectionCard>
 
       <SectionCard title="DeepSeek 模型" description="配置全项目共享的规划与报告模型。API Key 默认只显示掩码，二次验证后可查看并替换。">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-4 [&>*]:min-w-0 lg:grid-cols-2">
           <Field label="服务状态"><div className="flex h-11 items-center rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 text-xs font-semibold text-[#344054]">系统必需服务 · {llmEnabled ? "已配置" : "未配置"}</div></Field>
           <Field label="模型"><input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} placeholder="deepseek-chat" className={INPUT_CLASS} /></Field>
           <Field label="请求超时（秒）"><input type="number" min={1} max={600} value={llmTimeout} onChange={(event) => setLlmTimeout(Number(event.target.value))} className={INPUT_CLASS} /></Field>
@@ -271,7 +271,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
       </SectionCard>
 
       <SectionCard title="网易 SMTP 邮件" description="用于发送 HTML 报告或 PDF 附件。仅保存邮箱授权码，不保存邮箱登录密码。">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-4 [&>*]:min-w-0 lg:grid-cols-2">
           <Field label="服务状态"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={smtpEnabled} onChange={(event) => setSmtpEnabled(event.target.checked)} className="size-4 accent-[#2563EB]" />{smtpEnabled ? "已启用" : "已停用"}</label></Field>
           <Field label="SMTP 主机"><div className="flex h-11 items-center rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 font-mono text-xs text-[#475467]">{smtpHost || "smtp.126.com"}</div></Field>
           <Field label="端口 / 安全"><div className="flex h-11 items-center rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 text-xs text-[#475467]">{smtpPort || 465} · SSL</div></Field>

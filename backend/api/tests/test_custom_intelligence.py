@@ -241,7 +241,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         options = service.options_payload()
         self.assertEqual(set(options), {"service_status"})
 
-    def test_execution_payload_uses_depth_source_limit(self) -> None:
+    def test_report_length_does_not_change_planner_query_count_or_search_top_k(self) -> None:
         fake_result = QianfanSearchResult(
             answer="综合结论",
             references=[QianfanReference("ref-1", "来源", "https://example.com")],
@@ -252,53 +252,83 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             seen_payloads.append(payload)
             return fake_result
 
-        for depth, expected_top_k in (("standard", 10), ("deep", 10)):
+        for report_length in ("standard", "deep"):
             seen_payloads.clear()
             snapshot = {
-                "question": "近期证券行业变化",
-                "analysis_perspective": "industry_research",
+                "audience": "industry_research",
+                "audience_detail": "",
+                "focus_tags": ["同业竞争"],
+                "focus": "近期证券行业变化",
+                "extra_focus": "",
                 "time_range": "month",
-                "source_preference": "authoritative",
-                "report_type": "industry_trends",
-                "analysis_depth": depth,
+                "report_length": report_length,
             }
             execution = self.store.create_execution(
                 5,
                 snapshot,
                 "instant",
                 5,
-                original_query=snapshot["question"],
+                original_query=snapshot["focus"],
             )
             with (
+                patch.object(
+                    service,
+                    "_request_query_plan",
+                    return_value={
+                        "intent": "证券行业变化",
+                        "queries": [
+                            {"query": "证券行业监管变化", "purpose": "监管"},
+                            {"query": "券商同业经营变化", "purpose": "同业"},
+                        ],
+                    },
+                ),
                 patch.object(service.client, "search", side_effect=fake_search),
-                patch.object(service, "_request_analysis", return_value={"title": "报告", "core_conclusion": "结论"}),
+                patch.object(
+                    service,
+                    "_request_analysis",
+                    return_value={
+                        "version": 2,
+                        "title": "报告",
+                        "core_judgment": [
+                            {"type": "analysis", "text": "结论", "source_ids": ["source-1"]}
+                        ],
+                        "key_developments": [],
+                        "impact_analysis": [],
+                        "company_implications": [],
+                        "risks_and_watch_items": [],
+                    },
+                ),
             ):
                 service._run_execution(int(execution["id"]))
 
-            self.assertEqual(
-                seen_payloads[0]["resource_type_filter"][0]["top_k"],
-                expected_top_k,
+            self.assertEqual(len(seen_payloads), 2)
+            self.assertTrue(
+                all(payload["resource_type_filter"][0]["top_k"] == 10 for payload in seen_payloads)
             )
-            self.assertNotIn("source_preference", seen_payloads[0])
-            self.assertEqual(len(seen_payloads), 1)
+            self.assertTrue(all("source_preference" not in payload for payload in seen_payloads))
             self.assertEqual(
                 len({payload["messages"][0]["content"] for payload in seen_payloads}),
-                1,
+                2,
             )
 
     def test_planned_queries_merge_until_unique_source_limit(self) -> None:
         first_result = QianfanSearchResult(
             answer="首轮结论",
             references=[
-                QianfanReference("1", "同一来源", "https://example.com/article"),
-                QianfanReference("2", "同一来源", "https://example.com/article/"),
+                QianfanReference("1", "同一来源", "https://example.com/article", provider_reference_id_is_fallback=True),
+                QianfanReference("2", "同一来源", "https://example.com/article/", provider_reference_id_is_fallback=True),
             ],
             request_id="request-primary",
         )
         second_result = QianfanSearchResult(
             answer="补充结论",
             references=[
-                QianfanReference(str(index), f"补充来源 {index}", f"https://domain{index}.example.com/{index}")
+                QianfanReference(
+                    str(index),
+                    f"补充来源 {index}",
+                    f"https://domain{index}.example.com/{index}",
+                    provider_reference_id_is_fallback=True,
+                )
                 for index in range(1, 11)
             ],
             request_id="request-secondary",
@@ -322,6 +352,47 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(diagnostics["final_source_ids"], [item["id"] for item in sources])
         self.assertEqual(rounds[-1]["request_id"], "request-secondary")
         self.assertEqual(errors, [])
+
+    def test_explicit_numeric_provider_ids_deduplicate_across_queries(self) -> None:
+        first = QianfanSearchResult(
+            answer="第一轮",
+            references=[QianfanReference("123", "来源甲", "https://one.example.com/a")],
+        )
+        second = QianfanSearchResult(
+            answer="第二轮",
+            references=[QianfanReference("123", "来源乙", "https://two.example.com/b")],
+        )
+        with patch.object(service.client, "search", side_effect=[first, second]):
+            _merged, sources, _aliases, _payloads, _errors, _rounds, diagnostics = _search_with_queries(
+                [
+                    {"query": "第一轮", "purpose": "一"},
+                    {"query": "第二轮", "purpose": "二"},
+                ],
+                time_range="month",
+                target_sources=15,
+            )
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(diagnostics["duplicate_removed_count"], 1)
+
+    def test_parser_generated_rank_ids_are_scoped_per_query(self) -> None:
+        parsed_first = parse_search_response(
+            {"references": [{"title": "来源甲", "url": "https://one.example.com/a"}]}
+        )
+        parsed_second = parse_search_response(
+            {"references": [{"title": "来源乙", "url": "https://two.example.com/b"}]}
+        )
+        self.assertTrue(parsed_first.references[0].provider_reference_id_is_fallback)
+        with patch.object(service.client, "search", side_effect=[parsed_first, parsed_second]):
+            _merged, sources, _aliases, _payloads, _errors, _rounds, diagnostics = _search_with_queries(
+                [
+                    {"query": "第一轮", "purpose": "一"},
+                    {"query": "第二轮", "purpose": "二"},
+                ],
+                time_range="month",
+                target_sources=15,
+            )
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(diagnostics["duplicate_removed_count"], 0)
 
     def test_all_planned_queries_run_even_when_first_query_reaches_source_cap(self) -> None:
         full_result = QianfanSearchResult(
@@ -669,16 +740,17 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
 
     def test_execution_success_failure_and_duplicate_guard(self) -> None:
         snapshot = {
-            "question": "近期证券行业变化",
-            "analysis_perspective": "industry_research",
+            "audience": "industry_research",
+            "audience_detail": "",
+            "focus_tags": ["同业竞争"],
+            "focus": "近期证券行业变化",
+            "extra_focus": "",
             "time_range": "month",
-            "source_preference": "balanced",
-            "report_type": "industry_trends",
-            "analysis_depth": "concise",
+            "report_length": "concise",
         }
-        succeeded = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+        succeeded = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["focus"])
         with self.assertRaises(ActiveExecutionError):
-            self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+            self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["focus"])
         fake_result = QianfanSearchResult(
             answer="综合结论",
             references=[QianfanReference("ref-1", "来源", "https://example.com")],
@@ -698,6 +770,17 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             "request-1",
         )
         with (
+            patch.object(
+                service,
+                "_request_query_plan",
+                return_value={
+                    "intent": "证券行业变化",
+                    "queries": [
+                        {"query": "证券行业监管变化", "purpose": "监管"},
+                        {"query": "券商同业经营变化", "purpose": "同业"},
+                    ],
+                },
+            ),
             patch.object(service.client, "search", return_value=fake_result),
             patch.object(service, "_request_analysis", return_value=fake_report),
         ):
@@ -711,8 +794,21 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(stored["search_answer"], "综合结论")
         self.assertEqual(stored["search_followups"], ["还应关注哪些风险？"])
 
-        failed = self.store.create_execution(5, snapshot, "rerun", 5, original_query=snapshot["question"])
-        with patch.object(service.client, "search", side_effect=RuntimeError("secret upstream detail")):
+        failed = self.store.create_execution(5, snapshot, "rerun", 5, original_query=snapshot["focus"])
+        with (
+            patch.object(
+                service,
+                "_request_query_plan",
+                return_value={
+                    "intent": "证券行业变化",
+                    "queries": [
+                        {"query": "证券行业监管变化", "purpose": "监管"},
+                        {"query": "券商同业经营变化", "purpose": "同业"},
+                    ],
+                },
+            ),
+            patch.object(service.client, "search", side_effect=RuntimeError("secret upstream detail")),
+        ):
             service._run_execution(int(failed["id"]))
         failed_stored = self.store.get_execution(5, int(failed["id"]))
         self.assertEqual(failed_stored["status"], "failed")
@@ -817,20 +913,32 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
 
     def test_search_success_analysis_failure_keeps_sources(self) -> None:
         snapshot = {
-            "question": "近期证券行业变化",
-            "analysis_perspective": "industry_research",
+            "audience": "industry_research",
+            "audience_detail": "",
+            "focus_tags": ["同业竞争"],
+            "focus": "近期证券行业变化",
+            "extra_focus": "",
             "time_range": "month",
-            "source_preference": "balanced",
-            "report_type": "industry_trends",
-            "analysis_depth": "concise",
+            "report_length": "concise",
         }
-        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["question"])
+        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["focus"])
         fake_result = QianfanSearchResult(
             answer="",
             references=[QianfanReference("ref-1", "来源", "https://example.com")],
             request_id="request-analysis-fail",
         )
         with (
+            patch.object(
+                service,
+                "_request_query_plan",
+                return_value={
+                    "intent": "证券行业变化",
+                    "queries": [
+                        {"query": "证券行业监管变化", "purpose": "监管"},
+                        {"query": "券商同业经营变化", "purpose": "同业"},
+                    ],
+                },
+            ),
             patch.object(service.client, "search", return_value=fake_result),
             patch.object(service, "_request_analysis", side_effect=RuntimeError("deepseek timeout")),
         ):

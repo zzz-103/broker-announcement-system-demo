@@ -20,12 +20,14 @@ try:
     from backend.llm_table.llm_client import (
         LLMApiConfig,
         OpenAICompatibleClient as BaseOpenAICompatibleClient,
+        llm_config_available,
         parse_json_text,
     )
 except ModuleNotFoundError:  # Direct script execution from backend/llm_table.
     from llm_client import (  # type: ignore[no-redef]
         LLMApiConfig,
         OpenAICompatibleClient as BaseOpenAICompatibleClient,
+        llm_config_available,
         parse_json_text,
     )
 
@@ -1621,7 +1623,7 @@ def main() -> int:
         print(message, file=sys.stderr)
         return 1
 
-    if not llm_config_path.exists():
+    if not llm_config_available(llm_config_path):
         parser.error(f"未找到 LLM 配置文件: {llm_config_path}")
 
     llm_config = LLMApiConfig.load(llm_config_path)

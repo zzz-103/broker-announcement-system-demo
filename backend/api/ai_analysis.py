@@ -260,8 +260,6 @@ def build_prompt(
 
 def request_model_analysis(messages: list[dict[str, str]]) -> dict[str, str]:
     path = llm_config_path()
-    if not path.exists():
-        raise AiAnalysisError(500, "LLM 配置文件不存在")
     try:
         config = LLMApiConfig.load(path)
         override_timeout = timeout_seconds()

@@ -527,7 +527,7 @@ def post_admin_search_config(
         if not api_key or "••" in api_key:
             api_key = current.api_key
         if payload.enabled and not api_key:
-            raise QianfanConfigurationError("百度搜索 API Key 不能为空")
+            raise HTTPException(status_code=400, detail="百度搜索 API Key 不能为空")
         store.save_search_config(
             enabled=payload.enabled,
             endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
@@ -544,6 +544,8 @@ def post_admin_search_config(
             metadata={"enabled": payload.enabled},
         )
         return _admin_search_config_payload()
+    except HTTPException:
+        raise
     except Exception as exc:
         raise _handle_store_error(exc, "无法保存情报搜索服务配置") from exc
 
@@ -608,13 +610,16 @@ def post_admin_search_config_reveal_key(
 ) -> dict[str, str]:
     expected_password = settings.admin_password
     if expected_password and secrets.compare_digest(payload.password, expected_password):
+        api_key = effective_search_config().api_key
+        if not api_key:
+            raise HTTPException(status_code=404, detail="百度搜索 API Key 尚未配置")
         _audit_intelligence_event(
             authorization,
             "custom_intelligence_secret_revealed",
             action="reveal",
             target="baidu_search",
         )
-        return {"api_key": effective_search_config().api_key}
+        return {"api_key": api_key}
     _audit_intelligence_event(
         authorization,
         "custom_intelligence_secret_revealed",

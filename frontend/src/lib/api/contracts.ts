@@ -246,7 +246,6 @@ export interface IntelligenceAssistantExecution {
   created_at: string;
   started_at?: string | null;
   completed_at: string | null;
-  diagnostics?: IntelligenceExecutionDiagnostics | null;
 }
 
 export interface IntelligenceAssistantTopicsResponse {

@@ -559,24 +559,27 @@ def _merge_search_results(results: list[QianfanSearchResult]) -> QianfanSearchRe
 
 
 def _namespace_search_result(result: QianfanSearchResult, namespace: str) -> QianfanSearchResult:
-    def scoped_provider_id(provider_id: str) -> str:
-        # Some search responses use the local rank ("1", "2", ...) as an
-        # id. Those ranks are not globally stable across queries, so scope
-        # only rank-like ids. Stable provider ids remain untouched and can be
-        # deduplicated across query rounds as required by the provider key.
+    def scoped_provider_id(provider_id: str, is_fallback: bool) -> str:
+        # Parser-generated local ranks are scoped to their query.  Explicit
+        # provider IDs, including numeric IDs, remain stable across rounds and
+        # therefore participate in provider-level deduplication.
         value = provider_id.strip()
-        return f"{namespace}:{value}" if value.isdigit() else value
+        return f"{namespace}:{value}" if is_fallback else value
 
     return QianfanSearchResult(
         answer=result.answer,
         references=[
             QianfanReference(
-                provider_reference_id=scoped_provider_id(reference.provider_reference_id),
+                provider_reference_id=scoped_provider_id(
+                    reference.provider_reference_id,
+                    reference.provider_reference_id_is_fallback,
+                ),
                 title=reference.title,
                 url=reference.url,
                 site_name=reference.site_name,
                 date=reference.date,
                 snippet=reference.snippet,
+                provider_reference_id_is_fallback=reference.provider_reference_id_is_fallback,
             )
             for reference in result.references
         ],

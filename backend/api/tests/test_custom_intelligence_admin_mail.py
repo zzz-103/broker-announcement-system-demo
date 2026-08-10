@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from backend.api import ai_analysis
 from backend.api.custom_intelligence_store import IntelligenceStore
 from backend.api.intelligence_email import (
     EffectiveSMTPConfig,
@@ -17,7 +18,11 @@ from backend.api.intelligence_email import (
     render_report_html,
     send_report_email,
 )
-from backend.llm_table.llm_client import LLMApiConfig, resolve_llm_override_path
+from backend.llm_table.llm_client import (
+    LLMApiConfig,
+    llm_config_available,
+    resolve_llm_override_path,
+)
 
 
 class FakeSMTP:
@@ -116,6 +121,32 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         self.assertEqual(loaded.base_url, "https://override")
         self.assertEqual(loaded.api_key, "override-key")
         self.assertEqual(resolve_llm_override_path(), self.override_path.resolve())
+
+        missing_fallback = Path(self.temp_dir.name) / "missing-fallback.json"
+        self.assertTrue(llm_config_available(missing_fallback))
+        loaded_without_fallback = LLMApiConfig.load(missing_fallback)
+        self.assertEqual(loaded_without_fallback.model, "override-model")
+
+    def test_global_ai_analysis_uses_override_when_fallback_is_missing(self):
+        self.override_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://override.example.com/v1",
+                    "api_key": "override-key",
+                    "model": "override-model",
+                }
+            ),
+            encoding="utf-8",
+        )
+        missing_fallback = Path(self.temp_dir.name) / "missing-global-fallback.json"
+        with (
+            patch.dict(os.environ, {"LLM_CONFIG_PATH": str(missing_fallback)}),
+            patch.object(ai_analysis, "OpenAICompatibleClient") as client_class,
+        ):
+            client_class.return_value._request_json.return_value = {"content": "共享配置生效"}
+            result = ai_analysis.request_model_analysis([{"role": "user", "content": "test"}])
+        self.assertEqual(result, {"content": "共享配置生效"})
+        self.assertEqual(client_class.call_args.args[0].model, "override-model")
 
     def test_v2_html_citations_and_external_confirmation(self):
         execution = {
