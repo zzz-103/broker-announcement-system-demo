@@ -63,7 +63,7 @@ REPORT_FOCUS_LABELS = {
     "industry_trends": ["趋势信号", "行业演进判断"],
     "risk_monitoring": ["风险预警", "合规处置建议"],
 }
-DEPTH_LABELS = {"concise": "简洁", "standard": "标准", "deep": "深入"}
+DEPTH_LABELS = {"concise": "简洁", "standard": "标准", "deep": "深度研究"}
 SOURCE_PREFERENCE_LABELS = {
     "authoritative": "权威来源优先",
     "balanced": "综合平衡",
@@ -143,7 +143,7 @@ PRESET_QUESTIONS = [
     },
 ]
 
-TOP_K_BY_DEPTH = {"concise": 6, "standard": 8, "deep": 10}
+MAX_SOURCES_BY_DEPTH = {"concise": 10, "standard": 20, "deep": 30}
 MAX_TEXT = 8_000
 _init_lock = threading.Lock()
 _initialized = False
@@ -208,6 +208,7 @@ def options_payload() -> dict[str, object]:
         "time_ranges": [{"value": key, "label": value} for key, value in TIME_RANGE_LABELS.items()],
         "report_types": [{"value": key, "label": value} for key, value in REPORT_TYPE_LABELS.items()],
         "analysis_depths": [{"value": key, "label": value} for key, value in DEPTH_LABELS.items()],
+        "max_sources_by_depth": dict(MAX_SOURCES_BY_DEPTH),
         "source_preferences": [{"value": key, "label": value} for key, value in SOURCE_PREFERENCE_LABELS.items()],
         "preset_questions": PRESET_QUESTIONS,
         "service_configured": configured,
@@ -632,7 +633,10 @@ def _run_execution(execution_id: int) -> None:
         )
         snapshot = normalize_snapshot(execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {})
         final_query = build_final_query(snapshot)
-        top_k = TOP_K_BY_DEPTH.get(str(snapshot.get("analysis_depth")), 8)
+        top_k = MAX_SOURCES_BY_DEPTH.get(
+            str(snapshot.get("analysis_depth")),
+            MAX_SOURCES_BY_DEPTH["standard"],
+        )
         request_payload = build_search_payload(
             final_query,
             time_range=str(snapshot.get("time_range") or "month"),

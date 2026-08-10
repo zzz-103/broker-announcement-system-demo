@@ -3,6 +3,7 @@ import type {
   CustomIntelligenceExecution,
   CustomIntelligenceExecutionStatus,
   CustomIntelligenceOptionsResponse,
+  IntelligenceAnalysisDepth,
   IntelligenceTopic,
   InstantSearchRequest,
 } from "@/lib/api/contracts";
@@ -109,6 +110,22 @@ export function optionLabel(
   value: string | undefined,
 ): string {
   return options.find((item) => item.value === value)?.label ?? "—";
+}
+
+export function maxSourcesForDepth(
+  options: CustomIntelligenceOptionsResponse,
+  depth: string | undefined,
+): number {
+  const sourceLimits: Partial<Record<IntelligenceAnalysisDepth, number>> = options.max_sources_by_depth ?? {};
+  const selected = depth ? sourceLimits[depth as IntelligenceAnalysisDepth] : undefined;
+  return selected ?? sourceLimits.standard ?? 20;
+}
+
+export function sourceCountLabel(
+  execution: CustomIntelligenceExecution,
+  options: CustomIntelligenceOptionsResponse,
+): string {
+  return `${execution.sources.length}/${maxSourcesForDepth(options, execution.snapshot.analysis_depth)} 条来源`;
 }
 
 export type ReportPhase =

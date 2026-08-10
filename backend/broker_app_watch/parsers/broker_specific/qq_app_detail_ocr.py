@@ -1,4 +1,4 @@
-"""Tencent MyApp detail parser with OCR for configured preview screenshots."""
+"""Tencent MyApp detail parser with OCR for preview screenshots."""
 
 from collections.abc import Callable
 
@@ -18,7 +18,7 @@ ImageFetcher = Callable[[str], bytes]
 
 
 class QqAppDetailOcrParser(Parser):
-    """Keep 简介/详细信息 and append original text recognized from preview images."""
+    """Keep page sections and append original text recognized from screenshots."""
 
     def __init__(
         self,
@@ -32,18 +32,32 @@ class QqAppDetailOcrParser(Parser):
         self, body: str, source: BrokerSource, response: CollectedContent
     ) -> ParsedDocument:
         document = GenericHtmlParser().parse(body, source, response)
-        alt_text = source.parser_options.get("screenshot_alt")
+        configured_alt = source.parser_options.get("screenshot_alt")
         limit = source.parser_options.get("screenshot_limit", 1)
         min_score = float(source.parser_options.get("min_score", 0.0))
-        if not isinstance(alt_text, str) or not alt_text.strip():
+        if configured_alt is not None and (
+            not isinstance(configured_alt, str) or not configured_alt.strip()
+        ):
             raise ValueError(f"{source.broker_code} 的 screenshot_alt 配置必须是字符串")
         if not isinstance(limit, int) or limit < 1:
             raise ValueError(f"{source.broker_code} 的 screenshot_limit 配置必须是正整数")
 
+        alt_text = configured_alt.strip() if isinstance(configured_alt, str) else None
+
         soup = BeautifulSoup(body, "html.parser")
         image_urls: list[str] = []
         for image in soup.find_all("img"):
-            if image.get("alt", "").strip() != alt_text.strip():
+            image_alt = image.get("alt")
+            if not isinstance(image_alt, str):
+                continue
+            image_alt = image_alt.strip()
+            if alt_text is not None:
+                matches = image_alt == alt_text
+            else:
+                # Tencent's generated alt text includes the app name and can
+                # change between releases; keep the stable screenshot marker.
+                matches = "截图" in image_alt or "screenshot" in image_alt.lower()
+            if not matches:
                 continue
             src = image.get("src")
             if isinstance(src, str) and src.strip() and src.strip() not in image_urls:
@@ -51,9 +65,8 @@ class QqAppDetailOcrParser(Parser):
             if len(image_urls) >= limit:
                 break
         if not image_urls:
-            raise ValueError(
-                f"{source.broker_code} 缺失预览截图“{alt_text}”，来源：{source.source_url}"
-            )
+            screenshot_hint = f"“{alt_text}”" if alt_text else "（alt 包含截图标识）"
+            raise ValueError(f"{source.broker_code} 缺失预览截图{screenshot_hint}，来源：{source.source_url}")
 
         if self._ocr_reader is None:
             self._ocr_reader = _default_ocr_reader()

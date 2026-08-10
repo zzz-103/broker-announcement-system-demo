@@ -367,6 +367,34 @@ def test_qq_app_detail_parser_keeps_sections_and_ocrs_first_screenshot() -> None
     assert document.source_metadata["screenshot_count"] == "1"
 
 
+def test_qq_app_detail_parser_auto_selects_screenshot_alt_without_source_config() -> None:
+    body = """
+    <h2>简介</h2><p>官方财富管理 App。</p>
+    <h2>详细信息</h2><p>版本号：8.8.68</p>
+    <img alt="应用图标" src="https://img.example/icon.png">
+    <img alt="精彩截图-广发易淘金2026官方新版" src="https://img.example/shot-1.png">
+    """
+    source = _source(
+        broker_code="gfzq",
+        broker_name="广发证券",
+        app_name="广发易淘金",
+        source_url="https://sj.qq.com/appdetail/com.gf.client",
+        parser="generic_html",
+        parser_options={"section_headings": ["简介", "详细信息"]},
+    )
+    fetched: list[str] = []
+    parser = QqAppDetailOcrParser(
+        image_fetcher=lambda url: fetched.append(url) or b"image",
+        ocr_reader=lambda data: [("OCR 文字", 0.99)],
+    )
+
+    document = parser.parse(body, source, _response(source, body))
+
+    assert fetched == ["https://img.example/shot-1.png"]
+    assert document.sections[-1].heading == "截图文字 1"
+    assert document.sections[-1].content == "OCR 文字"
+
+
 def test_dgzq_parser_keeps_only_configured_mobile_clients() -> None:
     body = (FIXTURES / "dgzq_soft.json").read_text(encoding="utf-8")
     source = _source(

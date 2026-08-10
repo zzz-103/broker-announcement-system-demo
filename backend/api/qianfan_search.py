@@ -219,7 +219,7 @@ def build_search_payload(
     query: str,
     *,
     time_range: str = "month",
-    top_k: int = 8,
+    top_k: int = 20,
     specified_sites: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build a stable, testable Baidu web_search request without an API key."""
@@ -227,7 +227,7 @@ def build_search_payload(
         "messages": [{"role": "user", "content": query}],
         "search_source": "baidu_search_v2",
         "search_recency_filter": time_range,
-        "resource_type_filter": [{"type": "web", "top_k": max(6, min(10, int(top_k)))}],
+        "resource_type_filter": [{"type": "web", "top_k": max(1, min(50, int(top_k)))}],
     }
     domains = [str(item).strip().lower() for item in (specified_sites or []) if str(item).strip()]
     if domains:

@@ -105,6 +105,16 @@ export function ConfigFields({
   const recommendedQuestions = options.preset_questions.filter(
     (preset) => preset.analysis_perspective === value.analysis_perspective,
   );
+  const analysisDepthOptions = useMemo(
+    () => options.analysis_depths.map((option) => ({
+      ...option,
+      label: `${option.label}（最多 ${options.max_sources_by_depth?.[option.value] ?? 20} 条来源）`,
+    })),
+    [options.analysis_depths, options.max_sources_by_depth],
+  );
+  const maxSources = options.max_sources_by_depth?.[value.analysis_depth]
+    ?? options.max_sources_by_depth?.standard
+    ?? 20;
   return (
     <div className="space-y-4">
       {showQuestion && (
@@ -192,16 +202,16 @@ export function ConfigFields({
               />
             </div>
             <div>
-              <FieldLabel>分析深度</FieldLabel>
+              <FieldLabel hint={`最多 ${maxSources} 条网页来源`}>研究深度</FieldLabel>
               <HoverSelect
                 value={value.analysis_depth}
                 onChange={(next) => update("analysis_depth", next as IntelligenceAnalysisDepth)}
-                options={options.analysis_depths}
+                options={analysisDepthOptions}
                 className="w-full"
               />
             </div>
             <div>
-              <FieldLabel hint="用于报告分析，不改变百度检索范围">分析取材偏好</FieldLabel>
+              <FieldLabel hint="仅影响报告分析，不改变百度网页检索范围">分析取材偏好</FieldLabel>
               <HoverSelect
                 value={value.source_preference}
                 onChange={(next) => update("source_preference", next as IntelligenceSourcePreference)}

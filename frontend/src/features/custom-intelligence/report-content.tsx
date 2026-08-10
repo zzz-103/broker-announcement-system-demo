@@ -9,7 +9,7 @@ import type {
   IntelligenceSource,
 } from "@/lib/api/contracts";
 import { REPORT_HEADING_CLASS, REPORT_PROSE_CLASS } from "./custom-intelligence-constants";
-import { formatDate, optionLabel, safeHttpUrl } from "./custom-intelligence-utils";
+import { formatDate, maxSourcesForDepth, optionLabel, safeHttpUrl } from "./custom-intelligence-utils";
 
 function TextList({ items, empty = "暂无", spaced = false }: { items: string[] | undefined; empty?: string; spaced?: boolean }) {
   const values = (items ?? []).filter(Boolean);
@@ -163,6 +163,7 @@ export function ReportBody({
   }, [execution.id]);
   const report = (execution.report ?? {}) as Partial<IntelligenceReport>;
   const sources = execution.sources;
+  const maxSources = maxSourcesForDepth(options, execution.snapshot.analysis_depth);
   const sourceMap = useMemo(() => new Map(sources.map((source) => [source.id, source])), [sources]);
   const sourceIndexes = useMemo(() => new Map(sources.map((source, index) => [source.id, index + 1])), [sources]);
   const focusSections = (report.focus_sections ?? []).filter(
@@ -210,7 +211,7 @@ export function ReportBody({
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">完成时间</p><p className="mt-1 text-xs leading-5 text-[#344054]">{formatDate(report.executed_at || execution.completed_at || execution.created_at)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.time_ranges, report.time_range || execution.snapshot.time_range)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">报告类型</p><p className="mt-1 text-xs leading-5 text-[#344054]">{optionLabel(options.report_types, report.report_type || execution.snapshot.report_type)}</p></div>
-        <div><p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p><p className="mt-1 text-xs leading-5 text-[#344054]">{report.valid_source_count ?? sources.length}</p></div>
+        <div><p className="text-[10px] font-semibold text-[#98A2B3]">有效来源数</p><p className="mt-1 text-xs leading-5 text-[#344054]">{report.valid_source_count ?? sources.length} / {maxSources} 条（上限）</p></div>
       </section>
       <nav aria-label="报告目录" className={`${stickyOutline ? "sticky top-0 z-10" : ""} -mx-1 flex flex-wrap gap-1.5 rounded-lg border border-[#E4EAF2] bg-white/95 p-2 shadow-sm backdrop-blur`}>
         <span className="px-1.5 py-1 text-[11px] font-semibold text-[#98A2B3]">目录</span>

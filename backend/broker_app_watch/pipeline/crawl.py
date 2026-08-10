@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from collections.abc import Callable
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from backend.broker_app_watch.collectors.http_collector import HttpCollector
 from backend.broker_app_watch.core.config import BrokerCatalog, BrokerSource, load_settings
@@ -35,6 +36,8 @@ from backend.broker_app_watch.storage.markdown_writer import MarkdownWriter
 
 
 LOGGER = logging.getLogger(__name__)
+QQ_APP_STORE_HOST = "sj.qq.com"
+QQ_APP_DETAIL_OCR_PARSER = "qq_app_detail_ocr"
 PARSERS: dict[str, type[Parser]] = {
     "generic_html": GenericHtmlParser,
     "guosen_software_api": GuosenSoftwareApiParser,
@@ -50,6 +53,20 @@ PARSERS: dict[str, type[Parser]] = {
     "qq_app_detail_ocr": QqAppDetailOcrParser,
     "easec_software_api": EasecSoftwareApiParser,
 }
+
+
+def _is_qq_app_store_source(source: BrokerSource) -> bool:
+    """Return whether the configured source is hosted by Tencent MyApp."""
+
+    return (urlsplit(str(source.source_url)).hostname or "").lower() == QQ_APP_STORE_HOST
+
+
+def _parser_name_for_source(source: BrokerSource) -> str:
+    """Use OCR for every Tencent MyApp detail page, regardless of old config."""
+
+    if _is_qq_app_store_source(source):
+        return QQ_APP_DETAIL_OCR_PARSER
+    return source.parser
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +91,7 @@ def build_crawl_plan(catalog: BrokerCatalog) -> list[CrawlPlanItem]:
             broker_code=source.broker_code,
             app_name=source.app_name,
             source_type=source.source_type,
-            parser=source.parser,
+            parser=_parser_name_for_source(source),
         )
         for source in catalog.enabled_sources
     ]
@@ -86,9 +103,12 @@ def crawl_source(
     timeout_seconds: float | None = None,
     writer: MarkdownWriter | None = None,
 ) -> Path:
-    parser_type = PARSERS.get(source.parser)
+    parser_name = _parser_name_for_source(source)
+    parser_type = PARSERS.get(parser_name)
     if parser_type is None:
-        raise ValueError(f"不支持的解析器：{source.parser}")
+        raise ValueError(f"不支持的解析器：{parser_name}")
+    if parser_name != source.parser:
+        source = source.model_copy(update={"parser": parser_name})
     settings = load_settings()
     output_writer = writer or MarkdownWriter()
     cached = output_writer.find_cached(source)

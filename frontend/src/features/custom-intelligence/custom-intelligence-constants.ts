@@ -44,8 +44,9 @@ export const FALLBACK_OPTIONS: CustomIntelligenceOptionsResponse = {
   analysis_depths: [
     { value: "concise", label: "简洁" },
     { value: "standard", label: "标准" },
-    { value: "deep", label: "深入" },
+    { value: "deep", label: "深度研究" },
   ],
+  max_sources_by_depth: { concise: 10, standard: 20, deep: 30 },
   source_preferences: [
     { value: "authoritative", label: "权威来源优先" },
     { value: "balanced", label: "综合平衡" },

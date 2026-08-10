@@ -102,13 +102,16 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             self.store.delete_topic(5, int(topic["id"]))
 
     def test_deep_analysis_only_changes_top_k(self) -> None:
-        for depth, top_k in (("concise", 6), ("standard", 8), ("deep", 10)):
+        for depth, top_k in (("concise", 10), ("standard", 20), ("deep", 30)):
             payload = build_search_payload("test", top_k=top_k)
             self.assertEqual(payload["resource_type_filter"][0]["top_k"], top_k)
             self.assertEqual(payload["search_source"], "baidu_search_v2")
             self.assertNotIn("model", payload)
             self.assertNotIn("search_mode", payload)
             self.assertEqual(payload["search_recency_filter"], "month")
+
+        self.assertEqual(build_search_payload("test")["resource_type_filter"][0]["top_k"], 20)
+        self.assertEqual(build_search_payload("test", top_k=100)["resource_type_filter"][0]["top_k"], 50)
 
     def test_search_payload_uses_concise_query_and_v2_site_filter(self) -> None:
         payload = build_search_payload(
@@ -161,6 +164,54 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             options = service.options_payload()
             self.assertTrue(options["service_enabled"])
             self.assertEqual(options["service_status"], "enabled")
+
+    def test_options_payload_exposes_source_limits_and_depth_label(self) -> None:
+        options = service.options_payload()
+        self.assertEqual(
+            options["max_sources_by_depth"],
+            {"concise": 10, "standard": 20, "deep": 30},
+        )
+        depth_labels = {item["value"]: item["label"] for item in options["analysis_depths"]}
+        self.assertEqual(depth_labels["deep"], "深度研究")
+
+    def test_execution_payload_uses_depth_source_limit(self) -> None:
+        fake_result = QianfanSearchResult(
+            answer="综合结论",
+            references=[QianfanReference("ref-1", "来源", "https://example.com")],
+        )
+        seen_payloads: list[dict[str, object]] = []
+
+        def fake_search(payload: dict[str, object]) -> QianfanSearchResult:
+            seen_payloads.append(payload)
+            return fake_result
+
+        for depth, expected_top_k in (("standard", 20), ("deep", 30)):
+            snapshot = {
+                "question": "近期证券行业变化",
+                "analysis_perspective": "industry_research",
+                "time_range": "month",
+                "source_preference": "authoritative",
+                "report_type": "industry_trends",
+                "analysis_depth": depth,
+            }
+            execution = self.store.create_execution(
+                5,
+                snapshot,
+                "instant",
+                5,
+                original_query=snapshot["question"],
+            )
+            with (
+                patch.object(service.client, "search", side_effect=fake_search),
+                patch.object(service, "_request_analysis", return_value={"title": "报告", "core_conclusion": "结论"}),
+            ):
+                service._run_execution(int(execution["id"]))
+
+            self.assertEqual(
+                seen_payloads[-1]["resource_type_filter"][0]["top_k"],
+                expected_top_k,
+            )
+            self.assertNotIn("source_preference", seen_payloads[-1])
 
     def test_disabled_service_blocks_execution_before_creation(self) -> None:
         self.store.save_search_config(

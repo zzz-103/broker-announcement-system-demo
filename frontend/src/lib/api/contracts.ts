@@ -141,6 +141,7 @@ export interface CustomIntelligenceOptionsResponse {
   time_ranges: CustomIntelligenceOption<IntelligenceTimeRange>[];
   report_types: CustomIntelligenceOption<IntelligenceReportType>[];
   analysis_depths: CustomIntelligenceOption<IntelligenceAnalysisDepth>[];
+  max_sources_by_depth: Record<IntelligenceAnalysisDepth, number>;
   source_preferences: CustomIntelligenceOption<IntelligenceSourcePreference>[];
   preset_questions: CustomIntelligencePresetQuestion[];
   service_configured: boolean;

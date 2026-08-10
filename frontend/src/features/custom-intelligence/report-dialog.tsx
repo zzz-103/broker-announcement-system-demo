@@ -16,7 +16,7 @@ import type {
 } from "@/lib/api/contracts";
 import { ReportBody } from "./report-content";
 import { ReportActions } from "./report-actions";
-import { formatDate, getReportPhase, optionLabel } from "./custom-intelligence-utils";
+import { formatDate, getReportPhase, maxSourcesForDepth, optionLabel } from "./custom-intelligence-utils";
 
 function ExecutionErrorDetail({
   execution,
@@ -41,7 +41,7 @@ function ExecutionErrorDetail({
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">分析角度</p><p className="mt-1 text-xs text-[#344054]">{optionLabel(options.perspectives, snapshot.analysis_perspective)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs text-[#344054]">{optionLabel(options.time_ranges, snapshot.time_range)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">报告类型</p><p className="mt-1 text-xs text-[#344054]">{optionLabel(options.report_types, snapshot.report_type)}</p></div>
-        <div><p className="text-[10px] font-semibold text-[#98A2B3]">来源数量</p><p className="mt-1 text-xs text-[#344054]">{execution.sources.length} 条</p></div>
+        <div><p className="text-[10px] font-semibold text-[#98A2B3]">来源数量</p><p className="mt-1 text-xs text-[#344054]">{execution.sources.length} / {maxSourcesForDepth(options, snapshot.analysis_depth)} 条（上限）</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">完成时间</p><p className="mt-1 text-xs text-[#344054]">{formatDate(execution.completed_at || execution.created_at)}</p></div>
         <div><p className="text-[10px] font-semibold text-[#98A2B3]">提交时间</p><p className="mt-1 text-xs text-[#344054]">{formatDate(execution.created_at)}</p></div>
       </div>
@@ -94,6 +94,9 @@ export function ReportDialog({
   const searchSucceeded = currentExecution?.search_status === "succeeded";
   const analysisFailed = searchSucceeded && currentExecution?.analysis_status === "failed";
   const phase = currentExecution ? getReportPhase(currentExecution) : null;
+  const sourceLimit = currentExecution
+    ? maxSourcesForDepth(options, currentExecution.snapshot.analysis_depth)
+    : 20;
   const scrollToSources = () => {
     document.getElementById("report-sources")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -110,14 +113,14 @@ export function ReportDialog({
                   ? phase === "queued" || phase === "searching"
                     ? "正在检索公开信息"
                     : phase === "analyzing"
-                      ? `正在分析 · 已整理 ${currentExecution.sources.length} 条有效来源`
+                      ? `正在分析 · 已整理 ${currentExecution.sources.length} 条有效来源（上限 ${sourceLimit} 条）`
                       : phase === "empty"
                         ? "检索完成，但未获得有效来源"
                         : analysisFailed
                     ? "搜索完成，分析失败，可查看原始来源或重新分析"
                     : phase === "search_failed"
                       ? "执行失败，详情见下方"
-                      : `已完成 · ${formatDate(currentExecution.completed_at || currentExecution.created_at)} · ${currentExecution.sources.length} 条有效来源`
+                      : `已完成 · ${formatDate(currentExecution.completed_at || currentExecution.created_at)} · ${currentExecution.sources.length}/${sourceLimit} 条来源`
                   : "正在加载完整报告…"}
               </DialogDescription>
             </div>

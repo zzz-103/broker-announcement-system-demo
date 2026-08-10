@@ -15,6 +15,8 @@ backend/broker_app_watch/tests/           关键路径测试和 fixtures
 
 所有路径从仓库根目录推导，不依赖当前工作目录；文本使用 UTF-8。敏感配置只放根目录 `.env`，运行数据不提交 Git。
 
+腾讯应用宝（`sj.qq.com`）来源统一使用 App 详情页 OCR；未配置 `screenshot_alt` 时，会按截图标识自动选择预览图。
+
 ## CLI
 
 先按根目录 `requirements.txt` 或 `backend/api/requirements.txt` 安装共享依赖，然后从仓库根目录执行：

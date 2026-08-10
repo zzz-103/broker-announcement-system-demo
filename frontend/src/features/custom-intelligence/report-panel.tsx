@@ -18,7 +18,9 @@ import {
   formatDate,
   getReportPhase,
   isActiveExecution,
+  maxSourcesForDepth,
   PHASE_CHIP,
+  sourceCountLabel,
   type StepState,
 } from "./custom-intelligence-utils";
 
@@ -88,6 +90,7 @@ export function ReportPanel({
   const chip = PHASE_CHIP[phase];
   const active = isActiveExecution(execution.status);
   const sources = execution.sources;
+  const maxSources = maxSourcesForDepth(options, execution.snapshot.analysis_depth);
   const searchSucceeded = execution.search_status === "succeeded";
   const analysisFailed = phase === "analysis_failed";
   const reportReady = phase === "done" || phase === "analysis_failed";
@@ -117,7 +120,7 @@ export function ReportPanel({
     {
       state: sourcesStep,
       label: "整理有效来源",
-      detail: searchSucceeded ? `已获得 ${sources.length} 条有效来源` : undefined,
+      detail: searchSucceeded ? `已获得 ${sources.length} 条有效来源（上限 ${maxSources} 条）` : undefined,
     },
     {
       state: analysisStep,
@@ -147,7 +150,7 @@ export function ReportPanel({
           <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-[#172033]" title={title}>{title}</h3>
           {!active && (
             <span className="shrink-0 text-[11px] tabular-nums text-[#98A2B3]">
-              {formatDate(execution.completed_at || execution.created_at)} · {sources.length} 条来源
+              {formatDate(execution.completed_at || execution.created_at)} · {sourceCountLabel(execution, options)}
             </span>
           )}
         </div>
