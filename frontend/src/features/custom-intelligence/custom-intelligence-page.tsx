@@ -27,9 +27,10 @@ export default function CustomIntelligencePage() {
   const running = page.activeExecutionId !== null;
   const statusText = running ? "执行中" : page.optionsLoading ? "加载中" : page.serviceAvailable ? "服务正常" : "服务不可用";
   const statusTone = running || page.optionsLoading ? "loading" : page.serviceAvailable ? "ready" : "unavailable";
+  const workspaceLayout = page.activeTab === "generate" && page.workspaceMode;
 
   return (
-    <div className="min-h-screen min-w-0 overflow-x-hidden bg-[#F4F7FB]">
+    <div className={`min-h-screen min-w-0 overflow-x-hidden bg-[#F4F7FB] ${workspaceLayout ? "lg:h-dvh lg:overflow-hidden" : ""}`}>
       <DashboardHeader
         username={page.username}
         isAdmin={page.isAdmin}
@@ -43,7 +44,7 @@ export default function CustomIntelligencePage() {
         onLogout={page.logout}
       />
 
-      <main className="mx-auto max-w-[1600px] min-w-0 space-y-4 px-3 py-4 sm:px-8 sm:py-5">
+      <main className={`mx-auto max-w-[1600px] min-w-0 px-3 py-4 sm:px-8 sm:py-5 ${workspaceLayout ? "space-y-4 lg:flex lg:h-[calc(100dvh-68px)] lg:flex-col lg:gap-4 lg:space-y-0 lg:overflow-hidden" : "space-y-4"}`}>
         {(page.pageError || page.notice) && (
           <div
             role={page.pageError ? "alert" : "status"}
@@ -81,7 +82,7 @@ export default function CustomIntelligencePage() {
         <CustomIntelligenceTabs activeTab={page.activeTab} executionCount={page.executionsTotal} onChange={page.setActiveTab} />
 
         {page.activeTab === "generate" && (
-          <section id="custom-intelligence-panel-generate" role="tabpanel" aria-label="生成报告" aria-busy={page.optionsLoading} className="surface-panel px-3 py-4 sm:px-4">
+          <section id="custom-intelligence-panel-generate" role="tabpanel" aria-label="生成报告" aria-busy={page.optionsLoading} className={`surface-panel px-3 py-4 sm:px-4 ${workspaceLayout ? "lg:min-h-0 lg:flex-1 lg:overflow-hidden" : ""}`}>
             <InstantSearchPanel
               topics={page.topics}
               selectedConfigId={page.selectedConfigId}
@@ -94,7 +95,6 @@ export default function CustomIntelligencePage() {
               onApplyConfig={page.applySavedConfigValue}
               onStartSearch={() => void page.submitInstant()}
               onSaveCurrentConfig={page.openSaveCurrentConfig}
-              onResetWorkspace={page.resetWorkspace}
             >
               {page.workspaceMode && page.workspaceExecution && (
                 <ReportPanel

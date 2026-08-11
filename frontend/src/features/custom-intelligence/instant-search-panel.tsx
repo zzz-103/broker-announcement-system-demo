@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Bookmark, Loader2, Play, RefreshCw, Sparkles } from "lucide-react";
+import { Bookmark, ChevronUp, Loader2, PencilLine, Play, RefreshCw, Sparkles } from "lucide-react";
 import { HoverSelect } from "@/components/hover-select";
 import type { IntelligenceAssistantRequest, IntelligenceAssistantTopic } from "@/lib/api/contracts";
 import {
@@ -179,6 +179,51 @@ function TopicTagSelector({ value, onChange }: { value: string[]; onChange: (val
   );
 }
 
+function WorkspaceRequestSummary({
+  form,
+  onEdit,
+}: {
+  form: IntelligenceAssistantRequest;
+  onEdit: () => void;
+}) {
+  const audience = AUDIENCE_OPTIONS.find((option) => option.value === form.audience)?.label || "未指定受众";
+  const timeRange = TIME_RANGE_OPTIONS.find((option) => option.value === form.time_range)?.label || "未指定时间";
+  const reportLength = REPORT_LENGTH_OPTIONS.find((option) => option.value === form.report_length)?.label || "未指定篇幅";
+
+  return (
+    <aside aria-label="本次报告需求" className="rounded-lg border border-[#E4EAF2] bg-white p-4 sm:p-5">
+      <div className="flex items-center gap-2">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-[#EAF2FF] text-[#2563EB]">
+          <Sparkles className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-[#172033]">本次报告需求</h3>
+        </div>
+      </div>
+
+      <p className="mt-4 line-clamp-3 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-[#344054]">
+        {form.focus.trim() || "尚未填写关注内容"}
+      </p>
+
+      <div className="mt-3 flex flex-wrap gap-1.5" aria-label="需求范围摘要">
+        {[audience, timeRange, reportLength].map((label) => (
+          <span key={label} className="rounded-full bg-[#F2F4F7] px-2.5 py-1 text-[10px] font-medium text-[#667085]">
+            {label}
+          </span>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-3 py-2 text-xs font-semibold text-[#315EA8] transition-colors hover:bg-[#EEF4FF] active:bg-[#E4EDFC]"
+      >
+        <PencilLine className="size-3.5" aria-hidden="true" />调整需求
+      </button>
+    </aside>
+  );
+}
+
 export interface InstantSearchPanelProps {
   topics: IntelligenceAssistantTopic[];
   selectedConfigId: number | null;
@@ -191,7 +236,6 @@ export interface InstantSearchPanelProps {
   onApplyConfig: (value: string) => void;
   onStartSearch: () => void;
   onSaveCurrentConfig: () => void;
-  onResetWorkspace: () => void;
   children?: React.ReactNode;
 }
 
@@ -207,18 +251,23 @@ export function InstantSearchPanel({
   onApplyConfig,
   onStartSearch,
   onSaveCurrentConfig,
-  onResetWorkspace,
   children,
 }: InstantSearchPanelProps) {
+  const [editingWorkspace, setEditingWorkspace] = React.useState(false);
+  React.useEffect(() => {
+    setEditingWorkspace(false);
+  }, [activeExecutionId, workspaceMode]);
+
   const update = <K extends keyof IntelligenceAssistantRequest>(key: K, value: IntelligenceAssistantRequest[K]) => {
     onFormChange({ ...form, [key]: value });
   };
   const selectedAssistant = topics.find((topic) => topic.id === selectedConfigId);
   const disabled = activeExecutionId !== null || optionsLoading || !serviceAvailable || !form.focus.trim();
+  const showFullForm = !workspaceMode || editingWorkspace;
   return (
-    <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-      <div className={`min-w-0 transition-all duration-300 ease-out motion-reduce:transition-none ${workspaceMode ? "w-full lg:w-[36%] lg:min-w-[330px] lg:max-w-[480px] lg:shrink-0" : "w-full"}`}>
-        <form
+    <div className={`flex flex-col gap-4 lg:grid lg:h-full lg:min-h-0 lg:items-stretch lg:transition-[grid-template-columns] lg:duration-300 lg:ease-out motion-reduce:transition-none ${workspaceMode ? showFullForm ? "lg:grid-cols-[minmax(330px,430px)_minmax(0,1fr)]" : "lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]" : "lg:grid-cols-1"}`}>
+      <div className={`min-w-0 ${workspaceMode ? "ci-scroll-region lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain" : "w-full"}`}>
+        {showFullForm ? <form
           onSubmit={(event) => {
             event.preventDefault();
             if (!disabled) onStartSearch();
@@ -234,7 +283,9 @@ export function InstantSearchPanel({
               <p className="mt-2 text-xs leading-5 text-[#667085]">填写关注内容与报告范围。</p>
             </div>
             {workspaceMode && (
-              <button type="button" onClick={onResetWorkspace} className="shrink-0 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]">新问题</button>
+              <button type="button" onClick={() => setEditingWorkspace(false)} className="inline-flex shrink-0 items-center gap-1 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]">
+                <ChevronUp className="size-3" aria-hidden="true" />收起
+              </button>
             )}
           </div>
 
@@ -350,9 +401,13 @@ export function InstantSearchPanel({
               <Bookmark className="size-3.5" aria-hidden="true" />保存为我的助手
             </button>
           </div>
-        </form>
+        </form> : <WorkspaceRequestSummary form={form} onEdit={() => setEditingWorkspace(true)} />}
       </div>
-      {workspaceMode && <div className="ci-panel-in min-w-0 flex-1">{children}</div>}
+      {workspaceMode && (
+        <div className="ci-panel-in ci-scroll-region min-w-0 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain" tabIndex={0} aria-label="报告正文，可独立滚动">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
