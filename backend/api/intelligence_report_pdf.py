@@ -238,6 +238,7 @@ def _build_research_pdf(execution: dict) -> bytes:
 NEWSLETTER_RED = colors.HexColor("#B42318")
 NEWSLETTER_INK = colors.HexColor("#161616")
 NEWSLETTER_MUTED = colors.HexColor("#667085")
+NEWSLETTER_RULE = colors.HexColor("#222222")
 
 
 def _newsletter_styles() -> dict[str, ParagraphStyle]:
@@ -268,12 +269,19 @@ def _newsletter_styles() -> dict[str, ParagraphStyle]:
         ),
         "label": ParagraphStyle(
             "newsletter_label", fontName=_FONT_BOLD, fontSize=9.2, leading=14,
-            textColor=colors.white, backColor=NEWSLETTER_RED, borderPadding=(3, 6, 3, 6),
-            spaceBefore=11, spaceAfter=7, wordWrap="CJK",
+            textColor=colors.white, alignment=TA_CENTER, wordWrap="CJK",
+        ),
+        "label_en": ParagraphStyle(
+            "newsletter_label_en", fontName=_FONT_BOLD, fontSize=8.4, leading=13,
+            textColor=NEWSLETTER_MUTED, wordWrap="CJK",
+        ),
+        "section_title": ParagraphStyle(
+            "newsletter_section_title", fontName=_FONT_BOLD, fontSize=13.5, leading=19,
+            textColor=NEWSLETTER_INK, spaceAfter=5, keepWithNext=True, wordWrap="CJK",
         ),
         "column_label": ParagraphStyle(
             "newsletter_column_label", fontName=_FONT_BOLD, fontSize=10.2, leading=15,
-            textColor=NEWSLETTER_RED, spaceAfter=4, wordWrap="CJK",
+            textColor=NEWSLETTER_INK, wordWrap="CJK",
         ),
         "source_heading": ParagraphStyle(
             "newsletter_source_heading", fontName=_FONT_BOLD, fontSize=10.2, leading=15,
@@ -347,8 +355,8 @@ def _newsletter_table_style(*, line_before: bool = False, box: bool = False) -> 
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
     ]
     if line_before:
-        commands.append(("LINEBEFORE", (0, 0), (0, -1), 2.2, NEWSLETTER_RED))
-        commands.append(("LEFTPADDING", (0, 0), (0, -1), 8))
+        commands.append(("LINEBEFORE", (0, 0), (0, -1), 0.7, LINE))
+        commands.append(("LEFTPADDING", (0, 0), (0, -1), 7))
     if box:
         commands.extend(
             [
@@ -361,6 +369,69 @@ def _newsletter_table_style(*, line_before: bool = False, box: bool = False) -> 
             ]
         )
     return TableStyle(commands)
+
+
+def _newsletter_takeaway_label(styles: dict[str, ParagraphStyle]) -> Table:
+    """Return the compact red takeaway badge used by the Web preview."""
+
+    table = Table(
+        [[Paragraph("独家分析", styles["label"]), Paragraph("EXECUTIVE TAKEAWAY", styles["label_en"])]],
+        colWidths=[23 * mm, 52 * mm],
+        hAlign="LEFT",
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, 0), NEWSLETTER_RED),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (0, 0), 4),
+                ("RIGHTPADDING", (0, 0), (0, 0), 4),
+                ("TOPPADDING", (0, 0), (0, 0), 3),
+                ("BOTTOMPADDING", (0, 0), (0, 0), 3),
+                ("LEFTPADDING", (1, 0), (1, 0), 6),
+                ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                ("TOPPADDING", (1, 0), (1, 0), 3),
+                ("BOTTOMPADDING", (1, 0), (1, 0), 3),
+            ]
+        )
+    )
+    table.spaceBefore = 11
+    table.spaceAfter = 5
+    return table
+
+
+def _newsletter_section_heading(
+    title: str,
+    styles: dict[str, ParagraphStyle],
+    *,
+    width: float,
+) -> Table:
+    """Return a short red marker and black rule, matching the Web section heading."""
+
+    table = Table(
+        [["", Paragraph(escape(title), styles["column_label"])]],
+        colWidths=[1.7 * mm, width - 1.7 * mm],
+        rowHeights=[7 * mm],
+        hAlign="LEFT",
+    )
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, 0), NEWSLETTER_RED),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (0, 0), 0),
+                ("RIGHTPADDING", (0, 0), (0, 0), 0),
+                ("LEFTPADDING", (1, 0), (1, 0), 5),
+                ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.8, NEWSLETTER_RULE),
+            ]
+        )
+    )
+    table.spaceBefore = 12
+    table.spaceAfter = 6
+    return table
 
 
 def _newsletter_footer(canvas, doc) -> None:  # noqa: ANN001
@@ -393,13 +464,16 @@ def _build_newsletter_pdf(execution: dict) -> bytes:
         Paragraph("自定义情报助手", styles["masthead"]),
         Paragraph("金融科技情报日报 · Financial Tech Daily", styles["subtitle"]),
         Paragraph(f"{escape(format_report_datetime(view.executed_at))} · 深圳", styles["date"]),
-        HRFlowable(width="100%", thickness=1.8, color=colors.HexColor("#111111"), spaceBefore=8, spaceAfter=10),
+        HRFlowable(width="100%", thickness=1.2, color=colors.HexColor("#111111"), spaceBefore=8, spaceAfter=2),
+        HRFlowable(width="100%", thickness=1.2, color=colors.HexColor("#111111"), spaceBefore=0, spaceAfter=10),
         Paragraph(escape(view.title), styles["title"]),
     ]
     if view.question:
         story.append(Paragraph(f"研究重点：{_paragraph_text(view.question, 1_000)}", styles["question"]))
+    story.append(HRFlowable(width="100%", thickness=0.45, color=LINE, spaceBefore=7, spaceAfter=8))
 
-    story.append(Paragraph("独家分析", styles["label"]))
+    story.append(_newsletter_takeaway_label(styles))
+    story.append(Paragraph("核心判断", styles["section_title"]))
     core_rows = [[item] for item in _newsletter_pdf_items(core.items if core else (), styles)]
     core_table = Table(
         core_rows,
@@ -408,10 +482,12 @@ def _build_newsletter_pdf(execution: dict) -> bytes:
     core_table.setStyle(_newsletter_table_style(line_before=True))
     story.append(core_table)
 
-    story.append(Paragraph("市场观察", styles["label"]))
     development_items = developments.items if developments else ()
     impact_items = impact.items if impact else ()
-    column_rows: list[list[object]] = [[Paragraph("重点动态", styles["column_label"]), Paragraph("影响分析", styles["column_label"])]]
+    column_rows: list[list[object]] = [[
+        _newsletter_section_heading("动态", styles, width=79 * mm),
+        _newsletter_section_heading("分析", styles, width=79 * mm),
+    ]]
     for index in range(max(len(development_items), len(impact_items), 1)):
         left = _newsletter_pdf_item(development_items[index], styles, compact=True) if index < len(development_items) else Paragraph("", styles["empty"])
         right = _newsletter_pdf_item(impact_items[index], styles, compact=True) if index < len(impact_items) else Paragraph("", styles["empty"])
@@ -422,17 +498,18 @@ def _build_newsletter_pdf(execution: dict) -> bytes:
             [
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0, -1), 7),
                 ("TOPPADDING", (0, 0), (-1, -1), 2),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
                 ("LINEBEFORE", (1, 0), (1, -1), 0.45, LINE),
-                ("LEFTPADDING", (1, 0), (1, -1), 8),
+                ("LEFTPADDING", (1, 0), (1, -1), 7),
             ]
         )
     )
     story.append(columns)
 
-    story.append(Paragraph("研判与建议", styles["label"]))
+    story.append(_newsletter_section_heading("行动建议", styles, width=172 * mm))
     recommendation_rows = [
         [item]
         for item in _newsletter_pdf_items(
@@ -446,7 +523,7 @@ def _build_newsletter_pdf(execution: dict) -> bytes:
     recommendation_table.setStyle(_newsletter_table_style(line_before=True))
     story.append(recommendation_table)
 
-    story.append(Paragraph("风险提示", styles["label"]))
+    story.append(_newsletter_section_heading("风险提示", styles, width=172 * mm))
     risk_rows = [[item] for item in _newsletter_pdf_items(risks.items if risks else (), styles, compact=True)]
     risk_table = Table(
         risk_rows,
