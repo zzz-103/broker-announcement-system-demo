@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BackendApiError, isAbortError } from "@/lib/api/backend-client";
 import {
   createAssistantExecution,
@@ -12,6 +12,7 @@ import {
   fetchAssistantExecutions,
   fetchAssistantTopics,
   fetchCustomIntelligenceOptions,
+  previewAssistantQueryPlan,
   reanalyzeAssistantExecution,
   rerunAssistantExecution,
   sendAssistantExecutionEmail,
@@ -22,6 +23,8 @@ import type {
   IntelligenceAssistantExecution,
   IntelligenceAssistantRequest,
   IntelligenceAssistantTopic,
+  IntelligenceConfirmedPlan,
+  IntelligenceQueryPlanResponse,
 } from "@/lib/api/contracts";
 import { useAuthStore } from "@/store/auth-store";
 import { DEFAULT_FORM, EXECUTIONS_PAGE_SIZE, TOPIC_LIMIT } from "./custom-intelligence-constants";
@@ -63,6 +66,11 @@ function readableError(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+type PendingPlanAction =
+  | { kind: "instant"; request: IntelligenceAssistantRequest }
+  | { kind: "topic"; request: IntelligenceAssistantRequest; topic: IntelligenceAssistantTopic }
+  | { kind: "rerun"; request: IntelligenceAssistantRequest; execution: IntelligenceAssistantExecution };
+
 export interface CustomIntelligencePageController {
   isHydrated: boolean; isLoggedIn: boolean; isAdmin: boolean; username: string; logout: () => void;
   activeTab: CustomIntelligenceTab; setActiveTab: (tab: CustomIntelligenceTab) => void;
@@ -74,8 +82,10 @@ export interface CustomIntelligencePageController {
   configDialogOpen: boolean; setConfigDialogOpen: (open: boolean) => void; configEditorId: number | null; configName: string; setConfigName: (value: string) => void; configDraft: IntelligenceAssistantRequest; setConfigDraft: (value: IntelligenceAssistantRequest) => void; configSaving: boolean; configsLimitReached: boolean;
   selectedExecution: IntelligenceAssistantExecution | null; reportDialogOpen: boolean; setReportDialogOpen: (open: boolean) => void; reportLoading: boolean; pdfExporting: boolean;
   emailDialogOpen: boolean; emailExecution: IntelligenceAssistantExecution | null; emailSending: boolean;
+  planDialogOpen: boolean; planLoading: boolean; planSubmitting: boolean; planDraft: IntelligenceQueryPlanResponse | null; planError: string; planSeconds: number; planPaused: boolean;
   clearMessages: () => void; loadExecutions: (page?: number, signal?: AbortSignal) => Promise<void>; submitInstant: () => Promise<void>; resetWorkspace: () => void; exportReportPdf: (execution: IntelligenceAssistantExecution) => Promise<void>;
-  applySavedConfigValue: (value: string) => void; loadConfigIntoForm: (topic: IntelligenceAssistantTopic) => void; loadAndSearchConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openCreateConfig: () => void; openSaveCurrentConfig: () => void; openEditConfig: (topic: IntelligenceAssistantTopic) => void; saveConfig: () => Promise<void>; deleteConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openReport: (execution: IntelligenceAssistantExecution) => Promise<void>; rerun: (execution: IntelligenceAssistantExecution) => Promise<void>; reanalyze: (execution: IntelligenceAssistantExecution) => Promise<void>; openEmail: (execution: IntelligenceAssistantExecution | null) => void; sendEmail: (recipients: string[], format: "html" | "pdf", externalConfirmed: boolean) => Promise<void>;
+  cancelQueryPlan: () => void; retryQueryPlan: () => void; updatePlanDirection: (index: number, value: string) => void; pauseQueryPlan: () => void; confirmQueryPlan: () => Promise<void>;
+  applySavedConfigValue: (value: string) => void; loadConfigIntoForm: (topic: IntelligenceAssistantTopic) => void; loadAndSearchConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openCreateConfig: () => void; openSaveCurrentConfig: () => void; openEditConfig: (topic: IntelligenceAssistantTopic) => void; saveConfig: () => Promise<void>; deleteConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openReport: (execution: IntelligenceAssistantExecution) => Promise<void>; rerun: (execution: IntelligenceAssistantExecution) => Promise<void>; reanalyze: (execution: IntelligenceAssistantExecution) => Promise<void>; openEmail: (execution: IntelligenceAssistantExecution | null) => void; sendEmail: (recipients: string[], note: string, externalConfirmed: boolean) => Promise<void>;
 }
 
 export function useCustomIntelligencePage(): CustomIntelligencePageController {
@@ -103,6 +113,15 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [emailExecution, setEmailExecution] = useState<IntelligenceAssistantExecution | null>(null);
   const [emailSending, setEmailSending] = useState(false);
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planSubmitting, setPlanSubmitting] = useState(false);
+  const [planDraft, setPlanDraft] = useState<IntelligenceQueryPlanResponse | null>(null);
+  const [planError, setPlanError] = useState("");
+  const [planSeconds, setPlanSeconds] = useState(60);
+  const [planPaused, setPlanPaused] = useState(false);
+  const [pendingPlanAction, setPendingPlanAction] = useState<PendingPlanAction | null>(null);
+  const planAbortRef = useRef<AbortController | null>(null);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
   const [configEditorId, setConfigEditorId] = useState<number | null>(null);
   const [configName, setConfigName] = useState("");
@@ -173,14 +192,128 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     return () => { disposed = true; if (timer) clearTimeout(timer); };
   }, [activeExecutionId, loadExecutions, token]);
 
-  const startExecution = (execution: IntelligenceAssistantExecution) => { setExecutions((current) => mergeExecution(current, execution)); setActiveExecutionId(execution.id); setWorkspaceExecution(execution); setSelectedExecution(execution); setWorkspaceMode(true); setPageError(""); };
+  const startExecution = useCallback((execution: IntelligenceAssistantExecution) => { setExecutions((current) => mergeExecution(current, execution)); setActiveExecutionId(execution.id); setWorkspaceExecution(execution); setSelectedExecution(execution); setWorkspaceMode(true); setPageError(""); }, []);
+
+  const prepareQueryPlan = useCallback(async (action: PendingPlanAction) => {
+    if (!token || activeExecutionId !== null) return;
+    planAbortRef.current?.abort();
+    const controller = new AbortController();
+    planAbortRef.current = controller;
+    setPendingPlanAction(action);
+    setPlanDialogOpen(true);
+    setPlanLoading(true);
+    setPlanSubmitting(false);
+    setPlanDraft(null);
+    setPlanError("");
+    setPlanSeconds(60);
+    setPlanPaused(false);
+    setPageError("");
+    try {
+      const response = await previewAssistantQueryPlan(token, action.request, controller.signal);
+      if (!controller.signal.aborted) setPlanDraft(response);
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) return;
+      if (error instanceof BackendApiError && error.status === 401) {
+        handleError(error, "无法整理检索方向");
+        setPlanDialogOpen(false);
+        return;
+      }
+      setPlanError(readableError(error, "无法整理检索方向，请重试。"));
+    } finally {
+      if (!controller.signal.aborted) setPlanLoading(false);
+    }
+  }, [activeExecutionId, handleError, token]);
+
+  const cancelQueryPlan = useCallback(() => {
+    planAbortRef.current?.abort();
+    planAbortRef.current = null;
+    setPlanDialogOpen(false);
+    setPlanLoading(false);
+    setPlanSubmitting(false);
+    setPlanDraft(null);
+    setPlanError("");
+    setPlanSeconds(60);
+    setPlanPaused(false);
+    setPendingPlanAction(null);
+  }, []);
+
+  const retryQueryPlan = useCallback(() => {
+    if (pendingPlanAction) void prepareQueryPlan(pendingPlanAction);
+  }, [pendingPlanAction, prepareQueryPlan]);
+
+  const updatePlanDirection = useCallback((index: number, value: string) => {
+    setPlanPaused(true);
+    setPlanDraft((current) => current ? { ...current, directions: current.directions.map((direction, directionIndex) => directionIndex === index ? value : direction) } : current);
+    setPlanError("");
+  }, []);
+
+  const pauseQueryPlan = useCallback(() => { setPlanPaused(true); }, []);
+
+  const confirmQueryPlan = useCallback(async () => {
+    if (!token || !pendingPlanAction || !planDraft || planSubmitting) return;
+    const directions = Array.from(new Map(planDraft.directions.map((item) => item.trim()).filter(Boolean).map((item) => [item.toLocaleLowerCase(), item])).values());
+    if (directions.length < 1 || directions.length > 5) {
+      setPlanError("请保留 1 至 5 个有效检索方向后再确认。");
+      setPlanPaused(true);
+      return;
+    }
+    const confirmedPlan: IntelligenceConfirmedPlan = { intent: planDraft.intent.trim(), directions };
+    setPlanSubmitting(true);
+    setPlanError("");
+    try {
+      let execution: IntelligenceAssistantExecution;
+      if (pendingPlanAction.kind === "instant") {
+        const response = await createAssistantExecution(token, { ...pendingPlanAction.request, confirmed_plan: confirmedPlan });
+        execution = response.execution;
+      } else if (pendingPlanAction.kind === "topic") {
+        const response = await executeAssistantTopic(token, pendingPlanAction.topic.id, confirmedPlan);
+        execution = response.execution;
+        setForm(pendingPlanAction.request);
+        setSelectedConfigId(pendingPlanAction.topic.id);
+        setActiveTab("generate");
+      } else {
+        const response = await rerunAssistantExecution(token, pendingPlanAction.execution.id, confirmedPlan);
+        execution = response.execution;
+        setForm(pendingPlanAction.request);
+        setActiveTab("generate");
+        setReportDialogOpen(false);
+      }
+      startExecution(execution);
+      setNotice("已确认检索方向，正在检索和整理资料…");
+      setPlanDialogOpen(false);
+      setPlanDraft(null);
+      setPendingPlanAction(null);
+    } catch (error) {
+      if (error instanceof BackendApiError && error.status === 401) {
+        handleError(error, "无法开始检索");
+        setPlanDialogOpen(false);
+      } else {
+        setPlanError(readableError(error, "无法开始检索，请重试。"));
+        setPlanPaused(true);
+      }
+    } finally {
+      setPlanSubmitting(false);
+    }
+  }, [handleError, pendingPlanAction, planDraft, planSubmitting, startExecution, token]);
+
+  useEffect(() => {
+    if (!planDialogOpen || planLoading || planSubmitting || !planDraft || planPaused) return;
+    if (planSeconds <= 0) {
+      void confirmQueryPlan();
+      return;
+    }
+    const timer = window.setTimeout(() => setPlanSeconds((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [confirmQueryPlan, planDialogOpen, planDraft, planLoading, planPaused, planSeconds, planSubmitting]);
+
+  useEffect(() => () => { planAbortRef.current?.abort(); }, []);
+
   const submitInstant = async () => {
     if (!token || activeExecutionId !== null) return;
     if (!serviceAvailable) { setPageError("情报搜索服务暂不可用，请联系管理员。"); return; }
     if (!form.focus.trim()) { setPageError("请先填写你想了解的业务问题。"); return; }
     if (form.audience === "custom" && !form.audience_detail.trim()) { setPageError("选择自定义受众后，请补充读者背景。"); return; }
-    try { const response = await createAssistantExecution(token, { ...form, focus: form.focus.trim(), focus_tags: form.focus_tags.slice(0, 3) }); startExecution(response.execution); setNotice("已提交，正在检索和整理资料…"); }
-    catch (error) { handleError(error, "无法生成情报报告"); }
+    await prepareQueryPlan({ kind: "instant", request: { ...form, focus: form.focus.trim(), focus_tags: form.focus_tags.slice(0, 3) } });
   };
   const resetWorkspace = () => { setWorkspaceMode(false); setWorkspaceExecution(null); setPageError(""); setNotice(""); document.getElementById("custom-intelligence-focus")?.focus(); };
   const exportReportPdf = async (execution: IntelligenceAssistantExecution) => {
@@ -192,17 +325,17 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   };
   const applySavedConfigValue = (value: string) => { if (value === "none") { setSelectedConfigId(null); return; } const topic = topics.find((item) => String(item.id) === value); if (!topic) return; setForm(formFromTopic(topic)); setSelectedConfigId(topic.id); setNotice(`已载入「${topic.name}」`); };
   const loadConfigIntoForm = (topic: IntelligenceAssistantTopic) => { setForm(formFromTopic(topic)); setSelectedConfigId(topic.id); setActiveTab("generate"); setNotice(`已载入「${topic.name}」`); };
-  const loadAndSearchConfig = async (topic: IntelligenceAssistantTopic) => { if (!token || activeExecutionId !== null) return; try { const response = await executeAssistantTopic(token, topic.id); setForm(formFromTopic(topic)); setSelectedConfigId(topic.id); setActiveTab("generate"); startExecution(response.execution); } catch (error) { handleError(error, "无法生成助手报告"); } };
+  const loadAndSearchConfig = async (topic: IntelligenceAssistantTopic) => { if (!token || activeExecutionId !== null) return; const request = formFromTopic(topic); setForm(request); setSelectedConfigId(topic.id); setActiveTab("generate"); await prepareQueryPlan({ kind: "topic", request, topic }); };
   const openCreateConfig = () => { if (configsLimitReached) { setPageError(`最多保存 ${TOPIC_LIMIT} 个助手，请先编辑或删除已有助手。`); return; } setConfigEditorId(null); setConfigName(form.focus.trim().slice(0, 40) || "我的情报助手"); setConfigDraft({ ...form }); setConfigDialogOpen(true); };
   const openSaveCurrentConfig = () => { if (configsLimitReached && selectedConfigId === null) { setPageError(`最多保存 ${TOPIC_LIMIT} 个助手，请先编辑或删除已有助手。`); return; } setConfigEditorId(selectedConfigId); setConfigName(topics.find((topic) => topic.id === selectedConfigId)?.name || form.focus.trim().slice(0, 40) || "我的情报助手"); setConfigDraft({ ...form }); setConfigDialogOpen(true); };
   const openEditConfig = (topic: IntelligenceAssistantTopic) => { setConfigEditorId(topic.id); setConfigName(topic.name); setConfigDraft(formFromTopic(topic)); setConfigDialogOpen(true); };
   const saveConfig = async () => { if (!token || !configName.trim() || !configDraft.focus.trim()) { setPageError("请填写助手名称和业务问题。"); return; } if (configDraft.audience === "custom" && !configDraft.audience_detail.trim()) { setPageError("选择自定义受众后，请补充读者背景。"); return; } setConfigSaving(true); try { const payload = { ...configDraft, name: configName.trim(), focus_tags: configDraft.focus_tags.slice(0, 3) }; const response = configEditorId === null ? await createAssistantTopic(token, payload) : await updateAssistantTopic(token, configEditorId, payload); setTopics((current) => configEditorId === null ? [response.topic, ...current] : current.map((topic) => topic.id === response.topic.id ? response.topic : topic)); setSelectedConfigId(response.topic.id); setConfigDialogOpen(false); setNotice(configEditorId === null ? "已保存为我的助手。" : "助手已更新。"); } catch (error) { handleError(error, "无法保存助手"); } finally { setConfigSaving(false); } };
   const deleteConfig = async (topic: IntelligenceAssistantTopic) => { if (!token || !window.confirm(`确定删除「${topic.name}」吗？删除后不可恢复。`)) return; try { await deleteAssistantTopic(token, topic.id); setTopics((current) => current.filter((item) => item.id !== topic.id)); if (selectedConfigId === topic.id) setSelectedConfigId(null); setNotice(`已删除「${topic.name}」。`); } catch (error) { handleError(error, "无法删除助手"); } };
   const openReport = async (execution: IntelligenceAssistantExecution) => { setSelectedExecution(execution); setReportDialogOpen(true); if (!token) return; setReportLoading(true); try { const response = await fetchAssistantExecution(token, execution.id); setSelectedExecution(response.execution); setExecutions((current) => mergeExecution(current, response.execution)); } catch (error) { handleError(error, "无法加载报告"); } finally { setReportLoading(false); } };
-  const rerun = async (execution: IntelligenceAssistantExecution) => { if (!token || activeExecutionId !== null) return; try { const response = await rerunAssistantExecution(token, execution.id); setForm(formFromExecution(execution)); setActiveTab("generate"); startExecution(response.execution); setReportDialogOpen(false); } catch (error) { handleError(error, "无法再次生成报告"); } };
+  const rerun = async (execution: IntelligenceAssistantExecution) => { if (!token || activeExecutionId !== null) return; const request = formFromExecution(execution); setForm(request); setActiveTab("generate"); await prepareQueryPlan({ kind: "rerun", request, execution }); };
   const reanalyze = async (execution: IntelligenceAssistantExecution) => { if (!token || activeExecutionId !== null) return; try { const response = await reanalyzeAssistantExecution(token, execution.id); startExecution(response.execution); setReportDialogOpen(false); } catch (error) { handleError(error, "无法重新分析报告"); } };
   const openEmail = (execution: IntelligenceAssistantExecution | null) => { setEmailExecution(execution); setEmailDialogOpen(execution !== null); };
-  const sendEmail = async (recipients: string[], format: "html" | "pdf", externalConfirmed: boolean) => { if (!token || !emailExecution) return; setEmailSending(true); try { const payload: IntelligenceAssistantEmailInput = { recipients, format, external_confirmed: externalConfirmed }; const response = await sendAssistantExecutionEmail(token, emailExecution.id, payload); if (response.status === "partial_failed") throw new Error("部分收件人发送失败，请联系管理员查看投递记录。"); setEmailDialogOpen(false); setNotice("邮件发送成功。"); } catch (error) { handleError(error, "发送邮件失败"); } finally { setEmailSending(false); } };
+  const sendEmail = async (recipients: string[], note: string, externalConfirmed: boolean) => { if (!token || !emailExecution) return; setEmailSending(true); try { const payload: IntelligenceAssistantEmailInput = { recipients, note, external_confirmed: externalConfirmed }; const response = await sendAssistantExecutionEmail(token, emailExecution.id, payload); if (response.status === "partial_failed") throw new Error("部分收件人发送失败，请联系管理员查看投递记录。"); setEmailDialogOpen(false); setNotice("邮件发送成功。"); } catch (error) { handleError(error, "发送邮件失败"); } finally { setEmailSending(false); } };
 
-  return { isHydrated, isLoggedIn, isAdmin, username, logout, activeTab, setActiveTab, form, setForm, optionsLoading, serviceAvailable, topics, executions, executionsTotal, executionsPage, executionsTotalPages, loadingExecutions, activeExecutionId, pageError, notice, workspaceMode, workspaceExecution, selectedConfigId, configDialogOpen, setConfigDialogOpen, configEditorId, configName, setConfigName, configDraft, setConfigDraft, configSaving, configsLimitReached, selectedExecution, reportDialogOpen, setReportDialogOpen, reportLoading, pdfExporting, emailDialogOpen, emailExecution, emailSending, clearMessages: () => { setPageError(""); setNotice(""); }, loadExecutions, submitInstant, resetWorkspace, exportReportPdf, applySavedConfigValue, loadConfigIntoForm, loadAndSearchConfig, openCreateConfig, openSaveCurrentConfig, openEditConfig, saveConfig, deleteConfig, openReport, rerun, reanalyze, openEmail, sendEmail };
+  return { isHydrated, isLoggedIn, isAdmin, username, logout, activeTab, setActiveTab, form, setForm, optionsLoading, serviceAvailable, topics, executions, executionsTotal, executionsPage, executionsTotalPages, loadingExecutions, activeExecutionId, pageError, notice, workspaceMode, workspaceExecution, selectedConfigId, configDialogOpen, setConfigDialogOpen, configEditorId, configName, setConfigName, configDraft, setConfigDraft, configSaving, configsLimitReached, selectedExecution, reportDialogOpen, setReportDialogOpen, reportLoading, pdfExporting, emailDialogOpen, emailExecution, emailSending, planDialogOpen, planLoading, planSubmitting, planDraft, planError, planSeconds, planPaused, clearMessages: () => { setPageError(""); setNotice(""); }, loadExecutions, submitInstant, resetWorkspace, exportReportPdf, cancelQueryPlan, retryQueryPlan, updatePlanDirection, pauseQueryPlan, confirmQueryPlan, applySavedConfigValue, loadConfigIntoForm, loadAndSearchConfig, openCreateConfig, openSaveCurrentConfig, openEditConfig, saveConfig, deleteConfig, openReport, rerun, reanalyze, openEmail, sendEmail };
 }

@@ -138,7 +138,7 @@ def format_report_datetime(value: object) -> str:
 
 def _report_items(value: object, source_indexes: Mapping[str, int]) -> tuple[ReportItemView, ...]:
     items: list[ReportItemView] = []
-    for index, raw in enumerate(_list(value)[:30], 1):
+    for raw in _list(value)[:30]:
         if not isinstance(raw, dict):
             continue
         text = _clean(raw.get("text"), 4_000)
@@ -157,7 +157,7 @@ def _report_items(value: object, source_indexes: Mapping[str, int]) -> tuple[Rep
         )
         items.append(
             ReportItemView(
-                number=index,
+                number=len(items) + 1,
                 type=item_type,
                 type_label=ITEM_TYPE_LABELS.get(item_type, "分析"),
                 text=text,
@@ -232,4 +232,3 @@ def build_report_view(execution: Mapping[str, object]) -> ReportView:
         reference_warnings=warnings,
         sources=tuple(sources),
     )
-

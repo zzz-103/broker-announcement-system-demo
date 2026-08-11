@@ -680,7 +680,6 @@ class RouteOwnershipTests(unittest.TestCase):
                 headers=headers,
                 json={
                     "recipients": ["outside@example.com"],
-                    "format": "pdf",
                     "external_confirmed": False,
                 },
             )
@@ -696,7 +695,7 @@ class RouteOwnershipTests(unittest.TestCase):
                     headers=headers,
                     json={
                         "recipients": ["owner@csco.com.cn", "outside@example.com"],
-                        "format": "pdf",
+                        "note": "你好，请看一下这份报告",
                         "external_confirmed": True,
                     },
                 )
@@ -705,11 +704,11 @@ class RouteOwnershipTests(unittest.TestCase):
             self.assertEqual(len(sent.json()["deliveries"]), 2)
             self.assertTrue(all("owner_user_id" not in item and "message_id" not in item for item in sent.json()["deliveries"]))
             self.assertTrue(sender.call_args.kwargs["external_confirmed"])
+            self.assertEqual(sender.call_args.kwargs["note"], "你好，请看一下这份报告")
             self.assertEqual(sender.call_args.args[1], ["owner@csco.com.cn", "outside@example.com"])
-            self.assertEqual(
-                len(custom_intelligence_service.store.list_delivery_logs(int(execution["id"]))),
-                2,
-            )
+            delivery_logs = custom_intelligence_service.store.list_delivery_logs(int(execution["id"]))
+            self.assertEqual(len(delivery_logs), 2)
+            self.assertTrue(all(item["format"] == "html_pdf" for item in delivery_logs))
             self.assertEqual(
                 custom_intelligence_service.store.get_execution(0, int(execution["id"]))["status"],
                 "succeeded",

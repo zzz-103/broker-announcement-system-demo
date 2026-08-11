@@ -196,6 +196,20 @@ export interface IntelligenceAssistantRequest {
   report_length: IntelligenceReportLength;
 }
 
+export interface IntelligenceConfirmedPlan {
+  intent: string;
+  directions: string[];
+}
+
+export interface IntelligenceAssistantExecutionInput extends IntelligenceAssistantRequest {
+  confirmed_plan?: IntelligenceConfirmedPlan;
+}
+
+export interface IntelligenceQueryPlanResponse extends IntelligenceConfirmedPlan {
+  degraded: boolean;
+  warning?: string | null;
+}
+
 export interface IntelligenceAssistantTopic extends IntelligenceAssistantRequest {
   id: number;
   name: string;
@@ -264,7 +278,7 @@ export interface IntelligenceAssistantExecutionsResponse {
 
 export interface IntelligenceAssistantEmailInput {
   recipients: string[];
-  format: "html" | "pdf";
+  note: string;
   external_confirmed: boolean;
 }
 export interface IntelligenceAssistantEmailResponse {
@@ -273,7 +287,7 @@ export interface IntelligenceAssistantEmailResponse {
     id: number;
     execution_id: number;
     recipient: string;
-    format: "html" | "pdf";
+    format: "html" | "pdf" | "html_pdf";
     status: "sent" | "failed";
     error_message?: string | null;
     sent_at?: string | null;

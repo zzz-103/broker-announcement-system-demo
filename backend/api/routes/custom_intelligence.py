@@ -1133,6 +1133,7 @@ def post_execution_email(
             execution,
             payload.recipients,
             payload.format,
+            note=payload.note,
             external_confirmed=payload.external_confirmed,
             config=effective_smtp_config(store),
         )
@@ -1154,7 +1155,7 @@ def post_execution_email(
                 execution_id=execution_id,
                 owner_user_id=owner_id,
                 recipient=str(result.get("recipient") or ""),
-                format=payload.format,
+                format="html_pdf",
                 status=status_value,
                 message_id=str(result.get("message_id") or "") or None,
                 error_message=str(result.get("error_message") or "") or None,
@@ -1171,7 +1172,7 @@ def post_execution_email(
         result="success" if sent_count == len(delivery_rows) else "partial_failed",
         metadata={
             "execution_id": execution_id,
-            "format": payload.format,
+            "format": "html_pdf",
             "recipient_count": len(delivery_rows),
             "sent_count": sent_count,
             "external_confirmed": payload.external_confirmed,

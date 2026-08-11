@@ -7,7 +7,10 @@ import type {
   IntelligenceAssistantEmailInput,
   IntelligenceAssistantEmailResponse,
   IntelligenceAssistantExecutionResponse,
+  IntelligenceAssistantExecutionInput,
   IntelligenceAssistantExecutionsResponse,
+  IntelligenceConfirmedPlan,
+  IntelligenceQueryPlanResponse,
   IntelligenceAssistantRequest,
   IntelligenceAssistantTopicResponse,
   IntelligenceAssistantTopicsResponse,
@@ -115,11 +118,23 @@ const assistantPath = (suffix = "") => `/api/custom-intelligence${suffix}`;
 
 export function createAssistantExecution(
   token: string,
-  payload: IntelligenceAssistantRequest,
+  payload: IntelligenceAssistantExecutionInput,
   signal?: AbortSignal,
 ): Promise<IntelligenceAssistantExecutionResponse> {
   return requestJson<IntelligenceAssistantExecutionResponse>(
     assistantPath("/executions"),
+    { method: "POST", body: JSON.stringify(payload), signal },
+    token,
+  );
+}
+
+export function previewAssistantQueryPlan(
+  token: string,
+  payload: IntelligenceAssistantRequest,
+  signal?: AbortSignal,
+): Promise<IntelligenceQueryPlanResponse> {
+  return requestJson<IntelligenceQueryPlanResponse>(
+    assistantPath("/query-plan"),
     { method: "POST", body: JSON.stringify(payload), signal },
     token,
   );
@@ -154,11 +169,16 @@ export function fetchAssistantExecution(
 export function rerunAssistantExecution(
   token: string,
   executionId: number,
+  confirmedPlan?: IntelligenceConfirmedPlan,
   signal?: AbortSignal,
 ): Promise<IntelligenceAssistantExecutionResponse> {
   return requestJson<IntelligenceAssistantExecutionResponse>(
     assistantPath(`/executions/${encodeURIComponent(String(executionId))}/rerun`),
-    { method: "POST", signal },
+    {
+      method: "POST",
+      body: confirmedPlan ? JSON.stringify({ confirmed_plan: confirmedPlan }) : undefined,
+      signal,
+    },
     token,
   );
 }
@@ -218,11 +238,16 @@ export function deleteAssistantTopic(token: string, topicId: number, signal?: Ab
 export function executeAssistantTopic(
   token: string,
   topicId: number,
+  confirmedPlan?: IntelligenceConfirmedPlan,
   signal?: AbortSignal,
 ): Promise<IntelligenceAssistantExecutionResponse> {
   return requestJson<IntelligenceAssistantExecutionResponse>(
     assistantPath(`/topics/${encodeURIComponent(String(topicId))}/execute`),
-    { method: "POST", signal },
+    {
+      method: "POST",
+      body: confirmedPlan ? JSON.stringify({ confirmed_plan: confirmedPlan }) : undefined,
+      signal,
+    },
     token,
   );
 }

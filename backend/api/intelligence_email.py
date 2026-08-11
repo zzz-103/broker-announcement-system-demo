@@ -237,7 +237,12 @@ def _source_html(source_number: int, title: str, site_name: str, date: str, url:
 def render_report_html(execution: dict[str, object], note: str | None = None) -> tuple[str, str]:
     """Return ``(fixed_subject, html_document)`` for one Report V2 object."""
 
-    view = build_report_view(execution)
+    try:
+        view = build_report_view(execution)
+    except ValueError as exc:
+        # Preserve the renderer's historical public error type while the
+        # shared view model remains a generic ValueError-based helper.
+        raise EmailConfigurationError("旧版报告不支持邮件发送，请先再次生成 Report V2") from exc
     normalized_note = _normalize_note(note)
     # Single-quote family names so the CSS remains valid inside the enclosing
     # double-quoted HTML ``style`` attribute across strict mail clients.
@@ -346,6 +351,14 @@ def build_email_message(
     old route.  It no longer selects a mutually exclusive representation.
     """
 
+    # During route migration callers may move ``config`` into the third
+    # positional slot after dropping the old format selector.  Accept that
+    # shape as well as the historical ``(format, config)`` ordering.
+    if isinstance(report_format, EffectiveSMTPConfig):
+        if config is not None:
+            raise ValueError("SMTP 配置重复传入")
+        config = report_format
+        report_format = None
     _, normalized_note = _coerce_format_and_note(report_format, note)
     if config is None:
         raise EmailConfigurationError("SMTP 配置缺失")

@@ -204,7 +204,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         self.assertEqual(message["Subject"], EMAIL_SUBJECT)
         self.assertLess(html_text.index("你好 &lt;请查看&gt;"), html_text.index("报告 &lt;标题&gt;"))
         self.assertIn("事实 &lt;内容&gt;", html_text)
-        self.assertIn("https://example.com/?a=1&amp;b=2", html_text)
+        self.assertIn("https://example.test/?a=1&amp;b=2", html_text)
         self.assertEqual(message.get_content_type(), "multipart/mixed")
         self.assertTrue(any(part.get_content_type() == "application/pdf" for part in message.walk()))
 

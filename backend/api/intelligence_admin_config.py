@@ -88,7 +88,10 @@ class EmailDeliveryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     recipients: list[str] = Field(min_length=1, max_length=5)
-    format: Literal["html", "pdf"] = "html"
+    note: str = Field(default="", max_length=500)
+    # Kept as a no-op compatibility field for older clients. New deliveries
+    # always contain the complete HTML body and the matching PDF attachment.
+    format: Literal["html", "pdf"] | None = None
     external_confirmed: bool = False
 
 

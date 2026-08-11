@@ -10,6 +10,7 @@ import { CustomIntelligenceTabs } from "./custom-intelligence-tabs";
 import { EmailDialog } from "./email-dialog";
 import { ExecutionList } from "./execution-list";
 import { InstantSearchPanel } from "./instant-search-panel";
+import { QueryPlanDialog } from "./query-plan-dialog";
 import { ReportDialog } from "./report-dialog";
 import { ReportPanel } from "./report-panel";
 import { SavedConfigDialog } from "./saved-config-dialog";
@@ -167,6 +168,21 @@ export default function CustomIntelligencePage() {
         onNameChange={page.setConfigName}
         onDraftChange={page.setConfigDraft}
         onSave={() => void page.saveConfig()}
+      />
+
+      <QueryPlanDialog
+        open={page.planDialogOpen}
+        loading={page.planLoading}
+        submitting={page.planSubmitting}
+        plan={page.planDraft}
+        error={page.planError}
+        seconds={page.planSeconds}
+        paused={page.planPaused}
+        onOpenChange={(open) => { if (!open) page.cancelQueryPlan(); }}
+        onDirectionChange={page.updatePlanDirection}
+        onEditStart={page.pauseQueryPlan}
+        onRetry={page.retryQueryPlan}
+        onConfirm={() => void page.confirmQueryPlan()}
       />
 
       <ReportDialog

@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Bookmark, Loader2, Play, Sparkles } from "lucide-react";
+import { Bookmark, Loader2, Play, RefreshCw, Sparkles } from "lucide-react";
 import { HoverSelect } from "@/components/hover-select";
 import type { IntelligenceAssistantRequest, IntelligenceAssistantTopic } from "@/lib/api/contracts";
 import {
   AUDIENCE_OPTIONS,
+  AUDIENCE_RESEARCH_SUGGESTIONS,
   FIELD_INPUT_CLASS,
   FOCUS_TAG_LIMIT,
   FOCUS_TAG_OPTIONS,
@@ -26,13 +27,87 @@ function FieldLabel({ children, hint, htmlFor, required = false }: { children: R
   );
 }
 
+function AudienceSuggestions({
+  audience,
+  focus,
+  onApply,
+}: {
+  audience: IntelligenceAssistantRequest["audience"];
+  focus: string;
+  onApply: (value: string) => void;
+}) {
+  const suggestions = AUDIENCE_RESEARCH_SUGGESTIONS[audience] ?? [];
+  const [groupIndex, setGroupIndex] = React.useState(0);
+  const [message, setMessage] = React.useState("");
+
+  React.useEffect(() => {
+    setGroupIndex(0);
+    setMessage("");
+  }, [audience]);
+
+  if (!suggestions.length) return null;
+  const groupCount = Math.ceil(suggestions.length / 2);
+  const start = (groupIndex % groupCount) * 2;
+  const visible = suggestions.slice(start, start + 2);
+  const focusLines = new Set(focus.split("\n").map((item) => item.trim()).filter(Boolean));
+
+  const apply = (suggestion: string) => {
+    if (focusLines.has(suggestion)) {
+      setMessage("这条关注方向已经添加。");
+      return;
+    }
+    const next = focus.trim() ? `${focus.trimEnd()}\n${suggestion}` : suggestion;
+    if (next.length > 1000) {
+      setMessage("关注内容已接近 1000 字上限，请先精简后再添加。");
+      return;
+    }
+    onApply(next);
+    setMessage("已补充到关注内容。");
+  };
+
+  return (
+    <div className="rounded-md border border-[#DCE8F8] bg-[#F8FBFF] px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-semibold text-[#315EA8]">根据报告受众推荐</p>
+        <button
+          type="button"
+          onClick={() => {
+            setGroupIndex((current) => (current + 1) % groupCount);
+            setMessage("");
+          }}
+          className="inline-flex items-center gap-1 text-[11px] font-medium text-[#667085] hover:text-[#315EA8]"
+        >
+          <RefreshCw className="size-3" aria-hidden="true" />换一组
+        </button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {visible.map((suggestion) => {
+          const added = focusLines.has(suggestion);
+          return (
+            <button
+              key={suggestion}
+              type="button"
+              disabled={added}
+              onClick={() => apply(suggestion)}
+              className="rounded-full border border-[#BFD2F3] bg-white px-3 py-1.5 text-left text-[11px] leading-5 text-[#315EA8] transition hover:border-[#7FA3DF] hover:bg-[#EEF4FF] disabled:cursor-default disabled:border-[#DCE8F8] disabled:bg-[#F3F7FD] disabled:text-[#98A2B3]"
+            >
+              {suggestion}
+            </button>
+          );
+        })}
+      </div>
+      {message && <p className="mt-1.5 text-[10px] text-[#667085]" role="status" aria-live="polite">{message}</p>}
+    </div>
+  );
+}
+
 function TopicTagSelector({ value, onChange }: { value: string[]; onChange: (value: string[]) => void }) {
   return (
     <fieldset>
       <legend className="mb-1.5 flex w-full items-center justify-between gap-2 text-xs font-semibold text-[#344054]">
-        <span>业务主题</span><span className="text-[10px] font-normal text-[#98A2B3]">可选 · {value.length}/{FOCUS_TAG_LIMIT}</span>
+        <span>研究侧重点</span><span className="text-[10px] font-normal text-[#98A2B3]">可选 · 作为软偏好 · {value.length}/{FOCUS_TAG_LIMIT}</span>
       </legend>
-      <div className="flex flex-wrap gap-1.5" aria-label="业务主题快捷标签">
+      <div className="flex flex-wrap gap-1.5" aria-label="研究侧重点快捷标签">
         {FOCUS_TAG_OPTIONS.map((tag) => {
           const selected = value.includes(tag);
           return (
@@ -174,6 +249,12 @@ export function InstantSearchPanel({
                 <input id="custom-intelligence-audience-detail" required value={form.audience_detail} onChange={(event) => update("audience_detail", event.target.value)} maxLength={240} placeholder="例如：分公司负责人，关注可执行动作" className={FIELD_INPUT_CLASS} />
               </div>
             )}
+
+            <AudienceSuggestions
+              audience={form.audience}
+              focus={form.focus}
+              onApply={(value) => update("focus", value)}
+            />
 
             <TopicTagSelector value={form.focus_tags} onChange={(value) => update("focus_tags", value)} />
 
