@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 
 interface HoverSelectProps {
+  id?: string;
   value: string;
   onChange: (value: string) => void;
   options: { value: string; label: string }[];
@@ -17,6 +18,7 @@ let activeDropdown: ((id: number) => void) | null = null;
 let nextId = 0;
 
 export function HoverSelect({
+  id,
   value,
   onChange,
   options,
@@ -94,6 +96,7 @@ export function HoverSelect({
     >
       {/* Trigger */}
       <button
+        id={id}
         ref={triggerRef}
         type="button"
         aria-haspopup="listbox"

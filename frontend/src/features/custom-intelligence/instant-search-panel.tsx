@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Bookmark, Loader2, Play, Sparkles } from "lucide-react";
+import { HoverSelect } from "@/components/hover-select";
 import type { IntelligenceAssistantRequest, IntelligenceAssistantTopic } from "@/lib/api/contracts";
 import {
   AUDIENCE_OPTIONS,
@@ -99,7 +100,7 @@ export function InstantSearchPanel({
             <div>
               <div className="flex items-center gap-2">
                 <span className="flex size-8 items-center justify-center rounded-lg bg-[#EAF2FF] text-[#2563EB]"><Sparkles className="size-4" aria-hidden="true" /></span>
-                <h3 className="text-base font-semibold text-[#172033]">{workspaceMode ? "调整这次提问" : "告诉我你想知道什么"}</h3>
+                <h3 className="text-base font-semibold text-[#172033]">{workspaceMode ? "调整这次提问" : "您现在想了解什么"}</h3>
               </div>
               <p className="mt-2 text-xs leading-5 text-[#667085]">用一句业务问题开始，助手会自动检索公开资料并整理成可读报告。</p>
             </div>
@@ -111,10 +112,17 @@ export function InstantSearchPanel({
           {topics.length > 0 && (
             <div className="mb-4">
               <FieldLabel htmlFor="custom-intelligence-assistant-picker">我的助手</FieldLabel>
-              <select id="custom-intelligence-assistant-picker" value={selectedConfigId === null ? "none" : String(selectedConfigId)} onChange={(event) => onApplyConfig(event.target.value)} className={FIELD_INPUT_CLASS}>
-                <option value="none">不使用已保存助手</option>
-                {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}
-              </select>
+              <HoverSelect
+                id="custom-intelligence-assistant-picker"
+                value={selectedConfigId === null ? "none" : String(selectedConfigId)}
+                onChange={onApplyConfig}
+                options={[
+                  { value: "none", label: "不使用已保存助手" },
+                  ...topics.map((topic) => ({ value: String(topic.id), label: topic.name })),
+                ]}
+                placeholder="选择助手"
+                className="w-full"
+              />
               {selectedAssistant && <p className="mt-1 text-[10px] text-[#98A2B3]">已载入「{selectedAssistant.name}」，可以临时修改。</p>}
             </div>
           )}
@@ -136,7 +144,7 @@ export function InstantSearchPanel({
             </div>
 
             <fieldset>
-              <legend className="mb-1.5 text-xs font-semibold text-[#344054]">给谁看</legend>
+              <legend className="mb-1.5 text-xs font-semibold text-[#344054]">关注方向</legend>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
                 {AUDIENCE_OPTIONS.map((option) => (
                   <button
@@ -168,15 +176,25 @@ export function InstantSearchPanel({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <FieldLabel htmlFor="custom-intelligence-time-range">时间范围</FieldLabel>
-                <select id="custom-intelligence-time-range" value={form.time_range} onChange={(event) => update("time_range", event.target.value as IntelligenceAssistantRequest["time_range"])} className={FIELD_INPUT_CLASS}>
-                  {TIME_RANGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
+                <HoverSelect
+                  id="custom-intelligence-time-range"
+                  value={form.time_range}
+                  onChange={(value) => update("time_range", value as IntelligenceAssistantRequest["time_range"])}
+                  options={TIME_RANGE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+                  placeholder="时间范围"
+                  className="w-full"
+                />
               </div>
               <div>
                 <FieldLabel htmlFor="custom-intelligence-report-length">报告篇幅</FieldLabel>
-                <select id="custom-intelligence-report-length" value={form.report_length} onChange={(event) => update("report_length", event.target.value as IntelligenceAssistantRequest["report_length"])} className={FIELD_INPUT_CLASS}>
-                  {REPORT_LENGTH_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} · {option.detail}</option>)}
-                </select>
+                <HoverSelect
+                  id="custom-intelligence-report-length"
+                  value={form.report_length}
+                  onChange={(value) => update("report_length", value as IntelligenceAssistantRequest["report_length"])}
+                  options={REPORT_LENGTH_OPTIONS.map((option) => ({ value: option.value, label: `${option.label} · ${option.detail}` }))}
+                  placeholder="报告篇幅"
+                  className="w-full"
+                />
               </div>
             </div>
 

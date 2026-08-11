@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Eye, Loader2, RefreshCw, Save, ShieldCheck, Wrench } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, RefreshCw, Save, ShieldCheck, Wrench } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { BackendApiError, isAbortError } from "@/lib/api/backend-client";
 import {
@@ -24,6 +24,7 @@ import {
 } from "@/lib/api/custom-intelligence";
 import type {
   IntelligenceAdminExecutionSummary,
+  IntelligenceAdminExecutionsResponse,
   IntelligenceDefaultRulesInput,
   IntelligenceExecutionDiagnostics,
   IntelligenceLlmConfigResponse,
@@ -37,6 +38,7 @@ const INPUT_CLASS = "w-full rounded-md border border-[#D0D5DD] bg-white px-3 py-
 const DEFAULT_RULES: IntelligenceDefaultRulesInput = {
   analysis_instructions: "",
 };
+const DIAGNOSTICS_PAGE_SIZE = 10;
 
 function safeHttpUrl(value: string): string | null {
   const normalized = value.trim();
@@ -150,6 +152,9 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
 
   const [rules, setRules] = useState<IntelligenceDefaultRulesInput>(DEFAULT_RULES);
   const [executions, setExecutions] = useState<IntelligenceAdminExecutionSummary[]>([]);
+  const [executionPage, setExecutionPage] = useState(1);
+  const [executionMeta, setExecutionMeta] = useState<IntelligenceAdminExecutionsResponse["meta"]>({ page: 1, page_size: DIAGNOSTICS_PAGE_SIZE, total: 0, total_pages: 1 });
+  const [executionsLoading, setExecutionsLoading] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Record<number, IntelligenceExecutionDiagnostics>>({});
   const [diagnosticsLoading, setDiagnosticsLoading] = useState<number | null>(null);
   const [revealTarget, setRevealTarget] = useState<SecretTarget | null>(null);
@@ -180,14 +185,18 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
       fetchAdminLlmConfig(token, controller.signal),
       fetchAdminSmtpConfig(token, controller.signal),
       fetchAdminDefaultRules(token, controller.signal),
-      fetchAdminAssistantExecutions(token, 1, 10, controller.signal),
+      fetchAdminAssistantExecutions(token, 1, DIAGNOSTICS_PAGE_SIZE, controller.signal),
     ]).then(([search, llm, smtp, defaultRules, executionResult]) => {
       if (controller.signal.aborted) return;
       if (search.status === "fulfilled") applySearchConfig(search.value); else if (!isAbortError(search.reason)) handleError(search.reason, "无法加载百度检索配置");
       if (llm.status === "fulfilled") applyLlmConfig(llm.value); else if (!isAbortError(llm.reason)) handleError(llm.reason, "无法加载 DeepSeek 配置");
       if (smtp.status === "fulfilled") applySmtpConfig(smtp.value); else if (!isAbortError(smtp.reason)) handleError(smtp.reason, "无法加载 SMTP 配置");
       if (defaultRules.status === "fulfilled") setRules(defaultRules.value);
-      if (executionResult.status === "fulfilled") setExecutions(executionResult.value.executions);
+      if (executionResult.status === "fulfilled") {
+        setExecutions(executionResult.value.executions);
+        setExecutionMeta(executionResult.value.meta);
+        setExecutionPage(executionResult.value.meta.page);
+      }
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [applyLlmConfig, applySearchConfig, applySmtpConfig, handleError, token]);
@@ -242,6 +251,21 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
     setDiagnosticsLoading(executionId);
     try { const response = await fetchAdminExecutionDiagnostics(token, executionId); setDiagnostics((current) => ({ ...current, [executionId]: response.diagnostics })); } catch (err) { handleError(err, "无法加载执行诊断"); } finally { setDiagnosticsLoading(null); }
   };
+  const changeExecutionPage = async (nextPage: number) => {
+    if (!token || executionsLoading || nextPage < 1 || nextPage > executionMeta.total_pages || nextPage === executionPage) return;
+    setExecutionsLoading(true);
+    try {
+      const response = await fetchAdminAssistantExecutions(token, nextPage, DIAGNOSTICS_PAGE_SIZE);
+      setExecutions(response.executions);
+      setExecutionMeta(response.meta);
+      setExecutionPage(response.meta.page);
+      setDiagnostics({});
+    } catch (err) {
+      handleError(err, "无法加载执行诊断记录");
+    } finally {
+      setExecutionsLoading(false);
+    }
+  };
 
   if (loading) return <div className="flex items-center gap-2 rounded-lg border border-[#D9E2EC] bg-white px-4 py-8 text-sm text-[#667085]"><Loader2 className="size-4 animate-spin" aria-hidden="true" />正在加载 AI 技术配置…</div>;
 
@@ -290,7 +314,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
         <div className="border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveRules()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "rules" ? "保存中…" : "保存默认规则"}</button></div>
       </SectionCard>
 
-      <SectionCard title="执行诊断" description="仅管理员可见。查看最近 AI 情报执行的阶段、耗时和来源数量，不展示用户密钥。">
+      <SectionCard title="执行诊断" description="仅管理员可见。查看最近 50 条 AI 情报测试记录的阶段、耗时和来源数量，不展示用户密钥。">
         {executions.length === 0 ? (
           <p className="rounded-md bg-[#F8FAFC] px-3 py-4 text-xs text-[#98A2B3]">暂无执行记录。</p>
         ) : (
@@ -345,6 +369,30 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
                 </article>
               );
             })}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#EEF2F6] pt-3">
+              <p className="text-[11px] text-[#98A2B3]">共 {Math.min(executionMeta.total, 50)} 条测试记录</p>
+              <nav className="flex items-center gap-1.5" aria-label="执行诊断分页">
+                <button
+                  type="button"
+                  aria-label="上一页"
+                  onClick={() => void changeExecutionPage(executionPage - 1)}
+                  disabled={executionsLoading || executionPage <= 1}
+                  className="inline-flex size-7 items-center justify-center rounded-md border border-[#D0D5DD] text-[#475467] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="size-3.5" aria-hidden="true" />
+                </button>
+                <span className="min-w-20 text-center text-[11px] font-medium tabular-nums text-[#475467]">第 {executionPage} / {executionMeta.total_pages} 页</span>
+                <button
+                  type="button"
+                  aria-label="下一页"
+                  onClick={() => void changeExecutionPage(executionPage + 1)}
+                  disabled={executionsLoading || executionPage >= executionMeta.total_pages}
+                  className="inline-flex size-7 items-center justify-center rounded-md border border-[#D0D5DD] text-[#475467] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="size-3.5" aria-hidden="true" />
+                </button>
+              </nav>
+            </div>
           </div>
         )}
       </SectionCard>

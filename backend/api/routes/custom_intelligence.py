@@ -52,7 +52,7 @@ from ..custom_intelligence_service import (
     store,
     submit_execution,
 )
-from ..custom_intelligence_store import TOPICS_PER_USER_LIMIT, TopicLimitError, TopicNameConflictError
+from ..custom_intelligence_store import EXECUTIONS_RETENTION, TOPICS_PER_USER_LIMIT, TopicLimitError, TopicNameConflictError
 from ..intelligence_report_pdf import build_report_pdf, report_pdf_filename
 from ..qianfan_search import (
     QianfanConfigurationError,
@@ -872,7 +872,7 @@ def get_admin_executions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=50),
 ) -> dict[str, object]:
-    recent = store.list_recent_executions(limit=200)
+    recent = store.list_recent_executions(limit=EXECUTIONS_RETENTION)
     total = len(recent)
     total_pages = max(1, (total + page_size - 1) // page_size)
     effective_page = min(page, total_pages)

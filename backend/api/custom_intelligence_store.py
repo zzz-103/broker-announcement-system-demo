@@ -40,7 +40,7 @@ TOPICS_PER_USER_LIMIT = 10
 # Per-user execution history retention. Oldest finished records beyond this
 # limit are pruned when a new execution is created or completed; pending/running
 # records are never deleted.
-EXECUTIONS_RETENTION = 30
+EXECUTIONS_RETENTION = 50
 
 
 def utc_now() -> str:

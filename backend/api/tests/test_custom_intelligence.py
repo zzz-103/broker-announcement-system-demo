@@ -11,6 +11,7 @@ from unittest.mock import patch
 import httpx
 
 from backend.api import custom_intelligence_service as service
+from backend.api.routes import custom_intelligence as custom_intelligence_routes
 from backend.api.custom_intelligence_service import (
     _normalize_query_plan,
     _search_with_queries,
@@ -111,8 +112,8 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         with self.assertRaises(ActiveExecutionError):
             self.store.delete_topic(5, int(topic["id"]))
 
-    def test_execution_history_retains_30_per_user_and_prunes_oldest(self) -> None:
-        self.assertEqual(EXECUTIONS_RETENTION, 30)
+    def test_execution_history_retains_50_per_user_and_prunes_oldest(self) -> None:
+        self.assertEqual(EXECUTIONS_RETENTION, 50)
         created_ids: list[int] = []
         for index in range(EXECUTIONS_RETENTION + 1):
             snapshot = {"question": f"历史问题 {index}"}
@@ -159,12 +160,19 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         first_page, first_meta = self.store.list_executions(5, 1, 10)
         second_page, second_meta = self.store.list_executions(5, 2, 10)
         third_page, third_meta = self.store.list_executions(5, 3, 10)
-        self.assertEqual(first_meta["total_pages"], 3)
+        fourth_page, fourth_meta = self.store.list_executions(5, 4, 10)
+        fifth_page, fifth_meta = self.store.list_executions(5, 5, 10)
+        self.assertEqual(first_meta["total_pages"], 5)
         self.assertEqual(second_meta["page"], 2)
         self.assertEqual(third_meta["page"], 3)
-        self.assertEqual([len(first_page), len(second_page), len(third_page)], [10, 10, 10])
+        self.assertEqual(fourth_meta["page"], 4)
+        self.assertEqual(fifth_meta["page"], 5)
         self.assertEqual(
-            {item["id"] for item in first_page + second_page + third_page},
+            [len(first_page), len(second_page), len(third_page), len(fourth_page), len(fifth_page)],
+            [10, 10, 10, 10, 10],
+        )
+        self.assertEqual(
+            {item["id"] for item in first_page + second_page + third_page + fourth_page + fifth_page},
             {item["id"] for item in executions},
         )
 
@@ -178,6 +186,22 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         other_user_executions, other_meta = self.store.list_executions(6, 1, 100)
         self.assertEqual(other_meta["total"], 1)
         self.assertEqual(other_user_executions[0]["id"], other_user_execution["id"])
+
+    def test_admin_execution_history_reads_only_recent_50_before_pagination(self) -> None:
+        recent = [{"id": index, "sources": []} for index in range(50)]
+        with patch.object(
+            custom_intelligence_routes.store,
+            "list_recent_executions",
+            return_value=recent,
+        ) as list_recent:
+            result = custom_intelligence_routes.get_admin_executions(page=6, page_size=10)
+
+        list_recent.assert_called_once_with(limit=50)
+        self.assertEqual([item["id"] for item in result["executions"]], list(range(40, 50)))
+        self.assertEqual(
+            result["meta"],
+            {"page": 5, "page_size": 10, "total": 50, "total_pages": 5},
+        )
 
     def test_each_query_uses_fixed_top_k(self) -> None:
         for depth, top_k in (("concise", 10), ("standard", 20), ("deep", 30)):
