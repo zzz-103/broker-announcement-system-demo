@@ -4,7 +4,12 @@ import { Loader2, Mail, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { HoverSelect } from "@/components/hover-select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { IntelligenceAssistantExecution } from "@/lib/api/contracts";
+import type {
+  IntelligenceAssistantEmailInput,
+  IntelligenceAssistantExecution,
+  IntelligenceDeliveryFormat,
+  IntelligenceReportTemplateStyle,
+} from "@/lib/api/contracts";
 import { FIELD_INPUT_CLASS } from "./custom-intelligence-constants";
 
 const MAX_RECIPIENTS = 5;
@@ -28,7 +33,7 @@ export function EmailDialog({
   open: boolean;
   sending: boolean;
   onOpenChange: (open: boolean) => void;
-  onSend: (recipients: string[], note: string, externalConfirmed: boolean) => Promise<void>;
+  onSend: (payload: IntelligenceAssistantEmailInput) => Promise<void>;
 }) {
   const [localPart, setLocalPart] = useState("");
   const [domainChoice, setDomainChoice] = useState<string>(COMPANY_DOMAIN);
@@ -37,6 +42,8 @@ export function EmailDialog({
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [confirmExternal, setConfirmExternal] = useState(false);
+  const [templateStyle, setTemplateStyle] = useState<IntelligenceReportTemplateStyle>("research");
+  const [deliveryFormat, setDeliveryFormat] = useState<IntelligenceDeliveryFormat>("html_pdf");
 
   const reset = useCallback(() => {
     setLocalPart("");
@@ -46,6 +53,8 @@ export function EmailDialog({
     setNote("");
     setError("");
     setConfirmExternal(false);
+    setTemplateStyle("research");
+    setDeliveryFormat("html_pdf");
   }, []);
 
   useEffect(() => {
@@ -127,7 +136,13 @@ export function EmailDialog({
       setConfirmExternal(true);
       return;
     }
-    await onSend(recipients, note.trim(), external.length > 0);
+    await onSend({
+      recipients,
+      note: note.trim(),
+      external_confirmed: external.length > 0,
+      template_style: templateStyle,
+      delivery_format: deliveryFormat,
+    });
   };
 
   return (
@@ -135,10 +150,37 @@ export function EmailDialog({
       <DialogContent className="w-[calc(100%-1rem)] max-w-xl border-[#D9E2EC] bg-white sm:w-full">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base text-[#172033]"><Mail className="size-4 text-[#315EA8]" />发送情报报告</DialogTitle>
-          <DialogDescription className="text-[#667085]">邮件将包含完整报告正文，并同时附带 PDF。</DialogDescription>
+          <DialogDescription className="text-[#667085]">选择报告模板与发送格式，可发送 HTML 正文、PDF 附件或两者。</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label htmlFor="assistant-email-template" className="mb-1.5 block text-xs font-semibold text-[#344054]">报告模板</label>
+              <HoverSelect
+                id="assistant-email-template"
+                value={templateStyle}
+                onChange={(value) => { if (!sending) setTemplateStyle(value as IntelligenceReportTemplateStyle); }}
+                options={[{ value: "research", label: "研究简报" }, { value: "newsletter", label: "情报日报" }]}
+                className={`w-full ${sending ? "pointer-events-none opacity-50" : ""}`}
+              />
+            </div>
+            <div>
+              <label htmlFor="assistant-email-delivery-format" className="mb-1.5 block text-xs font-semibold text-[#344054]">发送格式</label>
+              <HoverSelect
+                id="assistant-email-delivery-format"
+                value={deliveryFormat}
+                onChange={(value) => { if (!sending) setDeliveryFormat(value as IntelligenceDeliveryFormat); }}
+                options={[
+                  { value: "html_pdf", label: "HTML + PDF（推荐）" },
+                  { value: "html_only", label: "仅 HTML 正文" },
+                  { value: "pdf_only", label: "仅 PDF 附件" },
+                ]}
+                className={`w-full ${sending ? "pointer-events-none opacity-50" : ""}`}
+              />
+            </div>
+          </div>
+
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-3">
               <label htmlFor="assistant-email-local-part" className="text-xs font-semibold text-[#344054]">收件人<span className="ml-0.5 text-sm font-bold text-red-500" aria-hidden="true">*</span><span className="sr-only">（必填）</span></label>

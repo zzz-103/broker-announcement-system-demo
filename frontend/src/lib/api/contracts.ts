@@ -185,6 +185,8 @@ export type IntelligenceAssistantAudience =
   | "custom";
 export type IntelligenceReportLength = "concise" | "standard" | "deep";
 export type IntelligenceReportItemType = "fact" | "analysis" | "recommendation";
+export type IntelligenceReportTemplateStyle = "research" | "newsletter";
+export type IntelligenceDeliveryFormat = "html_pdf" | "html_only" | "pdf_only";
 
 export interface IntelligenceAssistantRequest {
   audience: IntelligenceAssistantAudience;
@@ -280,6 +282,8 @@ export interface IntelligenceAssistantEmailInput {
   recipients: string[];
   note: string;
   external_confirmed: boolean;
+  template_style: IntelligenceReportTemplateStyle;
+  delivery_format: IntelligenceDeliveryFormat;
 }
 export interface IntelligenceAssistantEmailResponse {
   status: "success" | "partial_failed";

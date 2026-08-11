@@ -20,6 +20,7 @@ import type {
   IntelligenceExecutionDiagnosticsResponse,
   IntelligenceLlmConfigInput,
   IntelligenceLlmConfigResponse,
+  IntelligenceReportTemplateStyle,
   IntelligenceSmtpConfigInput,
   IntelligenceSmtpConfigResponse,
 } from "./contracts";
@@ -84,16 +85,20 @@ export function revealAdminSearchConfigKey(
 export async function downloadCustomIntelligenceReportPdf(
   token: string,
   executionId: number,
+  templateStyleOrSignal: IntelligenceReportTemplateStyle | AbortSignal = "research",
   signal?: AbortSignal,
 ): Promise<{ blob: Blob; filename: string | null }> {
+  const templateStyle = typeof templateStyleOrSignal === "string" ? templateStyleOrSignal : "research";
+  const requestSignal = typeof templateStyleOrSignal === "string" ? signal : templateStyleOrSignal;
   let response: Response;
   try {
+    const params = new URLSearchParams({ template_style: templateStyle });
     response = await fetch(
-      buildApiUrl(`/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/report/pdf`),
+      buildApiUrl(`/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/report/pdf?${params.toString()}`),
       {
         cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
-        signal,
+        signal: requestSignal,
       },
     );
   } catch (error) {

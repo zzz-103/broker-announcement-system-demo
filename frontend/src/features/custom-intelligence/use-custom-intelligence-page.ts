@@ -25,6 +25,7 @@ import type {
   IntelligenceAssistantTopic,
   IntelligenceConfirmedPlan,
   IntelligenceQueryPlanResponse,
+  IntelligenceReportTemplateStyle,
 } from "@/lib/api/contracts";
 import { useAuthStore } from "@/store/auth-store";
 import { DEFAULT_FORM, EXECUTIONS_PAGE_SIZE, TOPIC_LIMIT } from "./custom-intelligence-constants";
@@ -80,12 +81,12 @@ export interface CustomIntelligencePageController {
   activeExecutionId: number | null; pageError: string; notice: string;
   workspaceMode: boolean; workspaceExecution: IntelligenceAssistantExecution | null; selectedConfigId: number | null;
   configDialogOpen: boolean; setConfigDialogOpen: (open: boolean) => void; configEditorId: number | null; configName: string; setConfigName: (value: string) => void; configDraft: IntelligenceAssistantRequest; setConfigDraft: (value: IntelligenceAssistantRequest) => void; configSaving: boolean; configsLimitReached: boolean;
-  selectedExecution: IntelligenceAssistantExecution | null; reportDialogOpen: boolean; setReportDialogOpen: (open: boolean) => void; reportLoading: boolean; pdfExporting: boolean;
+  selectedExecution: IntelligenceAssistantExecution | null; reportDialogOpen: boolean; setReportDialogOpen: (open: boolean) => void; reportLoading: boolean; pdfExporting: boolean; reportTemplateStyle: IntelligenceReportTemplateStyle; setReportTemplateStyle: (value: IntelligenceReportTemplateStyle) => void;
   emailDialogOpen: boolean; emailExecution: IntelligenceAssistantExecution | null; emailSending: boolean;
   planDialogOpen: boolean; planLoading: boolean; planSubmitting: boolean; planDraft: IntelligenceQueryPlanResponse | null; planError: string; planSeconds: number; planPaused: boolean;
   clearMessages: () => void; loadExecutions: (page?: number, signal?: AbortSignal) => Promise<void>; submitInstant: () => Promise<void>; resetWorkspace: () => void; exportReportPdf: (execution: IntelligenceAssistantExecution) => Promise<void>;
   cancelQueryPlan: () => void; retryQueryPlan: () => void; updatePlanDirection: (index: number, value: string) => void; pauseQueryPlan: () => void; confirmQueryPlan: () => Promise<void>;
-  applySavedConfigValue: (value: string) => void; loadConfigIntoForm: (topic: IntelligenceAssistantTopic) => void; loadAndSearchConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openCreateConfig: () => void; openSaveCurrentConfig: () => void; openEditConfig: (topic: IntelligenceAssistantTopic) => void; saveConfig: () => Promise<void>; deleteConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openReport: (execution: IntelligenceAssistantExecution) => Promise<void>; rerun: (execution: IntelligenceAssistantExecution) => Promise<void>; reanalyze: (execution: IntelligenceAssistantExecution) => Promise<void>; openEmail: (execution: IntelligenceAssistantExecution | null) => void; sendEmail: (recipients: string[], note: string, externalConfirmed: boolean) => Promise<void>;
+  applySavedConfigValue: (value: string) => void; loadConfigIntoForm: (topic: IntelligenceAssistantTopic) => void; loadAndSearchConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openCreateConfig: () => void; openSaveCurrentConfig: () => void; openEditConfig: (topic: IntelligenceAssistantTopic) => void; saveConfig: () => Promise<void>; deleteConfig: (topic: IntelligenceAssistantTopic) => Promise<void>; openReport: (execution: IntelligenceAssistantExecution) => Promise<void>; rerun: (execution: IntelligenceAssistantExecution) => Promise<void>; reanalyze: (execution: IntelligenceAssistantExecution) => Promise<void>; openEmail: (execution: IntelligenceAssistantExecution | null) => void; sendEmail: (payload: IntelligenceAssistantEmailInput) => Promise<void>;
 }
 
 export function useCustomIntelligencePage(): CustomIntelligencePageController {
@@ -110,6 +111,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
+  const [reportTemplateStyle, setReportTemplateStyle] = useState<IntelligenceReportTemplateStyle>("research");
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [emailExecution, setEmailExecution] = useState<IntelligenceAssistantExecution | null>(null);
   const [emailSending, setEmailSending] = useState(false);
@@ -319,7 +321,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const exportReportPdf = async (execution: IntelligenceAssistantExecution) => {
     if (!token || pdfExporting) return;
     setPdfExporting(true); setPageError("");
-    try { const { blob, filename } = await downloadCustomIntelligenceReportPdf(token, execution.id); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename || `情报报告_${execution.id}.pdf`; document.body.appendChild(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 5000); setNotice("PDF 已开始下载。"); }
+    try { const { blob, filename } = await downloadCustomIntelligenceReportPdf(token, execution.id, reportTemplateStyle); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename || `情报报告_${execution.id}.pdf`; document.body.appendChild(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 5000); setNotice("PDF 已开始下载。"); }
     catch (error) { handleError(error, "下载 PDF 失败"); }
     finally { setPdfExporting(false); }
   };
@@ -335,7 +337,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const rerun = async (execution: IntelligenceAssistantExecution) => { if (!token || activeExecutionId !== null) return; const request = formFromExecution(execution); setForm(request); setActiveTab("generate"); await prepareQueryPlan({ kind: "rerun", request, execution }); };
   const reanalyze = async (execution: IntelligenceAssistantExecution) => { if (!token || activeExecutionId !== null) return; try { const response = await reanalyzeAssistantExecution(token, execution.id); startExecution(response.execution); setReportDialogOpen(false); } catch (error) { handleError(error, "无法重新分析报告"); } };
   const openEmail = (execution: IntelligenceAssistantExecution | null) => { setEmailExecution(execution); setEmailDialogOpen(execution !== null); };
-  const sendEmail = async (recipients: string[], note: string, externalConfirmed: boolean) => { if (!token || !emailExecution) return; setEmailSending(true); try { const payload: IntelligenceAssistantEmailInput = { recipients, note, external_confirmed: externalConfirmed }; const response = await sendAssistantExecutionEmail(token, emailExecution.id, payload); if (response.status === "partial_failed") throw new Error("部分收件人发送失败，请联系管理员查看投递记录。"); setEmailDialogOpen(false); setNotice("邮件发送成功。"); } catch (error) { handleError(error, "发送邮件失败"); } finally { setEmailSending(false); } };
+  const sendEmail = async (payload: IntelligenceAssistantEmailInput) => { if (!token || !emailExecution) return; setEmailSending(true); try { const response = await sendAssistantExecutionEmail(token, emailExecution.id, payload); if (response.status === "partial_failed") throw new Error("部分收件人发送失败，请联系管理员查看投递记录。"); setEmailDialogOpen(false); setNotice("邮件发送成功。"); } catch (error) { handleError(error, "发送邮件失败"); } finally { setEmailSending(false); } };
 
-  return { isHydrated, isLoggedIn, isAdmin, username, logout, activeTab, setActiveTab, form, setForm, optionsLoading, serviceAvailable, topics, executions, executionsTotal, executionsPage, executionsTotalPages, loadingExecutions, activeExecutionId, pageError, notice, workspaceMode, workspaceExecution, selectedConfigId, configDialogOpen, setConfigDialogOpen, configEditorId, configName, setConfigName, configDraft, setConfigDraft, configSaving, configsLimitReached, selectedExecution, reportDialogOpen, setReportDialogOpen, reportLoading, pdfExporting, emailDialogOpen, emailExecution, emailSending, planDialogOpen, planLoading, planSubmitting, planDraft, planError, planSeconds, planPaused, clearMessages: () => { setPageError(""); setNotice(""); }, loadExecutions, submitInstant, resetWorkspace, exportReportPdf, cancelQueryPlan, retryQueryPlan, updatePlanDirection, pauseQueryPlan, confirmQueryPlan, applySavedConfigValue, loadConfigIntoForm, loadAndSearchConfig, openCreateConfig, openSaveCurrentConfig, openEditConfig, saveConfig, deleteConfig, openReport, rerun, reanalyze, openEmail, sendEmail };
+  return { isHydrated, isLoggedIn, isAdmin, username, logout, activeTab, setActiveTab, form, setForm, optionsLoading, serviceAvailable, topics, executions, executionsTotal, executionsPage, executionsTotalPages, loadingExecutions, activeExecutionId, pageError, notice, workspaceMode, workspaceExecution, selectedConfigId, configDialogOpen, setConfigDialogOpen, configEditorId, configName, setConfigName, configDraft, setConfigDraft, configSaving, configsLimitReached, selectedExecution, reportDialogOpen, setReportDialogOpen, reportLoading, pdfExporting, reportTemplateStyle, setReportTemplateStyle, emailDialogOpen, emailExecution, emailSending, planDialogOpen, planLoading, planSubmitting, planDraft, planError, planSeconds, planPaused, clearMessages: () => { setPageError(""); setNotice(""); }, loadExecutions, submitInstant, resetWorkspace, exportReportPdf, cancelQueryPlan, retryQueryPlan, updatePlanDirection, pauseQueryPlan, confirmQueryPlan, applySavedConfigValue, loadConfigIntoForm, loadAndSearchConfig, openCreateConfig, openSaveCurrentConfig, openEditConfig, saveConfig, deleteConfig, openReport, rerun, reanalyze, openEmail, sendEmail };
 }

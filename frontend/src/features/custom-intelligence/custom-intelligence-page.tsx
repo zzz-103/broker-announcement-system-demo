@@ -106,6 +106,8 @@ export default function CustomIntelligencePage() {
                   onReanalyze={(execution) => void page.reanalyze(execution)}
                   onNewSearch={page.resetWorkspace}
                   onOpenReport={(execution) => void page.openReport(execution)}
+                  templateStyle={page.reportTemplateStyle}
+                  onTemplateStyleChange={page.setReportTemplateStyle}
                 />
               )}
             </InstantSearchPanel>
@@ -195,6 +197,8 @@ export default function CustomIntelligencePage() {
         onEmail={page.openEmail}
         onRerun={(execution) => void page.rerun(execution)}
         onReanalyze={(execution) => void page.reanalyze(execution)}
+        templateStyle={page.reportTemplateStyle}
+        onTemplateStyleChange={page.setReportTemplateStyle}
       />
 
       <EmailDialog

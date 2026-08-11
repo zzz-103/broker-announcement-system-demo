@@ -39,10 +39,39 @@ function AudienceSuggestions({
   const suggestions = AUDIENCE_RESEARCH_SUGGESTIONS[audience] ?? [];
   const [groupIndex, setGroupIndex] = React.useState(0);
   const [message, setMessage] = React.useState("");
+  const [systemSuggestion, setSystemSuggestion] = React.useState<string | null>(null);
+  const previousAudienceRef = React.useRef(audience);
+  const focusRef = React.useRef(focus);
+  const systemSuggestionRef = React.useRef<string | null>(null);
+  const onApplyRef = React.useRef(onApply);
+
+  React.useEffect(() => {
+    focusRef.current = focus;
+  }, [focus]);
+
+  React.useEffect(() => {
+    systemSuggestionRef.current = systemSuggestion;
+  }, [systemSuggestion]);
+
+  React.useEffect(() => {
+    onApplyRef.current = onApply;
+  }, [onApply]);
 
   React.useEffect(() => {
     setGroupIndex(0);
     setMessage("");
+    if (previousAudienceRef.current === audience) return;
+    previousAudienceRef.current = audience;
+
+    // Only remove the line that this component inserted. A matching line typed
+    // by the user is intentionally left untouched.
+    const inserted = systemSuggestionRef.current;
+    if (!inserted) return;
+    const currentFocus = focusRef.current;
+    const nextFocus = removeExactLine(currentFocus, inserted);
+    if (nextFocus !== currentFocus) onApplyRef.current(nextFocus);
+    systemSuggestionRef.current = null;
+    setSystemSuggestion(null);
   }, [audience]);
 
   if (!suggestions.length) return null;
@@ -52,16 +81,25 @@ function AudienceSuggestions({
   const focusLines = new Set(focus.split("\n").map((item) => item.trim()).filter(Boolean));
 
   const apply = (suggestion: string) => {
-    if (focusLines.has(suggestion)) {
+    const currentFocus = focus;
+    const inserted = systemSuggestionRef.current;
+    const withoutInserted = inserted ? removeExactLine(currentFocus, inserted) : currentFocus;
+    if (inserted === suggestion && withoutInserted === currentFocus) {
       setMessage("这条关注方向已经添加。");
       return;
     }
-    const next = focus.trim() ? `${focus.trimEnd()}\n${suggestion}` : suggestion;
+    if (withoutInserted.split("\n").some((line) => line.trim() === suggestion)) {
+      setMessage("这条关注方向已经添加。");
+      return;
+    }
+    const next = withoutInserted.trim() ? `${withoutInserted.trimEnd()}\n${suggestion}` : suggestion;
     if (next.length > 1000) {
       setMessage("关注内容已接近 1000 字上限，请先精简后再添加。");
       return;
     }
     onApply(next);
+    systemSuggestionRef.current = suggestion;
+    setSystemSuggestion(suggestion);
     setMessage("已补充到关注内容。");
   };
 
@@ -99,6 +137,14 @@ function AudienceSuggestions({
       {message && <p className="mt-1.5 text-[10px] text-[#667085]" role="status" aria-live="polite">{message}</p>}
     </div>
   );
+}
+
+function removeExactLine(value: string, target: string): string {
+  const lines = value.split(/\r?\n/);
+  const index = lines.findIndex((line) => line.trim() === target);
+  if (index < 0) return value;
+  lines.splice(index, 1);
+  return lines.join("\n").replace(/^\n+|\n+$/g, "");
 }
 
 function TopicTagSelector({ value, onChange }: { value: string[]; onChange: (value: string[]) => void }) {
