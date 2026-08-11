@@ -38,6 +38,19 @@ class FakeClient:
 
 
 class LLMMatcherTests(unittest.TestCase):
+    def test_rule_unmatched_skips_llm_requests(self) -> None:
+        client = FakeClient([])
+        with fixture() as paths:
+            paths["scores"].write_text(
+                "result_notice_id,procurement_notice_id\n",
+                encoding="utf-8-sig",
+            )
+            summary = run_fixture(paths, client)
+            self.assertEqual(client.calls, 0)
+            self.assertEqual(summary["skipped_count"], 1)
+            self.assertEqual(summary["llm_request_count"], 0)
+            self.assertEqual(summary["auto_unmatched_count"], 1)
+
     def test_auto_matched_when_two_passes_select_same_high_confidence_candidate(self) -> None:
         client = FakeClient([
             matched("p1", 0.98),

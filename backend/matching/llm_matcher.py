@@ -7,16 +7,14 @@ import json
 import os
 import shutil
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from backend.llm_table.llm_markdown_table_builder import (
-    LLMApiConfig,
-    OpenAICompatibleClient,
-)
+from backend.llm_table.llm_client import LLMApiConfig, OpenAICompatibleClient
 from backend.matching import project_matcher
 from backend.matching.prompts import (
     FIRST_PASS_SYSTEM_PROMPT,
@@ -40,9 +38,13 @@ DEFAULT_PROCUREMENT_MARKDOWN_DIR = DEFAULT_SELECTED_ROOT / "procurement" / "noti
 DEFAULT_RESULT_MARKDOWN_DIR = DEFAULT_SELECTED_ROOT / "result" / "notices"
 DEFAULT_MAX_CANDIDATES = 5
 DEFAULT_WORKERS = 2
+DEFAULT_MATCHING_MAX_TOKENS = 2048
+DEFAULT_PROGRESS_INTERVAL_SECONDS = 15
 MATCHER_VERSION = "p13d_llm_matcher_v1"
 
 _MARKDOWN_CACHE: dict[Path, str] = {}
+_MARKDOWN_FILE_INDEX: dict[Path, dict[str, Path]] = {}
+_MARKDOWN_FILES: dict[Path, tuple[Path, ...]] = {}
 _MARKDOWN_CACHE_LOCK = threading.Lock()
 
 GENERATED_OUTPUT_NAMES = {
@@ -135,6 +137,7 @@ class MatchResult:
     review_reason: str
     cached: bool
     failed: bool
+    skipped: bool = False
 
 
 class JsonClient(Protocol):
@@ -148,6 +151,7 @@ class MatchingLLMClient:
     def __init__(self, config: LLMApiConfig) -> None:
         self.config = config
         self.client = OpenAICompatibleClient(config)
+        self.max_tokens = matching_max_tokens(config)
 
     def request_json(self, messages: list[dict[str, str]]) -> Any:
         request_kwargs: dict[str, Any] = {
@@ -155,13 +159,35 @@ class MatchingLLMClient:
             "messages": messages,
             "temperature": self.config.temperature,
             "top_p": self.config.top_p,
-            "max_tokens": self.config.max_tokens,
+            "max_tokens": self.max_tokens,
             "frequency_penalty": self.config.frequency_penalty,
             "presence_penalty": self.config.presence_penalty,
         }
         if self.config.use_json_object:
             request_kwargs["response_format"] = {"type": "json_object"}
         return self.client._request_json(request_kwargs)
+
+
+def matching_max_tokens(config: LLMApiConfig) -> int:
+    """Keep the verification response budget small and configurable."""
+
+    raw_limit = os.getenv("LLM_MATCHING_MAX_TOKENS")
+    try:
+        configured_limit = int(raw_limit) if raw_limit else DEFAULT_MATCHING_MAX_TOKENS
+    except ValueError:
+        configured_limit = DEFAULT_MATCHING_MAX_TOKENS
+    configured_limit = max(1, min(configured_limit, 32768))
+    return max(1, min(int(config.max_tokens), configured_limit))
+
+
+def apply_matching_timeout_override(config: LLMApiConfig) -> None:
+    raw_timeout = os.getenv("LLM_MATCHING_TIMEOUT_SECONDS")
+    if not raw_timeout:
+        return
+    try:
+        config.timeout_seconds = max(1, min(int(raw_timeout), 600))
+    except ValueError:
+        return
 
 
 def normalize_text(value: Any) -> str:
@@ -559,6 +585,28 @@ def load_markdown_excerpt(row: dict[str, str], search_dirs: list[Path], notice_i
     return text[:limit]
 
 
+def markdown_directory_index(directory: Path) -> tuple[dict[str, Path], tuple[Path, ...]]:
+    resolved_directory = directory.resolve()
+    with _MARKDOWN_CACHE_LOCK:
+        cached_index = _MARKDOWN_FILE_INDEX.get(resolved_directory)
+        cached_files = _MARKDOWN_FILES.get(resolved_directory)
+        if cached_index is not None and cached_files is not None:
+            return cached_index, cached_files
+
+        if not resolved_directory.exists():
+            index: dict[str, Path] = {}
+            files: tuple[Path, ...] = ()
+        else:
+            files = tuple(resolved_directory.rglob("*.md"))
+            index = {}
+            for file_path in files:
+                index.setdefault(file_path.name, file_path)
+                index.setdefault(file_path.stem, file_path)
+        _MARKDOWN_FILE_INDEX[resolved_directory] = index
+        _MARKDOWN_FILES[resolved_directory] = files
+        return index, files
+
+
 def resolve_source_path(row: dict[str, str], search_dirs: list[Path], notice_id_value: str) -> Path | None:
     raw_candidates = [
         row.get("source_file", ""),
@@ -588,13 +636,15 @@ def resolve_source_path(row: dict[str, str], search_dirs: list[Path], notice_id_
         names.add(notice_id_value)
 
     for directory in search_dirs:
-        if not directory.exists():
-            continue
-        for file_path in directory.rglob("*.md"):
-            if file_path.name in names or file_path.stem in names:
-                return file_path
-            if notice_id_value and notice_id_value in file_path.name:
-                return file_path
+        index, files = markdown_directory_index(directory)
+        for name in names:
+            path = index.get(name)
+            if path is not None:
+                return path
+        if notice_id_value:
+            for file_path in files:
+                if notice_id_value in file_path.name:
+                    return file_path
     return None
 
 
@@ -645,6 +695,42 @@ def save_cached_match(path: Path, cache_payload: dict[str, Any], first: PassResu
     write_json_atomic(path, payload)
 
 
+def build_rule_unmatched_result(result_row: dict[str, str]) -> MatchResult:
+    raw_payload = {
+        "decision": "unmatched",
+        "procurement_notice_id": "",
+        "confidence": 1.0,
+        "evidence": ["规则阶段未召回采购公告候选"],
+        "conflicts": [],
+    }
+    first = PassResult(
+        "first",
+        True,
+        LLMDecision("unmatched", "", 1.0, ("规则阶段未召回采购公告候选",), ()),
+        raw_payload,
+        "",
+    )
+    second = PassResult(
+        "second",
+        True,
+        first.decision,
+        raw_payload,
+        "",
+    )
+    return MatchResult(
+        result_notice_id=result_id(result_row),
+        final_status="auto_unmatched",
+        procurement_notice_id="",
+        first=first,
+        second=second,
+        hard_conflicts=(),
+        review_reason="规则阶段未召回采购公告候选",
+        cached=False,
+        failed=False,
+        skipped=True,
+    )
+
+
 def process_one(
     result_row: dict[str, str],
     candidate_rows: list[dict[str, str]],
@@ -657,6 +743,10 @@ def process_one(
     result_markdown_dir: Path,
 ) -> MatchResult:
     rid = result_id(result_row)
+    candidates = select_candidates(result_row, candidate_rows, procurements_by_id, max_candidates)
+    if not candidates:
+        return build_rule_unmatched_result(result_row)
+
     result_excerpt = load_markdown_excerpt(
         result_row,
         [result_markdown_dir],
@@ -664,7 +754,6 @@ def process_one(
         expanded=False,
     )
     result_payload = build_result_payload(result_row, result_excerpt)
-    candidates = select_candidates(result_row, candidate_rows, procurements_by_id, max_candidates)
     for candidate in candidates:
         procurement_row = procurements_by_id.get(normalize_text(candidate.get("notice_id")), {})
         candidate["text_excerpt"] = load_markdown_excerpt(
@@ -812,6 +901,7 @@ def build_decision_record(result: MatchResult) -> dict[str, Any]:
         "hard_conflicts": list(result.hard_conflicts),
         "review_reason": result.review_reason,
         "cached": result.cached,
+        "skipped": result.skipped,
         "matcher_version": MATCHER_VERSION,
     }
 
@@ -904,8 +994,20 @@ def run_llm_matching(
     candidates_by_result = group_rows(candidate_score_rows, "result_notice_id")
     results_by_id = build_indexes(result_rows, result_id)
 
+    worker_count = max(1, workers)
+    candidate_result_count = sum(
+        bool(candidates_by_result.get(result_id(row))) for row in result_rows
+    )
+    print(
+        "[llm-matching] "
+        f"待处理 {len(result_rows)} 条；有候选 {candidate_result_count} 条；"
+        f"无候选跳过 {len(result_rows) - candidate_result_count} 条；"
+        f"工作线程 {worker_count}；预计 LLM 请求不超过 {candidate_result_count * 2} 次",
+        flush=True,
+    )
+
     results: list[MatchResult] = []
-    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
         future_map = {
             executor.submit(
                 process_one,
@@ -921,8 +1023,42 @@ def run_llm_matching(
             ): row
             for row in result_rows
         }
-        for future in as_completed(future_map):
-            results.append(future.result())
+        pending = set(future_map)
+        completed = 0
+        started_at = time.monotonic()
+        progress_interval = max(
+            1,
+            min(25, len(result_rows) // 20 or 1),
+        )
+        while pending:
+            done, pending = wait(
+                pending,
+                timeout=DEFAULT_PROGRESS_INTERVAL_SECONDS,
+                return_when=FIRST_COMPLETED,
+            )
+            if not done:
+                elapsed = time.monotonic() - started_at
+                print(
+                    "[llm-matching] "
+                    f"已完成 {completed}/{len(result_rows)} 条，剩余 {len(pending)} 条；"
+                    f"已等待 {elapsed:.0f}s",
+                    flush=True,
+                )
+                continue
+            for future in done:
+                results.append(future.result())
+                completed += 1
+                if (
+                    completed == len(result_rows)
+                    or completed % progress_interval == 0
+                ):
+                    elapsed = time.monotonic() - started_at
+                    print(
+                        "[llm-matching] "
+                        f"已完成 {completed}/{len(result_rows)} 条；"
+                        f"已用时 {elapsed:.0f}s",
+                        flush=True,
+                    )
 
     results.sort(key=lambda item: item.result_notice_id)
     verified_rows: list[dict[str, Any]] = []
@@ -955,13 +1091,18 @@ def run_llm_matching(
         "needs_review_count": sum(row["final_status"] == "needs_review" for row in verified_rows),
         "failed_count": sum(row["final_status"] == "failed" for row in verified_rows),
         "cached_count": sum(bool(item.cached) for item in results),
+        "skipped_count": sum(bool(item.skipped) for item in results),
     }
     summary = {
         "input_result_count": input_result_count,
         "processed_count": len(verified_rows),
         "duplicate_result_count": len(duplicate_result_ids),
         **counts,
-        "llm_request_count": sum(0 if item.cached else 2 for item in results if not item.failed or not item.cached),
+        "llm_request_count": sum(
+            0 if item.cached or item.skipped else 2
+            for item in results
+            if not item.failed or not item.cached
+        ),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "matcher_version": MATCHER_VERSION,
     }
@@ -971,6 +1112,7 @@ def run_llm_matching(
 
 def load_client(llm_config_path: Path) -> MatchingLLMClient:
     config = LLMApiConfig.load(llm_config_path)
+    apply_matching_timeout_override(config)
     config.validate()
     return MatchingLLMClient(config)
 
