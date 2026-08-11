@@ -5,13 +5,14 @@ from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response as RawResponse
 
 from ..audit_store import AuditStoreError, record_event
 from ..auth import get_session, require_admin_token
 from ..config import settings
 from ..contracts import (
+    ConfirmedPlanBody,
     InstantSearchRequest,
     SearchServiceConfigUpdate,
     VerifyPasswordRequest,
@@ -48,6 +49,7 @@ from ..custom_intelligence_service import (
     analysis_service_configured,
     initialize_service,
     options_payload,
+    query_plan_preview,
     reanalyze_execution,
     store,
     submit_execution,
@@ -913,6 +915,22 @@ def get_custom_intelligence_options(
         raise _handle_store_error(exc) from exc
 
 
+@router.post("/api/custom-intelligence/query-plan")
+def post_custom_intelligence_query_plan(
+    payload: InstantSearchRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    """Preview DeepSeek's natural-language research directions.
+
+    This endpoint deliberately does not initialize the intelligence store or
+    create an execution.  It only validates the session and invokes the
+    bounded planner; planner failures return a focus-only degraded preview so
+    the user can still explicitly confirm before any Baidu request starts.
+    """
+    get_session(authorization)
+    return query_plan_preview(payload.model_dump(exclude_none=True))
+
+
 @router.get("/api/custom-intelligence/topics")
 def get_topics(
     authorization: Annotated[str | None, Header()] = None,
@@ -984,6 +1002,7 @@ def delete_topic(
 @router.post("/api/custom-intelligence/topics/{topic_id}/execute", status_code=status.HTTP_202_ACCEPTED)
 def post_topic_execute(
     topic_id: int,
+    body: ConfirmedPlanBody | None = Body(default=None),
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     session = get_session(authorization)
@@ -993,6 +1012,8 @@ def post_topic_execute(
         snapshot = {"name": topic.get("name"), **_public_assistant_fields(topic)}
         saved_question = str(topic.get("question") or "").strip()
         snapshot["question"] = saved_question or str(topic.get("focus") or "").strip() or f"请分析情报主题：{str(topic.get('name') or '证券行业近期动态')}"
+        if body is not None and body.confirmed_plan is not None:
+            snapshot["confirmed_plan"] = body.confirmed_plan.model_dump()
         execution = submit_execution(
             owner_id,
             snapshot,
@@ -1057,6 +1078,7 @@ def get_execution(
 @router.post("/api/custom-intelligence/executions/{execution_id}/rerun", status_code=status.HTTP_202_ACCEPTED)
 def post_execution_rerun(
     execution_id: int,
+    body: ConfirmedPlanBody | None = Body(default=None),
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     session = get_session(authorization)
@@ -1064,6 +1086,9 @@ def post_execution_rerun(
     try:
         previous = store.get_execution(owner_id, execution_id)
         snapshot = previous.get("snapshot") if isinstance(previous.get("snapshot"), dict) else {}
+        snapshot = dict(snapshot)
+        if body is not None and body.confirmed_plan is not None:
+            snapshot["confirmed_plan"] = body.confirmed_plan.model_dump()
         execution = submit_execution(
             owner_id,
             dict(snapshot),

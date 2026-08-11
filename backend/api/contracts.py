@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator, model_validator
 
 
 class LoginRequest(BaseModel):
@@ -80,6 +80,44 @@ AssistantAudience = Literal[
 ReportLength = Literal["concise", "standard", "deep"]
 
 
+class ConfirmedQueryPlan(BaseModel):
+    """A user-approved, non-technical search direction list.
+
+    The planner preview intentionally exposes directions rather than provider
+    parameters.  Keeping this contract strict also makes edited directions
+    safe to pass through to the ordinary search payload.
+    """
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    intent: StrictStr = Field(min_length=1, max_length=200)
+    directions: list[StrictStr] = Field(min_length=1, max_length=5)
+
+    @field_validator("directions")
+    @classmethod
+    def normalize_directions(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for value in values:
+            direction = value.strip()
+            if not direction:
+                continue
+            if len(direction) > 300:
+                raise ValueError("each confirmed direction must be 300 characters or fewer")
+            if direction not in normalized:
+                normalized.append(direction)
+        if not normalized:
+            raise ValueError("confirmed_plan must contain at least one direction")
+        return normalized
+
+
+class ConfirmedPlanBody(BaseModel):
+    """Optional body accepted by topic execute and rerun endpoints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    confirmed_plan: ConfirmedQueryPlan | None = None
+
+
 class SearchServiceConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -98,11 +136,21 @@ class InstantSearchRequest(BaseModel):
     extra_focus: str = Field(default="", max_length=2_000)
     time_range: TimeRange = "month"
     report_length: ReportLength = "standard"
+    confirmed_plan: ConfirmedQueryPlan | None = None
 
     @field_validator("focus_tags")
     @classmethod
     def normalize_focus_tags(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+        normalized: list[str] = []
+        for value in values:
+            tag = value.strip()
+            if not tag:
+                continue
+            if len(tag) > 80:
+                raise ValueError("each focus tag must be 80 characters or fewer")
+            if tag not in normalized:
+                normalized.append(tag)
+        return normalized
 
     @model_validator(mode="after")
     def ensure_question(self) -> "InstantSearchRequest":

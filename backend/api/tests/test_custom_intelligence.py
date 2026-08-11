@@ -14,10 +14,13 @@ from backend.api import custom_intelligence_service as service
 from backend.api.routes import custom_intelligence as custom_intelligence_routes
 from backend.api.custom_intelligence_service import (
     _normalize_query_plan,
+    _compose_query_plan,
     _search_with_queries,
     build_planner_messages,
     normalize_report,
+    normalize_snapshot,
     normalize_sources,
+    query_plan_preview,
 )
 from backend.api.custom_intelligence_store import (
     EXECUTIONS_RETENTION,
@@ -1078,6 +1081,106 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(payload["query_plan"]["intent"], "研究重点降级检索")
         self.assertEqual(len(payload["query_plan"]["queries"]), 1)
         self.assertEqual(payload["query_plan"]["queries"][0]["query"], "近期监管变化")
+
+    def test_query_plan_preview_is_focus_only_on_planner_failure_and_does_not_search(self) -> None:
+        snapshot = {
+            "audience": "management",
+            "focus_tags": ["监管政策"],
+            "focus": "近期监管变化",
+            "time_range": "month",
+            "report_length": "standard",
+        }
+        with (
+            patch.object(service, "_request_query_plan", side_effect=RuntimeError("planner unavailable")),
+            patch.object(service.store, "create_execution") as create_execution,
+            patch.object(service.client, "search") as search,
+        ):
+            preview = query_plan_preview(snapshot)
+        self.assertEqual(preview["intent"], "研究重点降级检索")
+        self.assertEqual(preview["directions"], ["近期监管变化"])
+        self.assertTrue(preview["degraded"])
+        create_execution.assert_not_called()
+        search.assert_not_called()
+
+    def test_composed_planner_plan_keeps_focus_baseline_and_soft_tags(self) -> None:
+        snapshot = {
+            "focus": "证券行业变化",
+            "focus_tags": ["监管政策", "同业竞争", "财富管理"],
+        }
+        plan = _compose_query_plan(
+            snapshot,
+            {
+                "intent": "行业变化",
+                "queries": [
+                    {"query": "证券行业变化", "purpose": "重复基线"},
+                    {"query": "证券行业监管政策", "purpose": "监管"},
+                    {"query": "证券行业同业竞争 财富管理", "purpose": "新增多个所选标签"},
+                    {"query": "证券行业客户需求", "purpose": "客户"},
+                ],
+            },
+        )
+        self.assertEqual(plan["queries"][0]["query"], "证券行业变化")
+        self.assertEqual(
+            [item["query"] for item in plan["queries"]],
+            ["证券行业变化", "证券行业监管政策", "证券行业客户需求"],
+        )
+        self.assertFalse(plan["degraded"])
+
+    def test_legacy_snapshot_focus_tags_are_sanitized_and_confirmed_plan_is_bounded(self) -> None:
+        snapshot = normalize_snapshot(
+            {
+                "focus": "研究重点",
+                "focus_tags": [" 监管政策 ", "监管政策", "x" * 200, "超出数量"],
+                "confirmed_plan": {
+                    "intent": "确认方向",
+                    "directions": ["方向一", "方向一", "方向二", "方向三", "方向四", "方向五", "方向六"],
+                },
+            }
+        )
+        self.assertEqual(snapshot["focus_tags"], ["监管政策", "x" * 80, "超出数量"])
+        self.assertEqual(snapshot["confirmed_plan"]["directions"], ["方向一", "方向二", "方向三", "方向四", "方向五"])
+
+    def test_confirmed_plan_skips_planner_and_passes_directions_exactly(self) -> None:
+        snapshot = {
+            "audience": "industry_research",
+            "focus": "近期证券行业变化",
+            "focus_tags": ["监管政策"],
+            "time_range": "month",
+            "report_length": "standard",
+            "confirmed_plan": {
+                "intent": "用户确认的检索方向",
+                "directions": ["监管政策与券商影响", "券商经营与同业动态"],
+            },
+        }
+        execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["focus"])
+        result = QianfanSearchResult(
+            answer="检索摘要",
+            references=[QianfanReference("r1", "来源标题", "https://example.com/a")],
+            request_id="request-confirmed",
+        )
+        report = {
+            "version": 2,
+            "title": "报告",
+            "core_judgment": [{"type": "analysis", "text": "结论", "source_ids": ["source-1"]}],
+            "key_developments": [],
+            "impact_analysis": [],
+            "company_implications": [],
+            "risks_and_watch_items": [],
+        }
+        seen_queries: list[str] = []
+
+        def fake_search(payload: dict[str, object]) -> QianfanSearchResult:
+            seen_queries.append(str(payload["messages"][0]["content"]))
+            return result
+
+        with (
+            patch.object(service, "_request_query_plan") as planner,
+            patch.object(service.client, "search", side_effect=fake_search),
+            patch.object(service, "_request_analysis", return_value=report),
+        ):
+            service._run_execution(int(execution["id"]))
+        planner.assert_not_called()
+        self.assertEqual(seen_queries, ["监管政策与券商影响", "券商经营与同业动态"])
 
     def test_submit_rejects_missing_deepseek_before_creating_or_searching(self) -> None:
         with (

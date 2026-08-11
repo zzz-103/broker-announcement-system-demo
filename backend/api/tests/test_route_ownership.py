@@ -83,6 +83,7 @@ class RouteOwnershipTests(unittest.TestCase):
             ("POST", "/api/jobs/{job_id}/cancel"),
             ("GET", "/api/jobs/{job_id}/events"),
             ("GET", "/api/custom-intelligence/options"),
+            ("POST", "/api/custom-intelligence/query-plan"),
             ("GET", "/api/custom-intelligence/topics"),
             ("POST", "/api/custom-intelligence/topics"),
             ("GET", "/api/custom-intelligence/topics/{topic_id}"),
@@ -145,6 +146,44 @@ class RouteOwnershipTests(unittest.TestCase):
         ):
             response = getattr(self.client, method)(path)
             self.assertEqual(response.status_code, 401)
+
+    def test_query_plan_preview_requires_auth_and_does_not_create_execution(self) -> None:
+        unauthenticated_payload = {
+            "audience": "management",
+            "focus": "近期证券行业变化",
+            "focus_tags": [],
+            "time_range": "month",
+            "report_length": "standard",
+        }
+        self.assertEqual(
+            self.client.post("/api/custom-intelligence/query-plan", json=unauthenticated_payload).status_code,
+            401,
+        )
+        headers = self._admin_headers()
+        payload = {
+            "audience": "management",
+            "audience_detail": "",
+            "focus_tags": ["监管政策"],
+            "focus": "近期证券行业变化",
+            "extra_focus": "",
+            "time_range": "month",
+            "report_length": "standard",
+        }
+        with (
+            patch.object(custom_intelligence_routes, "query_plan_preview", return_value={
+                "intent": "行业变化",
+                "directions": ["近期证券行业变化", "监管政策影响"],
+                "degraded": False,
+            }) as preview,
+            patch.object(custom_intelligence_routes.store, "create_execution") as create_execution,
+            patch.object(custom_intelligence_service.client, "search") as search,
+        ):
+            response = self.client.post("/api/custom-intelligence/query-plan", headers=headers, json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["directions"], ["近期证券行业变化", "监管政策影响"])
+        preview.assert_called_once()
+        create_execution.assert_not_called()
+        search.assert_not_called()
 
     def test_v2_execution_input_rejects_unknown_audience_and_invalid_focus_tags(self) -> None:
         headers = self._admin_headers()
@@ -933,13 +972,29 @@ class RouteOwnershipTests(unittest.TestCase):
 
         # V2 removes the old enable switch and keeps one-click execution.
         fake_execution = {"id": 9001, "topic_id": topic_id, "topic_name": updated_payload["name"], "status": "pending", "sources": []}
-        with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_execution):
+        with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_execution) as topic_submit:
             executed = self.client.post(
                 f"/api/custom-intelligence/topics/{topic_id}/execute",
                 headers=headers,
+                json={
+                    "confirmed_plan": {
+                        "intent": "确认主题检索",
+                        "directions": ["监管变化", "券商经营变化"],
+                    }
+                },
             )
         self.assertEqual(executed.status_code, 202)
         self.assertEqual(executed.json()["execution"]["topic_id"], topic_id)
+        self.assertEqual(
+            topic_submit.call_args.args[1]["confirmed_plan"]["directions"],
+            ["监管变化", "券商经营变化"],
+        )
+        with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_execution):
+            legacy_executed = self.client.post(
+                f"/api/custom-intelligence/topics/{topic_id}/execute",
+                headers=headers,
+            )
+        self.assertEqual(legacy_executed.status_code, 202)
 
         deleted = self.client.delete(f"/api/custom-intelligence/topics/{topic_id}", headers=headers)
         self.assertEqual(deleted.status_code, 200)
@@ -1042,10 +1097,29 @@ class RouteOwnershipTests(unittest.TestCase):
 
         fake_rerun = {"id": 9002, "topic_id": None, "trigger_type": "rerun", "status": "pending", "sources": []}
         with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_rerun) as rerun_submit:
-            rerun = self.client.post(f"/api/custom-intelligence/executions/{execution_id}/rerun", headers=headers)
+            rerun = self.client.post(
+                f"/api/custom-intelligence/executions/{execution_id}/rerun",
+                headers=headers,
+                json={
+                    "confirmed_plan": {
+                        "intent": "确认重跑方向",
+                        "directions": ["监管变化", "经营动态"],
+                    }
+                },
+            )
         self.assertEqual(rerun.status_code, 202)
         self.assertEqual(rerun_submit.call_args.kwargs["trigger_type"], "rerun")
         self.assertEqual(rerun_submit.call_args.args[1]["focus"], snapshot["focus"])
+        self.assertEqual(
+            rerun_submit.call_args.args[1]["confirmed_plan"]["intent"],
+            "确认重跑方向",
+        )
+        with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_rerun):
+            legacy_rerun = self.client.post(
+                f"/api/custom-intelligence/executions/{execution_id}/rerun",
+                headers=headers,
+            )
+        self.assertEqual(legacy_rerun.status_code, 202)
 
         fake_reanalysis = {"id": execution_id, "status": "running", "sources": [source]}
         with patch.object(custom_intelligence_routes, "reanalyze_execution", return_value=fake_reanalysis):

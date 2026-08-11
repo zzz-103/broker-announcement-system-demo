@@ -47,6 +47,8 @@ REPORT_LENGTH_GUIDANCE = {
 }
 PLANNER_MIN_QUERIES = 2
 PLANNER_MAX_QUERIES = 5
+MAX_FOCUS_TAG_LENGTH = 80
+MAX_CONFIRMED_DIRECTION_LENGTH = 300
 SEARCH_TOP_K = 10
 MAX_SOURCES = 15
 MAX_SOURCES_PER_DOMAIN = 3
@@ -149,6 +151,46 @@ def clean_list(value: object, limit: int = 30) -> list[str]:
     return result
 
 
+def _normalize_focus_tags(value: object) -> list[str]:
+    """Normalize current and legacy tags without rejecting saved snapshots."""
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        tag = clean_text(item, MAX_FOCUS_TAG_LENGTH)
+        if tag and tag not in result:
+            result.append(tag)
+        if len(result) >= 3:
+            break
+    return result
+
+
+def _normalize_confirmed_plan(value: object) -> dict[str, object] | None:
+    """Sanitize an approved plan at the persistence boundary.
+
+    Requests are validated by Pydantic, while this helper also handles old
+    snapshots and direct service callers that may provide ordinary dicts.
+    Invalid legacy values are ignored rather than preventing an execution
+    record from being read or rerun.
+    """
+    if not isinstance(value, dict):
+        return None
+    intent = clean_text(value.get("intent"), 200)
+    raw_directions = value.get("directions")
+    if not intent or not isinstance(raw_directions, list):
+        return None
+    directions: list[str] = []
+    for raw in raw_directions:
+        direction = clean_text(raw, MAX_CONFIRMED_DIRECTION_LENGTH)
+        if direction and direction not in directions:
+            directions.append(direction)
+        if len(directions) >= PLANNER_MAX_QUERIES:
+            break
+    if not directions:
+        return None
+    return {"intent": intent, "directions": directions}
+
+
 def _admin_default_rules() -> str:
     """Read optional administrator rules without making them user-visible.
 
@@ -241,15 +283,19 @@ def normalize_snapshot(payload: dict[str, object]) -> dict[str, object]:
     time_range = clean_text(snapshot.get("time_range") or "month", 32)
     if time_range not in DATE_WINDOW_DAYS:
         time_range = "month"
-    return {
+    normalized: dict[str, object] = {
         "audience": audience,
         "audience_detail": clean_text(snapshot.get("audience_detail"), 2_000),
-        "focus_tags": clean_list(snapshot.get("focus_tags"), 3),
+        "focus_tags": _normalize_focus_tags(snapshot.get("focus_tags")),
         "focus": clean_text(snapshot.get("focus"), 1_000),
         "extra_focus": clean_text(snapshot.get("extra_focus"), 2_000),
         "time_range": time_range,
         "report_length": report_length,
     }
+    confirmed_plan = _normalize_confirmed_plan(snapshot.get("confirmed_plan"))
+    if confirmed_plan is not None:
+        normalized["confirmed_plan"] = confirmed_plan
+    return normalized
 
 
 def build_final_query(snapshot: dict[str, object]) -> str:
@@ -335,6 +381,9 @@ def build_planner_messages(snapshot: dict[str, object]) -> list[dict[str, str]]:
         "queries 必须是 2 到 5 个对象，每个对象只有 query 和 purpose 字段。"
         "query 是可直接交给百度普通网页搜索的短中文查询，purpose 是简短中文目的。"
         "每条 query 必须保留研究重点中的核心业务实体，避免只有宽泛行业词。"
+        "第一条 query 必须是只由研究重点构成的宽召回基线，不得附加重点标签、受众或补充要求。"
+        "重点标签只是软偏好：不得让所有 query 都强制带标签；除基线外，每条 query 最多选用一个标签，"
+        "并优先通过不同角度补充覆盖。不要生成把多个所选标签拼在一起、名为新增多个所选标签或类似的方向。"
         "时间范围由后台 search_recency_filter 处理；query 中禁止加入年份、最新、近期、过去若干天等时间词。"
         "不要输出 URL、站点限定、时间参数或任何工具调用，不要把搜索结果当作事实。"
     )
@@ -380,7 +429,15 @@ def _normalize_query_plan(value: object) -> dict[str, object]:
         query = clean_text(raw_query, 300)
         purpose = clean_text(raw_purpose, 120)
         key = re.sub(r"\s+", "", query).casefold()
-        if not query or not purpose or key in seen:
+        if (
+            not query
+            or not purpose
+            or key in seen
+            or any(
+                marker in f"{query} {purpose}"
+                for marker in ("新增多个所选标签", "多个所选标签", "组合全部标签", "所有标签")
+            )
+        ):
             continue
         seen.add(key)
         queries.append({"query": query, "purpose": purpose})
@@ -389,6 +446,60 @@ def _normalize_query_plan(value: object) -> dict[str, object]:
     if not PLANNER_MIN_QUERIES <= len(queries) <= PLANNER_MAX_QUERIES:
         raise ValueError("planner output must contain 2-5 unique queries")
     return {"intent": intent, "queries": queries}
+
+
+def _query_key(value: object) -> str:
+    return re.sub(r"\s+", "", clean_text(value, 300)).casefold()
+
+
+def _is_multi_tag_direction(item: dict[str, str], focus_tags: list[str]) -> bool:
+    """Reject the low-recall direction that combines several selected tags."""
+    query = clean_text(item.get("query"), 300)
+    purpose = clean_text(item.get("purpose"), 120)
+    combined = f"{query} {purpose}"
+    if any(marker in combined for marker in ("新增多个所选标签", "多个所选标签", "组合全部标签", "所有标签")):
+        return True
+    present = {tag for tag in focus_tags if tag and tag in query}
+    return len(present) > 1
+
+
+def _compose_query_plan(snapshot: dict[str, object], plan: dict[str, object]) -> dict[str, object]:
+    """Add a focus-only baseline and keep tags as optional query hints."""
+    focus = clean_text(snapshot.get("focus"), 300)
+    focus_tags = _normalize_focus_tags(snapshot.get("focus_tags"))
+    baseline = {
+        "query": focus,
+        "purpose": "研究重点基线检索",
+    }
+    queries: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if focus:
+        queries.append(baseline)
+        seen.add(_query_key(focus))
+    raw_queries = plan.get("queries") if isinstance(plan.get("queries"), list) else []
+    for raw_item in raw_queries:
+        if not isinstance(raw_item, dict):
+            continue
+        item = {
+            "query": clean_text(raw_item.get("query"), 300),
+            "purpose": clean_text(raw_item.get("purpose"), 120),
+        }
+        key = _query_key(item["query"])
+        if not key or not item["purpose"] or key in seen:
+            continue
+        if _is_multi_tag_direction(item, focus_tags):
+            continue
+        # A single selected tag is acceptable as a soft preference.  Queries
+        # without tags remain valid and preserve recall across angles.
+        seen.add(key)
+        queries.append(item)
+        if len(queries) >= PLANNER_MAX_QUERIES:
+            break
+    return {
+        "intent": clean_text(plan.get("intent"), 200),
+        "queries": queries,
+        "degraded": len(queries) <= 1,
+    }
 
 
 def _request_query_plan(snapshot: dict[str, object]) -> dict[str, object]:
@@ -402,7 +513,56 @@ def _request_query_plan(snapshot: dict[str, object]) -> dict[str, object]:
     if analysis_client.config.use_json_object:
         request_kwargs["response_format"] = {"type": "json_object"}
     raw = analysis_client._request_json(request_kwargs)
-    return _normalize_query_plan(raw)
+    normalized = _normalize_query_plan(raw)
+    return _compose_query_plan(snapshot, normalized)
+
+
+def _confirmed_query_plan(snapshot: dict[str, object]) -> dict[str, object] | None:
+    confirmed = _normalize_confirmed_plan(snapshot.get("confirmed_plan"))
+    if confirmed is None:
+        return None
+    return {
+        "intent": confirmed["intent"],
+        "queries": [
+            {"query": direction, "purpose": "用户确认的研究方向"}
+            for direction in confirmed["directions"]
+            if isinstance(direction, str) and direction
+        ],
+        "degraded": False,
+    }
+
+
+def query_plan_preview(snapshot: dict[str, object]) -> dict[str, object]:
+    """Return a user-facing planner preview without persistence or search."""
+    normalized = normalize_snapshot(snapshot)
+    fallback = clean_text(normalized.get("focus"), 300)
+    if not fallback:
+        raise ValueError("研究重点不能为空")
+    try:
+        plan = _request_query_plan(normalized)
+        queries = [
+            item.get("query")
+            for item in plan.get("queries", [])
+            if isinstance(item, dict) and isinstance(item.get("query"), str) and item.get("query")
+        ]
+        if not queries:
+            raise ValueError("planner output contains no usable directions")
+        degraded = bool(plan.get("degraded"))
+        result: dict[str, object] = {
+            "intent": clean_text(plan.get("intent"), 200),
+            "directions": queries[:PLANNER_MAX_QUERIES],
+            "degraded": degraded,
+        }
+        if degraded:
+            result["warning"] = "查询规划仅保留研究重点基线，确认后将执行一次宽召回检索。"
+        return result
+    except Exception:
+        return {
+            "intent": "研究重点降级检索",
+            "directions": [fallback],
+            "degraded": True,
+            "warning": "查询规划暂不可用，确认后将使用研究重点执行一次降级检索。",
+        }
 
 
 def _extract_json_object(answer: str) -> dict[str, object] | None:
@@ -1253,19 +1413,32 @@ def _run_execution(execution_id: int) -> None:
         fallback_query = clean_text(snapshot.get("focus") or final_query, 300)
         if not fallback_query:
             raise ValueError("研究重点不能为空")
-        planning_status = "succeeded"
-        planning_error = None
-        try:
-            planner_plan = _request_query_plan(snapshot)
-        except Exception:
-            # Planning failure is intentionally one bounded fallback search on
-            # the user focus; never resurrect the old fixed four-facet fan-out.
-            planner_plan = {
-                "intent": "研究重点降级检索",
-                "queries": [{"query": fallback_query, "purpose": "研究重点降级检索"}],
-            }
-            planning_status = "degraded"
-            planning_error = "查询规划失败，已使用研究重点执行一次降级搜索。"
+        confirmed = _confirmed_query_plan(snapshot)
+        if confirmed is not None:
+            # A confirmed plan is already user-reviewed.  Preserve each
+            # direction exactly (within the contract bounds) and skip a second
+            # DeepSeek planner call before search.
+            planner_plan = confirmed
+            planning_status = "succeeded"
+            planning_error = None
+        else:
+            planning_status = "succeeded"
+            planning_error = None
+            try:
+                planner_plan = _request_query_plan(snapshot)
+                if planner_plan.get("degraded"):
+                    planning_status = "degraded"
+                    planning_error = "查询规划仅保留研究重点基线，已使用一次宽召回检索。"
+            except Exception:
+                # Planning failure is intentionally one bounded fallback search on
+                # the user focus; never resurrect the old fixed four-facet fan-out.
+                planner_plan = {
+                    "intent": "研究重点降级检索",
+                    "queries": [{"query": fallback_query, "purpose": "研究重点降级检索"}],
+                    "degraded": True,
+                }
+                planning_status = "degraded"
+                planning_error = "查询规划失败，已使用研究重点执行一次降级搜索。"
         planned_queries = [
             item for item in planner_plan.get("queries", []) if isinstance(item, dict)
         ]
@@ -1449,6 +1622,7 @@ __all__ = [
     "normalize_report",
     "normalize_sources",
     "options_payload",
+    "query_plan_preview",
     "reanalyze_execution",
     "store",
     "submit_execution",
