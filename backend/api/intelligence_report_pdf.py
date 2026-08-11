@@ -462,7 +462,7 @@ def _build_newsletter_pdf(execution: dict) -> bytes:
     if view.reference_warnings or view.sources:
         story.append(CondPageBreak(55 * mm))
         story.append(HRFlowable(width="100%", thickness=1.8, color=colors.HexColor("#111111"), spaceBefore=10, spaceAfter=7))
-        story.append(Paragraph("信息来源", styles["source_heading"]))
+        story.append(Paragraph("信息来源 · SOURCES", styles["source_heading"]))
         for warning in view.reference_warnings:
             story.append(Paragraph(f"来源提示：{_paragraph_text(warning, 1_000)}", styles["warning"]))
         source_styles = _styles()

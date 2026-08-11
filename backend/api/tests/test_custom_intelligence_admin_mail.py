@@ -320,8 +320,9 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         }
         config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
         _, newsletter_html = render_report_html(execution, "附言 <内容>", "newsletter")
-        for heading in ("自定义情报助手", "金融科技情报日报", "Financial Tech Daily", "深圳", "独家分析", "重点动态", "研判与建议", "风险提示"):
+        for heading in ("自定义情报助手", "金融科技情报日报", "Financial Tech Daily", "深圳", "独家分析", "重点动态", "研判与建议", "风险提示", "信息来源 · SOURCES", "打开原文"):
             self.assertIn(heading, newsletter_html)
+        self.assertIn('href="https://example.test"', newsletter_html)
         self.assertLess(newsletter_html.index("附言 &lt;内容&gt;"), newsletter_html.index("报告"))
         with patch("backend.api.intelligence_report_pdf.build_report_pdf", return_value=b"%PDF-mock"):
             html_only = build_email_message(execution, "owner@csco.com.cn", config=config, template_style="newsletter", delivery_format="html_only")

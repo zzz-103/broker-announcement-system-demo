@@ -59,6 +59,9 @@ REPORT_LENGTH_GUIDANCE = {
 }
 PLANNER_MIN_QUERIES = 2
 PLANNER_MAX_QUERIES = 5
+# Reasoning-capable DeepSeek models spend part of the completion budget on
+# reasoning_content. 768 tokens can truncate the visible JSON mid-object.
+PLANNER_MAX_TOKENS = 4_096
 MAX_FOCUS_TAG_LENGTH = 80
 MAX_CONFIRMED_DIRECTION_LENGTH = 300
 SEARCH_TOP_K = 10
@@ -537,7 +540,7 @@ def _request_query_plan(snapshot: dict[str, object]) -> dict[str, object]:
         "model": analysis_client.config.model,
         "messages": build_planner_messages(snapshot),
         "temperature": 0.1,
-        "max_tokens": 768,
+        "max_tokens": PLANNER_MAX_TOKENS,
     }
     if analysis_client.config.use_json_object:
         request_kwargs["response_format"] = {"type": "json_object"}

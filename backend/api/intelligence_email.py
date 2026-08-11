@@ -242,9 +242,9 @@ def _source_html(source_number: int, title: str, site_name: str, date: str, url:
     if re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
         safe_url = html.escape(url, quote=True)
         link_html = (
-            f'<br><a href="{safe_url}" style="color:#315ea8;font-size:12px;line-height:1.5;'
-            'word-break:break-all;text-decoration:none;">'
-            f"{safe_url}</a>"
+            f'<br><a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
+            'style="display:inline-block;margin-top:3px;color:#315ea8;font-size:12px;line-height:1.5;'
+            'font-weight:700;text-decoration:underline;">打开原文</a>'
         )
     return (
         '<li style="margin:0 0 9px 0;padding:0;color:#25324a;font-size:13px;line-height:1.55;">'
@@ -432,7 +432,7 @@ def _render_newsletter_html(execution: dict[str, object], note: str | None = Non
         f'<h2 style="{section_heading}">风险提示</h2><div style="padding:11px 13px;border:1px solid #D7DADD;background:#FCFCFB;">{risk_body}</div>'
         '</td></tr>'
         '<tr><td style="padding:24px 0 0 0;border-top:3px solid #111111;">'
-        f'<h2 style="margin:0 0 11px 0;font-size:14px;line-height:1.4;color:#111111;">信息来源</h2>{warnings}<ol style="margin:0;padding-left:21px;">{source_body}</ol>'
+        f'<h2 style="margin:0 0 11px 0;font-size:14px;line-height:1.4;color:#111111;">信息来源 · SOURCES</h2>{warnings}<ol style="margin:0;padding-left:21px;">{source_body}</ol>'
         '</td></tr>'
         '<tr><td align="center" style="padding:20px 0 0 0;color:#98A2B3;font-size:10px;line-height:1.5;">自定义情报助手 · 自定义情报订阅系统</td></tr>'
         '</table></td></tr></table></body></html>'

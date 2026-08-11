@@ -220,7 +220,19 @@ function NewsletterReportBody({ execution, report, sources, sourceIndexes }: { e
         <p className="text-[10px] font-bold tracking-[0.14em] text-[#F4B4B4]">信息来源 · SOURCES</p>
         {sources.length ? (
           <ol className="mt-3 space-y-1.5 text-[10px] leading-5 text-[#E4E4E4]">
-            {sources.map((source, index) => <li key={source.id} id={`assistant-source-${source.id}`} className="break-words"><span className="mr-1 font-mono text-[#F4B4B4]">[{index + 1}]</span>{source.title || "未命名来源"}{source.site_name ? ` · ${source.site_name}` : ""}</li>)}
+            {sources.map((source, index) => {
+              const url = safeUrl(source.url);
+              return (
+                <li key={source.id} id={`assistant-source-${source.id}`} className="flex items-start justify-between gap-3 break-words border-b border-white/10 pb-1.5 last:border-b-0">
+                  <span className="min-w-0"><span className="mr-1 font-mono text-[#F4B4B4]">[{index + 1}]</span>{source.title || "未命名来源"}{source.site_name ? ` · ${source.site_name}` : ""}</span>
+                  {url ? (
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#F4B4B4] underline-offset-2 hover:underline">
+                      打开原文<ExternalLink className="size-3" aria-hidden="true" />
+                    </a>
+                  ) : <span className="shrink-0 text-[#98A2B3]">链接不可用</span>}
+                </li>
+              );
+            })}
           </ol>
         ) : <p className="mt-2 text-xs text-[#AFAFAF]">暂无来源。</p>}
       </footer>

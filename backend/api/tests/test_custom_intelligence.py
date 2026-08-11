@@ -1121,6 +1121,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(plan["queries"][0]["query"], "研究重点")
         self.assertEqual(requests[0]["model"], "deepseek-chat")
         self.assertEqual(requests[0]["temperature"], 0.1)
+        self.assertEqual(requests[0]["max_tokens"], 4_096)
         self.assertEqual(requests[0]["response_format"], {"type": "json_object"})
 
     def test_query_plan_preview_distinguishes_format_and_shared_service_failures(self) -> None:
