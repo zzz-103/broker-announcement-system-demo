@@ -11,6 +11,7 @@ from unittest.mock import patch
 from backend.api import ai_analysis
 from backend.api.custom_intelligence_store import IntelligenceStore
 from backend.api.intelligence_email import (
+    EMAIL_SUBJECT,
     EffectiveSMTPConfig,
     EmailConfigurationError,
     ExternalRecipientConfirmationRequired,
@@ -172,11 +173,40 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         }
         _, document = render_report_html(execution)
         self.assertIn("[1]", document)
-        self.assertIn("分析建议", document)
-        for heading in ("核心判断", "关键动态与案例", "影响分析", "对公司的启示", "风险与关注事项", "信息来源"):
-            self.assertIn(f"<h2>{heading}</h2>", document)
+        self.assertIn("建议", document)
+        for heading in ("核心结论", "重点动态", "影响分析", "研判与建议", "风险与后续关注", "信息来源"):
+            self.assertIn(heading, document)
         with self.assertRaises(ExternalRecipientConfirmationRequired):
             normalize_recipients(["outside@example.com"], external_confirmed=False)
+
+    def test_html_note_is_escaped_and_precedes_report(self):
+        execution = {
+            "status": "succeeded",
+            "search_status": "succeeded",
+            "analysis_status": "succeeded",
+            "original_query": "问题",
+            "sources": [{"id": "s1", "title": "来源", "url": "https://example.test/?a=1&b=2"}],
+            "report": {
+                "version": 2,
+                "title": "报告 <标题>",
+                "core_judgment": [{"type": "fact", "text": "事实 <内容>", "source_ids": ["s1"]}],
+            },
+        }
+        with patch("backend.api.intelligence_report_pdf.build_report_pdf", return_value=b"%PDF-mock"):
+            message = build_email_message(
+                execution,
+                "owner@csco.com.cn",
+                config=EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test"),
+                note="你好 <请查看>",
+            )
+        html_part = next(part for part in message.walk() if part.get_content_type() == "text/html")
+        html_text = html_part.get_content()
+        self.assertEqual(message["Subject"], EMAIL_SUBJECT)
+        self.assertLess(html_text.index("你好 &lt;请查看&gt;"), html_text.index("报告 &lt;标题&gt;"))
+        self.assertIn("事实 &lt;内容&gt;", html_text)
+        self.assertIn("https://example.com/?a=1&amp;b=2", html_text)
+        self.assertEqual(message.get_content_type(), "multipart/mixed")
+        self.assertTrue(any(part.get_content_type() == "application/pdf" for part in message.walk()))
 
     def test_smtp_is_mocked_and_each_recipient_gets_message(self):
         FakeSMTP.sent = []
@@ -199,6 +229,9 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         self.assertEqual([item["status"] for item in results], ["sent", "sent"])
         self.assertEqual(len(FakeSMTP.sent), 2)
         self.assertTrue(all(str(message["From"]) == "sender@126.com" for message in FakeSMTP.sent))
+        self.assertTrue(all(str(message["Subject"]) == EMAIL_SUBJECT for message in FakeSMTP.sent))
+        self.assertTrue(all(any(part.get_content_type() == "text/html" for part in message.walk()) for message in FakeSMTP.sent))
+        self.assertTrue(all(any(part.get_content_type() == "application/pdf" for part in message.walk()) for message in FakeSMTP.sent))
         self.assertIsInstance(FakeSMTP.calls[0]["kwargs"]["context"], ssl.SSLContext)
         self.assertEqual(FakeSMTP.calls[0]["kwargs"]["timeout"], 5)
 

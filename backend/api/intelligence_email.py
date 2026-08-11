@@ -1,8 +1,8 @@
 """Owner-triggered custom-intelligence report delivery over 126.com SMTP.
 
-This module deliberately renders from the already persisted Report V2
-execution object.  It never invokes an LLM and never includes request payloads,
-prompts, API keys, or provider responses in an email or delivery log.
+The email is rendered from the already persisted Report V2 execution.  It
+always contains a plain-text part, a complete HTML report and the matching PDF
+attachment; no LLM/provider/request details are sent to recipients.
 """
 
 from __future__ import annotations
@@ -20,22 +20,15 @@ import certifi
 
 from .config import settings
 from .custom_intelligence_store import IntelligenceStore
+from .intelligence_report_view import ReportItemView, ReportSectionView, build_report_view
 
 
 MAX_RECIPIENTS = 5
+MAX_NOTE_LENGTH = 500
 ALLOWED_DOMAIN = "csco.com.cn"
+EMAIL_SUBJECT = "自定义情报订阅系统"
 EMAIL_PATTERN = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
 ReportFormat = Literal["html", "pdf"]
-AUDIENCE_LABELS = {
-    "management": "管理层",
-    "business_product": "业务 / 产品",
-    "technology": "技术",
-    "compliance_risk": "合规风控",
-    "industry_research": "行业研究",
-    "custom": "自定义",
-}
-TIME_RANGE_LABELS = {"week": "最近 7 天", "month": "最近 30 天", "semiyear": "最近 180 天", "year": "最近 365 天"}
-REPORT_LENGTH_LABELS = {"concise": "简报", "standard": "标准", "deep": "深度"}
 
 
 class EmailConfigurationError(Exception):
@@ -51,12 +44,8 @@ class ExternalRecipientConfirmationRequired(EmailRecipientError):
 
 
 def _smtp_ssl_context() -> ssl.SSLContext:
-    """Build a verified TLS context from the deployed CA bundle.
+    """Build a verified TLS context from the deployed CA bundle."""
 
-    Explicitly using certifi keeps Windows/macOS virtual environments from
-    depending on an incomplete host trust store. Certificate verification is
-    never disabled.
-    """
     return ssl.create_default_context(cafile=certifi.where())
 
 
@@ -75,6 +64,7 @@ class EffectiveSMTPConfig:
 
 def validate_smtp_identity(username: str, from_address: str) -> None:
     """Enforce the 126.com authorization-code identity invariant."""
+
     if not username or not username.casefold().endswith("@126.com"):
         raise EmailConfigurationError("SMTP 用户名必须是 @126.com 邮箱")
     if from_address.casefold() != username.casefold():
@@ -158,125 +148,225 @@ def normalize_recipients(recipients: Iterable[str], *, external_confirmed: bool)
     return normalized
 
 
-def _text(value: object, limit: int = 4000) -> str:
+def _clean(value: object, limit: int = 4_000) -> str:
     return str(value or "").strip()[:limit]
 
 
-def _items(report: dict[str, object], key: str, limit: int = 12) -> list[str]:
-    value = report.get(key)
-    if not isinstance(value, list):
-        return []
-    return [_text(item, 600) for item in value[:limit] if _text(item, 600)]
+def _normalize_note(note: object) -> str:
+    if note is None:
+        return ""
+    value = str(note).strip()
+    if len(value) > MAX_NOTE_LENGTH:
+        raise EmailRecipientError(f"附言不能超过 {MAX_NOTE_LENGTH} 字")
+    return value
 
 
-def render_report_html(execution: dict[str, object]) -> tuple[str, str]:
-    """Return ``(subject, html)`` from one persisted Report V2 object."""
-    report = execution.get("report") if isinstance(execution.get("report"), dict) else {}
-    if report.get("version") != 2:
-        raise EmailConfigurationError("旧版报告不支持邮件发送，请先再次生成 Report V2")
-    snapshot = execution.get("snapshot") if isinstance(execution.get("snapshot"), dict) else {}
-    sources = execution.get("sources") if isinstance(execution.get("sources"), list) else []
-    source_indexes = {str(item.get("id")): index for index, item in enumerate(sources, 1) if isinstance(item, dict) and item.get("id") is not None}
-    title = _text(report.get("title"), 500) or _text(execution.get("original_query"), 500) or "即时情报报告"
-    sections: list[str] = []
+def _coerce_format_and_note(report_format: object, note: object) -> tuple[ReportFormat | None, str]:
+    """Keep old positional ``report_format`` calls source compatible.
 
-    def report_items(value: object) -> list[dict[str, object]]:
-        if not isinstance(value, list):
-            return []
-        return [item for item in value[:30] if isinstance(item, dict) and _text(item.get("text"), 4000)]
+    A caller may pass a note as the third positional argument while migrating
+    from the old HTML/PDF selector.  Recognised legacy values are ignored as
+    format selectors; all other values are treated as that note.
+    """
 
-    def item_html(item: dict[str, object]) -> str:
-        kind = str(item.get("type") or "analysis").casefold()
-        kind_label = {"fact": "事实", "analysis": "分析", "recommendation": "分析建议"}.get(kind, "分析")
-        text = html.escape(_text(item.get("text"), 4000)).replace(chr(10), "<br>")
-        source_ids = item.get("source_ids")
-        marks = [str(source_indexes[str(source_id)]) for source_id in source_ids if str(source_id) in source_indexes] if isinstance(source_ids, list) else []
-        citation = f" <span class=\"citation\">[{', '.join(marks)}]</span>" if marks else ""
-        return f"<li><strong>{kind_label}：</strong>{text}{citation}</li>"
+    if report_format in (None, "html", "pdf"):
+        return report_format, _normalize_note(note)
+    if note is not None:
+        raise ValueError("report format is invalid")
+    return None, _normalize_note(report_format)
 
-    judgment_items = report_items(report.get("core_judgment"))
-    if judgment_items:
-        sections.append("<h2>核心判断</h2><ul>" + "".join(item_html(item) for item in judgment_items) + "</ul>")
-    else:
-        sections.append("<h2>核心判断</h2><p>暂无内容。</p>")
 
-    development_items = report_items(report.get("key_developments"))
-    if development_items:
-        sections.append("<h2>关键动态与案例</h2><ul>" + "".join(item_html(item) for item in development_items) + "</ul>")
-    else:
-        sections.append("<h2>关键动态与案例</h2><p>暂无内容。</p>")
+def _inline_text(value: object, limit: int = 4_000) -> str:
+    return html.escape(_clean(value, limit), quote=True).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br>")
 
-    for heading, key in (("影响分析", "impact_analysis"), ("对公司的启示", "company_implications"), ("风险与关注事项", "risks_and_watch_items")):
-        values = report_items(report.get(key))
-        if values:
-            sections.append(f"<h2>{heading}</h2><ul>" + "".join(item_html(item) for item in values) + "</ul>")
-        else:
-            sections.append(f"<h2>{heading}</h2><p>暂无内容。</p>")
 
-    warning_items = _items(report, "reference_warnings")
-    if warning_items:
-        sections.append("<h2>来源提示</h2><ul>" + "".join(f"<li>{html.escape(item)}</li>" for item in warning_items) + "</ul>")
-    source_items: list[str] = []
-    for index, source in enumerate(sources[:50], 1):
-        if not isinstance(source, dict):
-            continue
-        source_title = _text(source.get("title"), 240) or "未命名来源"
-        url = _text(source.get("url"), 1000)
-        label = html.escape(source_title)
-        if re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
-            label = f'<a href="{html.escape(url, quote=True)}">{label}</a>'
-        source_items.append(f"<li value=\"{index}\">{label}</li>")
-    if source_items:
-        sections.append("<h2>信息来源</h2><ol>" + "".join(source_items) + "</ol>")
-    question = _text(execution.get("original_query") or snapshot.get("focus"), 500)
-    audience = _text(report.get("audience") or snapshot.get("audience"), 120)
-    time_range = _text(report.get("time_range") or snapshot.get("time_range"), 32)
-    report_length = _text(report.get("report_length") or snapshot.get("report_length"), 32)
-    meta = (
-        f"<p class=\"meta\">业务问题：{html.escape(question) if question else '—'} ｜ "
-        f"受众：{html.escape(AUDIENCE_LABELS.get(audience, audience) or '—')} ｜ "
-        f"时间范围：{html.escape(TIME_RANGE_LABELS.get(time_range, time_range) or '—')} ｜ "
-        f"报告篇幅：{html.escape(REPORT_LENGTH_LABELS.get(report_length, report_length) or '—')} ｜ "
-        f"有效来源：{len(source_items)} 条</p>"
+def _citation_html(item: ReportItemView) -> str:
+    if not item.citation_numbers:
+        return ""
+    marks = " ".join(f"[{number}]" for number in item.citation_numbers)
+    return f'<span style="color:#6b7280;font-size:12px;white-space:nowrap;"> {marks}</span>'
+
+
+def _item_html(item: ReportItemView, *, numbered: bool = True) -> str:
+    prefix = f"{item.number}. " if numbered else ""
+    return (
+        '<p style="margin:0 0 12px 0;font-size:14px;line-height:1.75;color:#25324a;">'
+        f'<span style="color:#315ea8;font-weight:700;">{html.escape(prefix + item.type_label)}：</span>'
+        f'{_inline_text(item.text)}{_citation_html(item)}</p>'
     )
+
+
+def _section_html(section: ReportSectionView) -> str:
+    core = section.key == "core_judgment"
+    heading_style = (
+        "margin:0;padding:0 0 8px 0;font-size:17px;line-height:1.4;color:#1f3b68;"
+        "font-weight:700;border-bottom:1px solid #d8e1ef;"
+    )
+    body_style = "padding:15px 0 4px 0;"
+    if core:
+        body_style = "padding:15px 16px 4px 16px;background:#f4f7fc;border-left:3px solid #315ea8;"
+    items = "".join(_item_html(item) for item in section.items)
+    if not items:
+        items = '<p style="margin:0;color:#7b8798;font-size:14px;line-height:1.7;">暂无内容。</p>'
+    return (
+        '<tr><td style="padding:20px 0 0 0;">'
+        f'<h2 style="{heading_style}">{html.escape(section.title)}</h2>'
+        f'<div style="{body_style}">{items}</div>'
+        "</td></tr>"
+    )
+
+
+def _source_html(source_number: int, title: str, site_name: str, date: str, url: str) -> str:
+    details = " · ".join(part for part in (site_name, date) if part)
+    detail_html = f'<span style="color:#6b7280;font-size:12px;">{html.escape(details)}</span>' if details else ""
+    link_html = ""
+    if re.match(r"^https?://[^\s]+$", url, flags=re.IGNORECASE):
+        safe_url = html.escape(url, quote=True)
+        link_html = (
+            f'<br><a href="{safe_url}" style="color:#315ea8;font-size:12px;line-height:1.5;'
+            'word-break:break-all;text-decoration:none;">'
+            f"{safe_url}</a>"
+        )
+    return (
+        '<li style="margin:0 0 9px 0;padding:0;color:#25324a;font-size:13px;line-height:1.55;">'
+        f"<span style=\"font-weight:700;\">{source_number}. {html.escape(title)}</span> "
+        f"{detail_html}{link_html}</li>"
+    )
+
+
+def render_report_html(execution: dict[str, object], note: str | None = None) -> tuple[str, str]:
+    """Return ``(fixed_subject, html_document)`` for one Report V2 object."""
+
+    view = build_report_view(execution)
+    normalized_note = _normalize_note(note)
+    # Single-quote family names so the CSS remains valid inside the enclosing
+    # double-quoted HTML ``style`` attribute across strict mail clients.
+    font_stack = "'Microsoft YaHei','微软雅黑','PingFang SC','Noto Sans CJK SC',Arial,sans-serif"
+    note_html = ""
+    if normalized_note:
+        note_html = (
+            '<tr><td style="padding:0 0 18px 0;">'
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+            'style="border-collapse:collapse;"><tr><td style="padding:12px 14px;background:#f4f7fc;'
+            'border-left:3px solid #315ea8;color:#25324a;font-size:14px;line-height:1.7;">'
+            f'<strong style="color:#1f3b68;">附言</strong><br>{_inline_text(normalized_note, MAX_NOTE_LENGTH)}'
+            "</td></tr></table></td></tr>"
+        )
+    meta_cells = "".join(
+        '<td style="padding:0 14px 0 0;vertical-align:top;font-size:12px;line-height:1.55;'
+        'color:#6b7280;">'
+        f'<span style="color:#8792a2;">{html.escape(label)}</span><br>'
+        f'<strong style="color:#25324a;font-size:13px;">{html.escape(value)}</strong></td>'
+        for label, value in view.meta
+    )
+    question_html = ""
+    if view.question:
+        question_html = (
+            '<tr><td style="padding:13px 0 0 0;font-size:13px;line-height:1.7;color:#526176;">'
+            f'<strong style="color:#25324a;">研究重点：</strong>{_inline_text(view.question, 1_000)}'
+            "</td></tr>"
+        )
+    sources_html = "".join(
+        _source_html(source.number, source.title, source.site_name, source.date, source.url)
+        for source in view.sources
+    )
+    warning_html = "".join(
+        f'<p style="margin:0 0 8px 0;color:#7b5d19;font-size:12px;line-height:1.6;">来源提示：{_inline_text(warning, 1_000)}</p>'
+        for warning in view.reference_warnings
+    )
+    if not sources_html:
+        sources_html = '<li style="color:#7b8798;font-size:13px;">暂无来源。</li>'
+    sections_html = "".join(_section_html(section) for section in view.sections)
     document = (
-        "<!doctype html><html><head><meta charset=\"utf-8\"><style>"
-        "body{font-family:-apple-system,BlinkMacSystemFont,'Microsoft YaHei',sans-serif;color:#172033;line-height:1.65;max-width:860px;margin:0 auto;padding:28px}"
-        "h1{font-size:24px}h2{font-size:17px;border-bottom:1px solid #e4eaf2;padding-bottom:5px;margin-top:24px}h3{font-size:15px}p,li{font-size:14px}.meta,.citation{color:#667085;font-size:12px}a{color:#315ea8}"
-        "</style></head><body>"
-        f"<h1>{html.escape(title)}</h1>{meta}{''.join(sections)}</body></html>"
+        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+        '<meta name="x-apple-disable-message-reformatting"><meta name="format-detection" content="telephone=no">'
+        f"</head><body style=\"margin:0;padding:0;background:#ffffff;font-family:{font_stack};color:#25324a;\">"
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="border-collapse:collapse;background:#ffffff;"><tr><td align="center" style="padding:20px 10px;">'
+        '<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:100%;max-width:640px;border-collapse:collapse;">'
+        f"{note_html}"
+        '<tr><td style="padding:0 0 7px 0;border-bottom:2px solid #315ea8;">'
+        '<div style="font-size:12px;line-height:1.4;letter-spacing:.08em;color:#315ea8;font-weight:700;">自定义情报订阅系统</div>'
+        f'<h1 style="margin:9px 0 0 0;font-size:25px;line-height:1.4;color:#172033;font-weight:700;">{html.escape(view.title)}</h1>'
+        "</td></tr>"
+        f'<tr><td style="padding:13px 0 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>{meta_cells}</tr></table></td></tr>'
+        f"{question_html}{sections_html}"
+        '<tr><td style="padding:24px 0 0 0;border-top:1px solid #d8e1ef;">'
+        '<h2 style="margin:0 0 12px 0;padding:0;font-size:17px;line-height:1.4;color:#1f3b68;font-weight:700;">信息来源</h2>'
+        f"{warning_html}<ol style=\"margin:0;padding-left:23px;\">{sources_html}</ol>"
+        '</td></tr><tr><td style="padding:26px 0 0 0;color:#8792a2;font-size:11px;line-height:1.5;">'
+        "本邮件由自定义情报订阅系统生成，报告正文同时附带 PDF 文件。"
+        "</td></tr></table></td></tr></table></body></html>"
     )
-    return title, document
+    return EMAIL_SUBJECT, document
+
+
+def render_report_text(execution: dict[str, object], note: str | None = None) -> str:
+    """Return a readable plain-text alternative for clients without HTML."""
+
+    view = build_report_view(execution)
+    normalized_note = _normalize_note(note)
+    lines: list[str] = []
+    if normalized_note:
+        lines.extend(("附言", normalized_note, ""))
+    lines.extend((EMAIL_SUBJECT, view.title, ""))
+    if view.question:
+        lines.extend((f"研究重点：{view.question}", ""))
+    lines.extend(f"{label}：{value}" for label, value in view.meta)
+    lines.append("")
+    for section in view.sections:
+        lines.extend((section.title, "-" * max(8, len(section.title))))
+        if not section.items:
+            lines.append("暂无内容。")
+        for item in section.items:
+            citations = " " + " ".join(f"[{number}]" for number in item.citation_numbers) if item.citation_numbers else ""
+            lines.append(f"{item.number}. {item.type_label}：{item.text}{citations}")
+        lines.append("")
+    lines.append("信息来源")
+    for source in view.sources:
+        details = " · ".join(part for part in (source.site_name, source.date) if part)
+        lines.append(f"{source.number}. {source.title}{(' - ' + details) if details else ''}")
+        if source.url:
+            lines.append(source.url)
+    return "\n".join(lines).strip() + "\n"
 
 
 def build_email_message(
     execution: dict[str, object],
     recipient: str,
-    report_format: ReportFormat,
-    config: EffectiveSMTPConfig,
+    report_format: ReportFormat | str | None = None,
+    config: EffectiveSMTPConfig | None = None,
+    *,
+    note: str | None = None,
 ) -> EmailMessage:
-    subject, document = render_report_html(execution)
+    """Build a multipart/mixed message with HTML and the matching PDF.
+
+    ``report_format`` is retained solely for source compatibility with the
+    old route.  It no longer selects a mutually exclusive representation.
+    """
+
+    _, normalized_note = _coerce_format_and_note(report_format, note)
+    if config is None:
+        raise EmailConfigurationError("SMTP 配置缺失")
+    _, document = render_report_html(execution, normalized_note)
+    plain = render_report_text(execution, normalized_note)
     message = EmailMessage()
     message["Message-ID"] = make_msgid()
-    message["Subject"] = subject[:180]
+    message["Subject"] = EMAIL_SUBJECT
     message["From"] = config.from_address or config.username
     message["To"] = recipient
-    message.set_content(f"{subject}\n\n此邮件由券商招采智能分析系统生成。请使用支持 HTML 的客户端查看完整报告。")
-    if report_format == "html":
-        message.add_alternative(document, subtype="html")
-    elif report_format == "pdf":
-        # Keep reportlab optional for HTML-only deployments and tests.
-        from .intelligence_report_pdf import build_report_pdf, report_pdf_filename
+    message.set_content(plain)
+    message.add_alternative(document, subtype="html")
+    from . import intelligence_report_pdf
 
-        pdf_bytes = build_report_pdf(execution)
-        message.add_attachment(
-            pdf_bytes,
-            maintype="application",
-            subtype="pdf",
-            filename=report_pdf_filename(execution),
-        )
-    else:
-        raise ValueError("report format is invalid")
+    pdf_bytes = intelligence_report_pdf.build_report_pdf(execution)
+    message.add_attachment(
+        pdf_bytes,
+        maintype="application",
+        subtype="pdf",
+        filename=intelligence_report_pdf.report_pdf_filename(execution),
+    )
     return message
 
 
@@ -303,11 +393,14 @@ def test_smtp_configuration(config: EffectiveSMTPConfig) -> dict[str, object]:
 def send_report_email(
     execution: dict[str, object],
     recipients: Iterable[str],
-    report_format: ReportFormat,
+    report_format: ReportFormat | str | None = None,
     *,
+    note: str | None = None,
     external_confirmed: bool,
     config: EffectiveSMTPConfig,
 ) -> list[dict[str, object]]:
+    """Send one complete report message per normalised recipient."""
+
     if execution.get("status") != "succeeded" or execution.get("analysis_status") != "succeeded":
         raise EmailConfigurationError("报告尚未成功生成，暂不能发送")
     report = execution.get("report") if isinstance(execution.get("report"), dict) else {}
@@ -315,6 +408,7 @@ def send_report_email(
         raise EmailConfigurationError("旧版报告不支持邮件发送，请先再次生成 Report V2")
     if execution.get("search_status") != "succeeded" or not execution.get("sources"):
         raise EmailConfigurationError("该记录没有可发送的搜索结果")
+    _, normalized_note = _coerce_format_and_note(report_format, note)
     normalized = normalize_recipients(recipients, external_confirmed=external_confirmed)
     if not config.enabled:
         raise EmailConfigurationError("邮件发送服务已停用")
@@ -333,12 +427,18 @@ def send_report_email(
             smtp.login(config.username, config.authorization_code)
             for recipient in normalized:
                 try:
-                    message = build_email_message(execution, recipient, report_format, config)
+                    message = build_email_message(
+                        execution,
+                        recipient,
+                        report_format,
+                        config,
+                        note=normalized_note,
+                    )
                     message_id = str(message["Message-ID"] or "")
                     smtp.send_message(message)
                     results.append({"recipient": recipient, "status": "sent", "message_id": message_id})
                 except Exception:
-                    # Keep the externally visible error generic; diagnostics and
+                    # Keep externally visible errors generic; diagnostics and
                     # delivery logs must never contain SMTP credentials/raw data.
                     results.append({"recipient": recipient, "status": "failed", "message_id": "", "error_message": "邮件发送失败"})
     except EmailConfigurationError:
