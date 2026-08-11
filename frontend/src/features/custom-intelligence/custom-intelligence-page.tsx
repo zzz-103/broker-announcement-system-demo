@@ -36,7 +36,7 @@ export default function CustomIntelligencePage() {
         statusLabel="当前状态"
         statusText={statusText}
         statusTone={statusTone}
-        statusDescription={running ? "当前有一份情报报告正在生成" : page.serviceAvailable ? "AI 情报助手可以开始工作" : "情报服务暂不可用"}
+        statusDescription={running ? "报告正在生成" : page.serviceAvailable ? "情报服务可用" : "情报服务暂不可用"}
         exportOptions={[]}
         onOpenAdmin={() => router.push("/admin")}
         onLogout={page.logout}
@@ -65,8 +65,8 @@ export default function CustomIntelligencePage() {
 
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-[#172033] sm:text-[26px]">AI 情报助手</h2>
-            <p className="mt-1 text-xs text-[#667085]">告诉我业务问题，助手会检索公开资料并整理成可执行的报告。</p>
+            <h2 className="text-2xl font-bold tracking-tight text-[#172033] sm:text-[26px]">情报助手</h2>
+            <p className="mt-1 text-xs text-[#667085]">输入关注内容，系统将检索公开资料并生成报告。</p>
           </div>
           {running && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -116,7 +116,7 @@ export default function CustomIntelligencePage() {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-[#172033]">我的助手</h3>
-                <p className="mt-1 text-xs text-[#667085]">保存常用问题，一键生成最新报告，最多 {TOPIC_LIMIT} 个。</p>
+                <p className="mt-1 text-xs text-[#667085]">保存常用报告需求，最多 {TOPIC_LIMIT} 个。</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] tabular-nums text-[#98A2B3]">{page.topics.length}/{TOPIC_LIMIT}</span>

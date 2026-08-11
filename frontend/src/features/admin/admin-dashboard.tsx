@@ -369,7 +369,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
             ["tasks", "任务运行"],
             ["users", "用户与审批"],
             ["records", "审计与反馈"],
-            ["search", "AI 技术配置"],
+            ["search", "情报技术配置"],
           ].map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={activeSection === id} onClick={() => setActiveSection(id as typeof activeSection)} className={cn("border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors", activeSection === id ? "border-[#2563EB] text-[#1F5BB5]" : "border-transparent text-[#667085] hover:text-[#344054]")}>{label}</button>
           ))}

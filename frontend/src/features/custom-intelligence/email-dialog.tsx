@@ -68,16 +68,16 @@ export function EmailDialog({
       <DialogContent className="w-[calc(100%-1rem)] max-w-lg border-[#D9E2EC] bg-white sm:w-full">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base text-[#172033]"><Mail className="size-4 text-[#315EA8]" />发送情报报告</DialogTitle>
-          <DialogDescription className="text-[#667085]">报告会按选定格式发送到收件人。公司外部地址需要再次确认。</DialogDescription>
+          <DialogDescription className="text-[#667085]">选择收件人和格式；外部地址需再次确认。</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
-            <label htmlFor="assistant-email-recipients" className="mb-1.5 block text-xs font-semibold text-[#344054]">收件人 <span className="font-normal text-[#98A2B3]">最多 5 个</span></label>
-            <textarea id="assistant-email-recipients" value={draft} onChange={(event) => { setDraft(event.target.value); setError(""); setConfirmExternal(false); }} rows={3} placeholder="name@csco.com.cn，可用空格或逗号分隔" className={FIELD_INPUT_CLASS} />
+            <label htmlFor="assistant-email-recipients" className="mb-1.5 flex items-center justify-between text-xs font-semibold text-[#344054]"><span>收件人<span className="ml-0.5 text-sm font-bold text-red-500" aria-hidden="true">*</span><span className="sr-only">（必填）</span></span><span className="font-normal text-[#98A2B3]">最多 5 个</span></label>
+            <textarea id="assistant-email-recipients" required value={draft} onChange={(event) => { setDraft(event.target.value); setError(""); setConfirmExternal(false); }} rows={3} placeholder="name@csco.com.cn，可用空格或逗号分隔" className={FIELD_INPUT_CLASS} />
             {recipients.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{recipients.map((recipient) => <button key={recipient} type="button" onClick={() => { setDraft(recipients.filter((item) => item !== recipient).join(", ")); setConfirmExternal(false); }} aria-label={`移除收件人 ${recipient}`} className="inline-flex items-center gap-1 rounded bg-[#EEF4FF] px-2 py-1 text-[11px] text-[#315EA8] hover:bg-[#DCE8FF]">{recipient}<X className="size-3" aria-hidden="true" /></button>)}</div>}
           </div>
-          <fieldset>
-            <legend className="mb-1.5 text-xs font-semibold text-[#344054]">发送格式</legend>
+          <fieldset aria-required="true">
+            <legend className="mb-1.5 flex items-center text-xs font-semibold text-[#344054]">发送格式<span className="ml-0.5 text-sm font-bold text-red-500" aria-hidden="true">*</span><span className="sr-only">（必填）</span></legend>
             <div className="grid grid-cols-2 gap-2">
               {(["html", "pdf"] as const).map((item) => <label key={item} className={`cursor-pointer rounded-md border px-3 py-2.5 text-xs ${format === item ? "border-[#4F7CFF] bg-[#EEF4FF] text-[#2455AC]" : "border-[#E4EAF2] text-[#475467]"}`}><input type="radio" name="assistant-email-format" value={item} checked={format === item} onChange={() => setFormat(item)} className="sr-only" />{item === "html" ? "邮件正文（HTML）" : "PDF 附件"}</label>)}
             </div>

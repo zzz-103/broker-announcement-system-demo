@@ -17,7 +17,7 @@ const TABS: readonly [CustomIntelligenceTab, string, typeof Sparkles][] = [
 
 export function CustomIntelligenceTabs({ activeTab, executionCount, onChange }: CustomIntelligenceTabsProps) {
   return (
-    <div className="flex gap-1 overflow-x-auto border-b border-[#E4EAF2]" role="tablist" aria-label="AI 情报助手内容">
+    <div className="flex gap-1 overflow-x-auto border-b border-[#E4EAF2]" role="tablist" aria-label="情报助手内容">
       {TABS.map(([tab, label, Icon]) => {
         const selected = activeTab === tab;
         return (

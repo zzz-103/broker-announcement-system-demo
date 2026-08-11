@@ -179,7 +179,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     if (!serviceAvailable) { setPageError("情报搜索服务暂不可用，请联系管理员。"); return; }
     if (!form.focus.trim()) { setPageError("请先填写你想了解的业务问题。"); return; }
     if (form.audience === "custom" && !form.audience_detail.trim()) { setPageError("选择自定义受众后，请补充读者背景。"); return; }
-    try { const response = await createAssistantExecution(token, { ...form, focus: form.focus.trim(), focus_tags: form.focus_tags.slice(0, 3) }); startExecution(response.execution); setNotice("已提交，正在理解需求并整理公开资料…"); }
+    try { const response = await createAssistantExecution(token, { ...form, focus: form.focus.trim(), focus_tags: form.focus_tags.slice(0, 3) }); startExecution(response.execution); setNotice("已提交，正在检索和整理资料…"); }
     catch (error) { handleError(error, "无法生成情报报告"); }
   };
   const resetWorkspace = () => { setWorkspaceMode(false); setWorkspaceExecution(null); setPageError(""); setNotice(""); document.getElementById("custom-intelligence-focus")?.focus(); };

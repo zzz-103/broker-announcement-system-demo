@@ -64,7 +64,7 @@ export function ReportPanel({
   const active = execution.status === "pending" || execution.status === "running";
   const title = execution.report && "title" in execution.report && execution.report.title ? execution.report.title : "正在整理你的情报";
   return (
-    <section aria-label="AI 情报助手报告" className="rounded-lg border border-[#E4EAF2] bg-white">
+    <section aria-label="情报报告" className="rounded-lg border border-[#E4EAF2] bg-white">
       <header className="sticky top-0 z-20 rounded-t-lg border-b border-[#E4EAF2] bg-white px-4 py-3 sm:px-5">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">

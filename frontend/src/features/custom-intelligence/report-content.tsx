@@ -105,7 +105,7 @@ export function ReportBody({ execution }: { execution: IntelligenceAssistantExec
     const legacy = report as { core_conclusion?: string; title?: string };
     return (
       <div className="space-y-5">
-        <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">这是一份旧版报告，内容结构可能与 AI 情报助手不同；建议再次生成新版报告。</div>
+        <div role="status" className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">这是一份旧版报告，建议再次生成以使用新版结构。</div>
         <Section title={legacy.title || "核心结论"}><p className={REPORT_PROSE_CLASS}>{legacy.core_conclusion || "暂无核心结论。"}</p></Section>
         {sources.length > 0 && <Section title={`参考来源（${sources.length}）`}><div className="space-y-2.5">{sources.map((source, index) => <SourceCard key={source.id} source={source} index={index + 1} />)}</div></Section>}
       </div>

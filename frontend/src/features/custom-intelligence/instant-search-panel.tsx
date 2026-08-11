@@ -13,10 +13,14 @@ import {
   TIME_RANGE_OPTIONS,
 } from "./custom-intelligence-constants";
 
-function FieldLabel({ children, hint, htmlFor }: { children: React.ReactNode; hint?: string; htmlFor?: string }) {
+function RequiredMark() {
+  return <><span className="ml-0.5 text-sm font-bold text-red-500" aria-hidden="true">*</span><span className="sr-only">（必填）</span></>;
+}
+
+function FieldLabel({ children, hint, htmlFor, required = false }: { children: React.ReactNode; hint?: string; htmlFor?: string; required?: boolean }) {
   return (
     <div className="mb-1.5 flex items-center justify-between gap-2">
-      <label htmlFor={htmlFor} className="text-xs font-semibold text-[#344054]">{children}</label>
+      <label htmlFor={htmlFor} className="flex items-center text-xs font-semibold text-[#344054]">{children}{required && <RequiredMark />}</label>
       {hint && <span className="text-[10px] text-[#98A2B3]">{hint}</span>}
     </div>
   );
@@ -45,7 +49,6 @@ function TopicTagSelector({ value, onChange }: { value: string[]; onChange: (val
           );
         })}
       </div>
-      <p className="mt-1.5 text-[10px] text-[#98A2B3]">最多选择 3 个；具体问题请直接写在自然语言描述中。</p>
     </fieldset>
   );
 }
@@ -100,9 +103,9 @@ export function InstantSearchPanel({
             <div>
               <div className="flex items-center gap-2">
                 <span className="flex size-8 items-center justify-center rounded-lg bg-[#EAF2FF] text-[#2563EB]"><Sparkles className="size-4" aria-hidden="true" /></span>
-                <h3 className="text-base font-semibold text-[#172033]">{workspaceMode ? "调整这次提问" : "您现在想了解什么"}</h3>
+                <h3 className="text-base font-semibold text-[#172033]">{workspaceMode ? "调整报告需求" : "报告需求"}</h3>
               </div>
-              <p className="mt-2 text-xs leading-5 text-[#667085]">用一句业务问题开始，助手会自动检索公开资料并整理成可读报告。</p>
+              <p className="mt-2 text-xs leading-5 text-[#667085]">填写关注内容与报告范围。</p>
             </div>
             {workspaceMode && (
               <button type="button" onClick={onResetWorkspace} className="shrink-0 rounded-md border border-[#D0D5DD] px-2.5 py-1.5 text-[11px] font-semibold text-[#475467] hover:bg-[#F8FAFD]">新问题</button>
@@ -129,9 +132,10 @@ export function InstantSearchPanel({
 
           <div className="space-y-4">
             <div>
-              <FieldLabel htmlFor="custom-intelligence-focus" hint="必填">我想了解</FieldLabel>
+              <FieldLabel htmlFor="custom-intelligence-focus" required>关注内容</FieldLabel>
               <textarea
                 id="custom-intelligence-focus"
+                required
                 value={form.focus}
                 onChange={(event) => update("focus", event.target.value)}
                 rows={workspaceMode ? 3 : 4}
@@ -143,8 +147,8 @@ export function InstantSearchPanel({
               <p className="mt-1 text-right text-[10px] text-[#98A2B3]">{form.focus.length}/1000</p>
             </div>
 
-            <fieldset>
-              <legend className="mb-1.5 text-xs font-semibold text-[#344054]">关注方向</legend>
+            <fieldset aria-required="true">
+              <legend className="mb-1.5 flex items-center text-xs font-semibold text-[#344054]">报告受众<RequiredMark /></legend>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
                 {AUDIENCE_OPTIONS.map((option) => (
                   <button
@@ -166,8 +170,8 @@ export function InstantSearchPanel({
             </fieldset>
             {form.audience === "custom" && (
               <div>
-                <FieldLabel htmlFor="custom-intelligence-audience-detail" hint="必填">自定义读者背景</FieldLabel>
-                <input id="custom-intelligence-audience-detail" value={form.audience_detail} onChange={(event) => update("audience_detail", event.target.value)} maxLength={240} placeholder="例如：面向分公司负责人，关注可执行动作" className={FIELD_INPUT_CLASS} />
+                <FieldLabel htmlFor="custom-intelligence-audience-detail" required>受众说明</FieldLabel>
+                <input id="custom-intelligence-audience-detail" required value={form.audience_detail} onChange={(event) => update("audience_detail", event.target.value)} maxLength={240} placeholder="例如：分公司负责人，关注可执行动作" className={FIELD_INPUT_CLASS} />
               </div>
             )}
 
@@ -175,7 +179,7 @@ export function InstantSearchPanel({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <FieldLabel htmlFor="custom-intelligence-time-range">时间范围</FieldLabel>
+                <FieldLabel htmlFor="custom-intelligence-time-range" required>时间范围</FieldLabel>
                 <HoverSelect
                   id="custom-intelligence-time-range"
                   value={form.time_range}
@@ -186,7 +190,7 @@ export function InstantSearchPanel({
                 />
               </div>
               <div>
-                <FieldLabel htmlFor="custom-intelligence-report-length">报告篇幅</FieldLabel>
+                <FieldLabel htmlFor="custom-intelligence-report-length" required>报告篇幅</FieldLabel>
                 <HoverSelect
                   id="custom-intelligence-report-length"
                   value={form.report_length}
