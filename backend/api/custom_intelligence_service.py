@@ -40,6 +40,18 @@ class AnalysisConfigurationError(Exception):
     """Raised when the configured analysis client is unavailable."""
 
 
+class PlannerConfigurationError(Exception):
+    """Raised when the shared DeepSeek configuration cannot be loaded."""
+
+
+class PlannerConnectionError(Exception):
+    """Raised when the shared DeepSeek endpoint cannot be reached."""
+
+
+class PlannerFormatError(Exception):
+    """Raised when DeepSeek returns a plan that cannot be normalized."""
+
+
 REPORT_LENGTH_GUIDANCE = {
     "concise": "约 600–900 个中文字符",
     "standard": "约 1200–1800 个中文字符",
@@ -96,15 +108,13 @@ def analysis_llm_config_path() -> Path:
 
 def analysis_service_configured() -> bool:
     try:
-        path = analysis_llm_config_path()
-        config = LLMApiConfig.load(path)
-        config.validate()
+        _load_analysis_config()
         return True
     except Exception:
         return False
 
 
-def _load_analysis_client() -> OpenAICompatibleClient:
+def _load_analysis_config() -> LLMApiConfig:
     path = analysis_llm_config_path()
     try:
         # LLMApiConfig.load owns the deployment override precedence.  Do not
@@ -114,7 +124,11 @@ def _load_analysis_client() -> OpenAICompatibleClient:
     except FileNotFoundError as exc:
         raise ValueError("LLM 配置文件不存在") from exc
     config.validate()
-    return OpenAICompatibleClient(config)
+    return config
+
+
+def _load_analysis_client() -> OpenAICompatibleClient:
+    return OpenAICompatibleClient(_load_analysis_config())
 
 
 def options_payload() -> dict[str, object]:
@@ -399,31 +413,43 @@ def build_planner_messages(snapshot: dict[str, object]) -> list[dict[str, str]]:
 
 
 def _normalize_query_plan(value: object) -> dict[str, object]:
-    """Validate and bound planner output without inventing fixed facets."""
+    """Normalize common DeepSeek planner shapes without inventing facets.
+
+    DeepSeek deployments can return a parsed object, a JSON string nested in
+    the response, fenced JSON, or a compact ``directions``/string-array shape.
+    These are equivalent planner responses rather than service outages, so
+    they are normalized before applying the 2--5 direction bound.
+    """
     if isinstance(value, str):
         parsed = _extract_json_object(value)
     else:
         parsed = value
-    if (
-        not isinstance(parsed, dict)
-        or set(parsed) - {"intent", "queries"}
-        or not isinstance(parsed.get("queries"), list)
-    ):
+    if not isinstance(parsed, dict):
         raise ValueError("planner output must contain intent and queries")
-    if not isinstance(parsed.get("intent"), str):
+    raw_intent = parsed.get("intent")
+    if not isinstance(raw_intent, str):
         raise ValueError("planner intent must be a string")
-    intent = clean_text(parsed.get("intent"), 200)
+    intent = clean_text(raw_intent, 200)
     if not intent:
         raise ValueError("planner output must contain a non-empty intent")
+    raw_queries = parsed.get("queries")
+    if not isinstance(raw_queries, (list, dict)):
+        raw_queries = parsed.get("directions")
+    if isinstance(raw_queries, dict):
+        raw_queries = [raw_queries]
+    if not isinstance(raw_queries, list):
+        raise ValueError("planner output must contain queries or directions")
     queries: list[dict[str, str]] = []
     seen: set[str] = set()
-    for item in parsed["queries"]:
-        if not isinstance(item, dict):
+    for item in raw_queries:
+        if isinstance(item, str):
+            raw_query = item
+            raw_purpose = "规划方向"
+        elif isinstance(item, dict):
+            raw_query = item.get("query") or item.get("direction") or item.get("text")
+            raw_purpose = item.get("purpose") or item.get("description") or "规划方向"
+        else:
             continue
-        if set(item) - {"query", "purpose"}:
-            continue
-        raw_query = item.get("query")
-        raw_purpose = item.get("purpose")
         if not isinstance(raw_query, str) or not isinstance(raw_purpose, str):
             continue
         query = clean_text(raw_query, 300)
@@ -503,7 +529,10 @@ def _compose_query_plan(snapshot: dict[str, object], plan: dict[str, object]) ->
 
 
 def _request_query_plan(snapshot: dict[str, object]) -> dict[str, object]:
-    analysis_client = _load_analysis_client()
+    try:
+        analysis_client = _load_analysis_client()
+    except Exception as exc:
+        raise PlannerConfigurationError("共享 DeepSeek 配置不可用") from exc
     request_kwargs: dict[str, Any] = {
         "model": analysis_client.config.model,
         "messages": build_planner_messages(snapshot),
@@ -512,8 +541,19 @@ def _request_query_plan(snapshot: dict[str, object]) -> dict[str, object]:
     }
     if analysis_client.config.use_json_object:
         request_kwargs["response_format"] = {"type": "json_object"}
-    raw = analysis_client._request_json(request_kwargs)
-    normalized = _normalize_query_plan(raw)
+    try:
+        raw = analysis_client._request_json(request_kwargs)
+    except ValueError as exc:
+        # The OpenAI-compatible client uses ValueError for malformed model
+        # content as well as missing response fields.  Neither indicates that
+        # the shared endpoint is unavailable.
+        raise PlannerFormatError("DeepSeek 返回格式无法解析") from exc
+    except Exception as exc:
+        raise PlannerConnectionError("共享 DeepSeek 连接失败") from exc
+    try:
+        normalized = _normalize_query_plan(raw)
+    except Exception as exc:
+        raise PlannerFormatError("DeepSeek 返回格式无法解析") from exc
     return _compose_query_plan(snapshot, normalized)
 
 
@@ -556,12 +596,33 @@ def query_plan_preview(snapshot: dict[str, object]) -> dict[str, object]:
         if degraded:
             result["warning"] = "查询规划仅保留研究重点基线，确认后将执行一次宽召回检索。"
         return result
+    except PlannerConfigurationError:
+        return {
+            "intent": "研究重点降级检索",
+            "directions": [fallback],
+            "degraded": True,
+            "warning": "共享 DeepSeek 配置或连接不可用，确认后将使用研究重点进行一次降级检索。",
+        }
+    except PlannerConnectionError:
+        return {
+            "intent": "研究重点降级检索",
+            "directions": [fallback],
+            "degraded": True,
+            "warning": "共享 DeepSeek 配置或连接不可用，确认后将使用研究重点进行一次降级检索。",
+        }
+    except PlannerFormatError:
+        return {
+            "intent": "研究重点降级检索",
+            "directions": [fallback],
+            "degraded": True,
+            "warning": "DeepSeek 返回格式无法解析，确认后将使用研究重点进行一次降级检索。",
+        }
     except Exception:
         return {
             "intent": "研究重点降级检索",
             "directions": [fallback],
             "degraded": True,
-            "warning": "查询规划暂不可用，确认后将使用研究重点执行一次降级检索。",
+            "warning": "共享 DeepSeek 配置或连接不可用，确认后将使用研究重点进行一次降级检索。",
         }
 
 
@@ -1614,6 +1675,9 @@ def reanalyze_execution(owner_user_id: int, execution_id: int) -> dict[str, obje
 __all__ = [
     "ActiveExecutionError",
     "AnalysisConfigurationError",
+    "PlannerConfigurationError",
+    "PlannerConnectionError",
+    "PlannerFormatError",
     "client",
     "IntelligenceNotFoundError",
     "IntelligenceStoreError",

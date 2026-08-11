@@ -1051,6 +1051,87 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         deep_messages = build_planner_messages({"focus": "证券行业变化", "report_length": "deep"})
         self.assertEqual(concise_messages, deep_messages)
 
+    def test_planner_normalizes_fenced_json_string_arrays_and_directions(self) -> None:
+        fenced = """```json
+        {"intent":"监管与同业变化","queries":["监管政策变化","券商经营变化"]}
+        ```"""
+        parsed = _normalize_query_plan(fenced)
+        self.assertEqual(parsed["intent"], "监管与同业变化")
+        self.assertEqual([item["query"] for item in parsed["queries"]], ["监管政策变化", "券商经营变化"])
+
+        directions = _normalize_query_plan(
+            {
+                "intent": "行业变化",
+                "directions": [
+                    {"direction": "政策影响", "purpose": "政策"},
+                    "客户需求",
+                ],
+            }
+        )
+        self.assertEqual([item["query"] for item in directions["queries"]], ["政策影响", "客户需求"])
+        self.assertEqual(directions["queries"][1]["purpose"], "规划方向")
+
+    def test_planner_and_report_use_the_same_shared_config_loader(self) -> None:
+        config = SimpleNamespace(
+            base_url="https://deepseek.example/v1",
+            api_key="test-key",
+            model="deepseek-chat",
+            temperature=0.2,
+            top_p=1.0,
+            max_tokens=1024,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+            timeout_seconds=45,
+            use_json_object=True,
+            validate=lambda: None,
+        )
+        config_path = Path(self.runtime_dir.name) / "llm.json"
+        fake_client = SimpleNamespace(config=config)
+        with (
+            patch.object(service, "analysis_llm_config_path", return_value=config_path),
+            patch.object(service.LLMApiConfig, "load", return_value=config) as loader,
+            patch.object(service, "OpenAICompatibleClient", return_value=fake_client),
+        ):
+            self.assertTrue(service.analysis_service_configured())
+            loaded = service._load_analysis_client()
+        self.assertIs(loaded, fake_client)
+        self.assertEqual(loader.call_count, 2)
+        self.assertTrue(all(call.args == (config_path,) for call in loader.call_args_list))
+
+    def test_planner_uses_shared_model_and_planning_temperature(self) -> None:
+        requests: list[dict[str, object]] = []
+        config = SimpleNamespace(model="deepseek-chat", use_json_object=True)
+
+        class FakePlannerClient:
+            def __init__(self) -> None:
+                self.config = config
+
+            def _request_json(self, request_kwargs: dict[str, object]) -> dict[str, object]:
+                requests.append(dict(request_kwargs))
+                return {
+                    "intent": "行业变化",
+                    "queries": ["行业基线", "监管影响"],
+                }
+
+        with patch.object(service, "_load_analysis_client", return_value=FakePlannerClient()):
+            plan = service._request_query_plan({"focus": "研究重点", "focus_tags": []})
+        self.assertEqual(plan["queries"][0]["query"], "研究重点")
+        self.assertEqual(requests[0]["model"], "deepseek-chat")
+        self.assertEqual(requests[0]["temperature"], 0.1)
+        self.assertEqual(requests[0]["response_format"], {"type": "json_object"})
+
+    def test_query_plan_preview_distinguishes_format_and_shared_service_failures(self) -> None:
+        snapshot = {"focus": "近期监管变化", "time_range": "month"}
+        with patch.object(service, "_request_query_plan", side_effect=PlannerFormatError("raw details")):
+            format_preview = query_plan_preview(snapshot)
+        self.assertIn("返回格式无法解析", format_preview["warning"])
+        self.assertNotIn("raw details", format_preview["warning"])
+
+        with patch.object(service, "_request_query_plan", side_effect=PlannerConnectionError("raw details")):
+            connection_preview = query_plan_preview(snapshot)
+        self.assertIn("共享 DeepSeek 配置或连接不可用", connection_preview["warning"])
+        self.assertNotIn("raw details", connection_preview["warning"])
+
     def test_planner_failure_is_degraded_and_searches_focus_once(self) -> None:
         snapshot = {"focus": "近期监管变化", "time_range": "month"}
         execution = self.store.create_execution(5, snapshot, "instant", 5, original_query=snapshot["focus"])
