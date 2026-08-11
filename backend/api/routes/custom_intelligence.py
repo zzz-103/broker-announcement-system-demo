@@ -3,7 +3,7 @@ from __future__ import annotations
 import secrets
 from urllib.parse import quote
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response as RawResponse
@@ -40,6 +40,7 @@ from ..intelligence_email import (
     send_report_email,
     test_smtp_configuration,
     validate_smtp_identity,
+    resolve_email_delivery_format,
 )
 from ..custom_intelligence_service import (
     ActiveExecutionError,
@@ -1127,13 +1128,15 @@ def post_execution_email(
 ) -> dict[str, object]:
     session = get_session(authorization)
     owner_id = _owner_user_id(session)
+    delivery_format = resolve_email_delivery_format(payload)
     try:
         execution = store.get_execution(owner_id, execution_id)
         results = send_report_email(
             execution,
             payload.recipients,
-            payload.format,
             note=payload.note,
+            template_style=payload.template_style,
+            delivery_format=delivery_format,
             external_confirmed=payload.external_confirmed,
             config=effective_smtp_config(store),
         )
@@ -1155,7 +1158,7 @@ def post_execution_email(
                 execution_id=execution_id,
                 owner_user_id=owner_id,
                 recipient=str(result.get("recipient") or ""),
-                format="html_pdf",
+                format=delivery_format,
                 status=status_value,
                 message_id=str(result.get("message_id") or "") or None,
                 error_message=str(result.get("error_message") or "") or None,
@@ -1172,7 +1175,8 @@ def post_execution_email(
         result="success" if sent_count == len(delivery_rows) else "partial_failed",
         metadata={
             "execution_id": execution_id,
-            "format": "html_pdf",
+            "format": delivery_format,
+            "template_style": payload.template_style,
             "recipient_count": len(delivery_rows),
             "sent_count": sent_count,
             "external_confirmed": payload.external_confirmed,
@@ -1187,6 +1191,7 @@ def post_execution_email(
 @router.get("/api/custom-intelligence/executions/{execution_id}/report/pdf")
 def get_execution_report_pdf(
     execution_id: int,
+    template_style: Literal["research", "newsletter"] = Query("research"),
     authorization: Annotated[str | None, Header()] = None,
 ) -> RawResponse:
     session = get_session(authorization)
@@ -1204,7 +1209,7 @@ def get_execution_report_pdf(
     ):
         raise HTTPException(status_code=409, detail="该记录没有可导出的搜索结果")
     try:
-        pdf_bytes = build_report_pdf(execution)
+        pdf_bytes = build_report_pdf(execution, template_style=template_style)
     except Exception as exc:
         raise HTTPException(status_code=500, detail="报告 PDF 生成失败，请稍后重试") from exc
     filename = report_pdf_filename(execution)

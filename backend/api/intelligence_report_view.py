@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Mapping
+from typing import Literal, Mapping
 
 try:
     from zoneinfo import ZoneInfo
@@ -44,6 +44,14 @@ ITEM_TYPE_LABELS: Mapping[str, str] = {
     "analysis": "分析",
     "recommendation": "建议",
 }
+TemplateStyle = Literal["research", "newsletter"]
+TEMPLATE_STYLES: tuple[str, str] = ("research", "newsletter")
+
+
+def normalize_template_style(value: object) -> TemplateStyle:
+    """Return a supported visual template without changing report content."""
+
+    return "newsletter" if str(value or "").strip().casefold() == "newsletter" else "research"
 
 
 @dataclass(frozen=True, slots=True)

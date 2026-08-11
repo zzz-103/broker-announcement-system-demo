@@ -89,10 +89,20 @@ class EmailDeliveryRequest(BaseModel):
 
     recipients: list[str] = Field(min_length=1, max_length=5)
     note: str = Field(default="", max_length=500)
-    # Kept as a no-op compatibility field for older clients. New deliveries
-    # always contain the complete HTML body and the matching PDF attachment.
+    delivery_format: Literal["html_pdf", "html_only", "pdf_only"] = "html_pdf"
+    template_style: Literal["research", "newsletter"] = "research"
+    # Compatibility field for clients that used the old mutually exclusive
+    # selector. It is mapped to html_only/pdf_only by the route.
     format: Literal["html", "pdf"] | None = None
     external_confirmed: bool = False
+
+
+def resolve_email_delivery_format(payload: EmailDeliveryRequest) -> Literal["html_pdf", "html_only", "pdf_only"]:
+    """Map legacy ``format`` only when the new selector stayed at its default."""
+
+    if payload.delivery_format == "html_pdf" and payload.format in {"html", "pdf"}:
+        return "html_only" if payload.format == "html" else "pdf_only"
+    return payload.delivery_format
 
 
 def verify_admin_password(password: str) -> bool:

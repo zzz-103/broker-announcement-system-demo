@@ -222,7 +222,6 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             results = send_report_email(
                 execution,
                 ["a@csco.com.cn", "b@csco.com.cn"],
-                "html",
                 external_confirmed=False,
                 config=config,
             )
@@ -296,10 +295,41 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             patch("backend.api.intelligence_report_pdf.report_pdf_filename", return_value="report.pdf"),
         ):
             message = build_email_message(execution, "owner@csco.com.cn", "pdf", config)
-        pdf_builder.assert_called_once_with(execution)
+        pdf_builder.assert_called_once_with(execution, template_style="research")
         self.assertEqual(message.get_content_type(), "multipart/mixed")
+        self.assertFalse(any(part.get_content_type() == "text/html" for part in message.walk()))
         attachment = next(part for part in message.walk() if part.get_content_type() == "application/pdf")
         self.assertEqual(attachment.get_payload(decode=True), b"%PDF-mock")
+
+    def test_newsletter_template_and_delivery_format_matrix(self):
+        execution = {
+            "status": "succeeded",
+            "search_status": "succeeded",
+            "analysis_status": "succeeded",
+            "original_query": "研究重点",
+            "sources": [{"id": "s1", "title": "来源", "url": "https://example.test"}],
+            "report": {
+                "version": 2,
+                "title": "报告",
+                "core_judgment": [{"type": "fact", "text": "结论", "source_ids": ["s1"]}],
+                "key_developments": [{"type": "fact", "text": "动态", "source_ids": ["s1"]}],
+                "impact_analysis": [{"type": "analysis", "text": "影响", "source_ids": ["s1"]}],
+                "company_implications": [{"type": "recommendation", "text": "建议", "source_ids": []}],
+                "risks_and_watch_items": [{"type": "analysis", "text": "风险", "source_ids": ["s1"]}],
+            },
+        }
+        config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
+        _, newsletter_html = render_report_html(execution, "附言 <内容>", "newsletter")
+        for heading in ("自定义情报助手", "金融科技情报日报", "Financial Tech Daily", "深圳", "独家分析", "重点动态", "研判与建议", "风险提示"):
+            self.assertIn(heading, newsletter_html)
+        self.assertLess(newsletter_html.index("附言 &lt;内容&gt;"), newsletter_html.index("报告"))
+        with patch("backend.api.intelligence_report_pdf.build_report_pdf", return_value=b"%PDF-mock"):
+            html_only = build_email_message(execution, "owner@csco.com.cn", config=config, template_style="newsletter", delivery_format="html_only")
+            pdf_only = build_email_message(execution, "owner@csco.com.cn", config=config, template_style="newsletter", delivery_format="pdf_only")
+        self.assertTrue(any(part.get_content_type() == "text/html" for part in html_only.walk()))
+        self.assertFalse(any(part.get_content_type() == "application/pdf" for part in html_only.walk()))
+        self.assertFalse(any(part.get_content_type() == "text/html" for part in pdf_only.walk()))
+        self.assertTrue(any(part.get_content_type() == "application/pdf" for part in pdf_only.walk()))
 
 
 if __name__ == "__main__":
