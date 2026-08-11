@@ -207,10 +207,10 @@ def _citation_html(item: ReportItemView) -> str:
 
 
 def _item_html(item: ReportItemView, *, numbered: bool = True) -> str:
-    prefix = f"{item.number}. " if numbered else ""
+    prefix = f"{item.number}:" if numbered else ""
     return (
         '<p style="margin:0 0 12px 0;font-size:14px;line-height:1.75;color:#25324a;">'
-        f'<span style="color:#315ea8;font-weight:700;">{html.escape(prefix + item.type_label)}：</span>'
+        f'<span style="margin-right:5px;color:#315ea8;font-weight:700;">{html.escape(prefix)}</span>'
         f'{_inline_text(item.text)}{_citation_html(item)}</p>'
     )
 
@@ -247,9 +247,9 @@ def _source_html(source_number: int, title: str, site_name: str, date: str, url:
             'font-weight:700;text-decoration:underline;">打开原文</a>'
         )
     return (
-        '<li style="margin:0 0 9px 0;padding:0;color:#25324a;font-size:13px;line-height:1.55;">'
+        '<div style="margin:0 0 9px 0;padding:0;color:#25324a;font-size:13px;line-height:1.55;">'
         f"<span style=\"font-weight:700;\">{source_number}. {html.escape(title)}</span> "
-        f"{detail_html}{link_html}</li>"
+        f"{detail_html}{link_html}</div>"
     )
 
 
@@ -276,13 +276,6 @@ def _render_research_html(execution: dict[str, object], note: str | None = None)
             f'<strong style="color:#1f3b68;">附言</strong><br>{_inline_text(normalized_note, MAX_NOTE_LENGTH)}'
             "</td></tr></table></td></tr>"
         )
-    meta_cells = "".join(
-        '<td style="padding:0 14px 0 0;vertical-align:top;font-size:12px;line-height:1.55;'
-        'color:#6b7280;">'
-        f'<span style="color:#8792a2;">{html.escape(label)}</span><br>'
-        f'<strong style="color:#25324a;font-size:13px;">{html.escape(value)}</strong></td>'
-        for label, value in view.meta
-    )
     question_html = ""
     if view.question:
         question_html = (
@@ -299,7 +292,7 @@ def _render_research_html(execution: dict[str, object], note: str | None = None)
         for warning in view.reference_warnings
     )
     if not sources_html:
-        sources_html = '<li style="color:#7b8798;font-size:13px;">暂无来源。</li>'
+        sources_html = '<div style="color:#7b8798;font-size:13px;">暂无来源。</div>'
     sections_html = "".join(_section_html(section) for section in view.sections)
     document = (
         '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
@@ -314,11 +307,10 @@ def _render_research_html(execution: dict[str, object], note: str | None = None)
         '<div style="font-size:12px;line-height:1.4;letter-spacing:.08em;color:#315ea8;font-weight:700;">自定义情报订阅系统</div>'
         f'<h1 style="margin:9px 0 0 0;font-size:25px;line-height:1.4;color:#172033;font-weight:700;">{html.escape(view.title)}</h1>'
         "</td></tr>"
-        f'<tr><td style="padding:13px 0 0 0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>{meta_cells}</tr></table></td></tr>'
         f"{question_html}{sections_html}"
         '<tr><td style="padding:24px 0 0 0;border-top:1px solid #d8e1ef;">'
         '<h2 style="margin:0 0 12px 0;padding:0;font-size:17px;line-height:1.4;color:#1f3b68;font-weight:700;">信息来源</h2>'
-        f"{warning_html}<ol style=\"margin:0;padding-left:23px;\">{sources_html}</ol>"
+        f"{warning_html}<div style=\"margin:0;padding:0;\">{sources_html}</div>"
         '</td></tr><tr><td style="padding:26px 0 0 0;color:#8792a2;font-size:11px;line-height:1.5;">'
         "本邮件由自定义情报订阅系统生成，报告正文同时附带 PDF 文件。"
         "</td></tr></table></td></tr></table></body></html>"
@@ -336,7 +328,7 @@ def _newsletter_item_html(item: ReportItemView, *, compact: bool = False) -> str
     margin = "0 0 9px 0" if compact else "0 0 12px 0"
     return (
         f'<p style="margin:{margin};font-size:13px;line-height:1.65;color:{_NEWSLETTER_INK};">'
-        f'<strong style="color:{_NEWSLETTER_RED};">{item.number}. {html.escape(item.type_label)}：</strong>'
+        f'<strong style="margin-right:5px;color:{_NEWSLETTER_RED};">{item.number}:</strong>'
         f'{_inline_text(item.text)}{citation}</p>'
     )
 
@@ -372,9 +364,6 @@ def _render_newsletter_html(execution: dict[str, object], note: str | None = Non
             f'{_inline_text(normalized_note, MAX_NOTE_LENGTH)}</div></td></tr>'
         )
     date_text = format_report_datetime(view.executed_at)
-    metadata = " · ".join(
-        f"{html.escape(label)}：{html.escape(value)}" for label, value in view.meta if label != "生成时间"
-    )
     core = section_by_key.get("core_judgment")
     developments = section_by_key.get("key_developments")
     impact = section_by_key.get("impact_analysis")
@@ -388,7 +377,7 @@ def _render_newsletter_html(execution: dict[str, object], note: str | None = Non
     source_body = "".join(
         _source_html(source.number, source.title, source.site_name, source.date, source.url)
         for source in view.sources
-    ) or '<li style="color:#98A2B3;font-size:12px;">暂无来源。</li>'
+    ) or '<div style="color:#98A2B3;font-size:12px;">暂无来源。</div>'
     warnings = "".join(
         f'<p style="margin:0 0 5px 0;color:#7B5D19;font-size:11px;line-height:1.5;">来源提示：{_inline_text(warning, 1_000)}</p>'
         for warning in view.reference_warnings
@@ -417,8 +406,7 @@ def _render_newsletter_html(execution: dict[str, object], note: str | None = Non
         f'<div style="margin-top:8px;font-size:11px;line-height:1.4;color:#667085;">{html.escape(date_text)} · 深圳</div>'
         '</td></tr>'
         '<tr><td style="padding:18px 0 7px 0;">'
-        f'<div style="font-size:12px;line-height:1.4;color:{_NEWSLETTER_RED};font-weight:700;letter-spacing:.1em;">{html.escape(metadata)}</div>'
-        f'<h1 style="margin:8px 0 0 0;font-size:24px;line-height:1.45;color:{_NEWSLETTER_INK};font-weight:700;">{html.escape(view.title)}</h1>'
+        f'<h1 style="margin:0;font-size:24px;line-height:1.45;color:{_NEWSLETTER_INK};font-weight:700;">{html.escape(view.title)}</h1>'
         f'<p style="margin:8px 0 0 0;font-size:12px;line-height:1.6;color:{_NEWSLETTER_MUTED};">研究重点：{_inline_text(view.question or "未指定", 1_000)}</p>'
         '</td></tr>'
         '<tr><td style="padding:16px 0 0 0;">'
@@ -432,7 +420,7 @@ def _render_newsletter_html(execution: dict[str, object], note: str | None = Non
         f'<h2 style="{section_heading}">风险提示</h2><div style="padding:11px 13px;border:1px solid #D7DADD;background:#FCFCFB;">{risk_body}</div>'
         '</td></tr>'
         '<tr><td style="padding:24px 0 0 0;border-top:3px solid #111111;">'
-        f'<h2 style="margin:0 0 11px 0;font-size:14px;line-height:1.4;color:#111111;">信息来源 · SOURCES</h2>{warnings}<ol style="margin:0;padding-left:21px;">{source_body}</ol>'
+        f'<h2 style="margin:0 0 11px 0;font-size:14px;line-height:1.4;color:#111111;">信息来源 · SOURCES</h2>{warnings}<div style="margin:0;padding:0;">{source_body}</div>'
         '</td></tr>'
         '<tr><td align="center" style="padding:20px 0 0 0;color:#98A2B3;font-size:10px;line-height:1.5;">自定义情报助手 · 自定义情报订阅系统</td></tr>'
         '</table></td></tr></table></body></html>'
@@ -463,15 +451,13 @@ def render_report_text(execution: dict[str, object], note: str | None = None) ->
     lines.extend((EMAIL_SUBJECT, view.title, ""))
     if view.question:
         lines.extend((f"研究重点：{view.question}", ""))
-    lines.extend(f"{label}：{value}" for label, value in view.meta)
-    lines.append("")
     for section in view.sections:
         lines.extend((section.title, "-" * max(8, len(section.title))))
         if not section.items:
             lines.append("暂无内容。")
         for item in section.items:
             citations = " " + " ".join(f"[{number}]" for number in item.citation_numbers) if item.citation_numbers else ""
-            lines.append(f"{item.number}. {item.type_label}：{item.text}{citations}")
+            lines.append(f"{item.number}:{item.text}{citations}")
         lines.append("")
     lines.append("信息来源")
     for source in view.sources:

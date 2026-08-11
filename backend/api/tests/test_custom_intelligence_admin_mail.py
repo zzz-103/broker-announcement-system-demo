@@ -20,6 +20,7 @@ from backend.api.intelligence_email import (
     render_report_html,
     send_report_email,
 )
+from backend.api.intelligence_report_view import build_report_view
 from backend.llm_table.llm_client import (
     LLMApiConfig,
     llm_config_available,
@@ -159,6 +160,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             "status": "succeeded",
             "search_status": "succeeded",
             "original_query": "问题",
+            "request_payload": {"query_plan": {"intent": "经 DeepSeek 整理的研究方向"}},
             "snapshot": {},
             "sources": [{"id": "s1", "title": "来源", "url": "https://example.test"}],
             "report": {
@@ -172,8 +174,17 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             },
         }
         _, document = render_report_html(execution)
+        self.assertEqual(build_report_view(execution).question, "经 DeepSeek 整理的研究方向")
+        self.assertIn("研究重点：</strong>经 DeepSeek 整理的研究方向", document)
+        self.assertNotIn("受众：", document)
+        self.assertNotIn("时间范围：", document)
+        self.assertNotIn("报告篇幅：", document)
         self.assertIn("[1]", document)
         self.assertIn("建议", document)
+        self.assertIn(">1:</span>", document)
+        self.assertNotIn("1. 事实：", document)
+        self.assertNotIn("1. 分析：", document)
+        self.assertEqual(document.count("1. 来源"), 1)
         for heading in ("核心结论", "重点动态", "影响分析", "研判与建议", "风险与后续关注", "信息来源"):
             self.assertIn(heading, document)
         with self.assertRaises(ExternalRecipientConfirmationRequired):
@@ -307,6 +318,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             "search_status": "succeeded",
             "analysis_status": "succeeded",
             "original_query": "研究重点",
+            "request_payload": {"query_plan": {"intent": "经 DeepSeek 整理的日报方向"}},
             "sources": [{"id": "s1", "title": "来源", "url": "https://example.test"}],
             "report": {
                 "version": 2,
@@ -324,6 +336,13 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             self.assertIn(heading, newsletter_html)
         self.assertIn('href="https://example.test"', newsletter_html)
         self.assertLess(newsletter_html.index("附言 &lt;内容&gt;"), newsletter_html.index("报告"))
+        self.assertIn("研究重点：经 DeepSeek 整理的日报方向", newsletter_html)
+        self.assertNotIn("受众：", newsletter_html)
+        self.assertNotIn("时间范围：", newsletter_html)
+        self.assertNotIn("报告篇幅：", newsletter_html)
+        self.assertNotIn("1. 事实：", newsletter_html)
+        self.assertNotIn("1. 分析：", newsletter_html)
+        self.assertEqual(newsletter_html.count("1. 来源"), 1)
         with patch("backend.api.intelligence_report_pdf.build_report_pdf", return_value=b"%PDF-mock"):
             html_only = build_email_message(execution, "owner@csco.com.cn", config=config, template_style="newsletter", delivery_format="html_only")
             pdf_only = build_email_message(execution, "owner@csco.com.cn", config=config, template_style="newsletter", delivery_format="pdf_only")

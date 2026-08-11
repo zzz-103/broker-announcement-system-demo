@@ -129,6 +129,29 @@ def _list(value: object) -> list[object]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
+def report_research_direction(execution: Mapping[str, object]) -> str:
+    """Return a user-facing LLM-planned direction without exposing diagnostics."""
+
+    payload = execution.get("request_payload") if isinstance(execution.get("request_payload"), dict) else {}
+    query_plan = payload.get("query_plan") if isinstance(payload.get("query_plan"), dict) else {}
+    planner_plan = payload.get("planner_plan") if isinstance(payload.get("planner_plan"), dict) else {}
+    search_summary = payload.get("search_summary") if isinstance(payload.get("search_summary"), dict) else {}
+    for candidate in (
+        query_plan.get("intent"),
+        planner_plan.get("intent"),
+        search_summary.get("planner_intent"),
+    ):
+        direction = _clean(candidate, 500)
+        if direction and "降级检索" not in direction:
+            return direction
+    report = execution.get("report") if isinstance(execution.get("report"), dict) else {}
+    return (
+        _clean(report.get("title"), 500)
+        or _clean(execution.get("original_query"), 500)
+        or "本次情报研究"
+    )
+
+
 def format_report_datetime(value: object) -> str:
     """Format an ISO timestamp for human-facing output without leaking errors."""
 
@@ -217,7 +240,7 @@ def build_report_view(execution: Mapping[str, object]) -> ReportView:
         for key, title in SECTION_SPECS
     )
     title = _clean(report.get("title"), 500) or _clean(execution.get("original_query"), 500) or "即时情报报告"
-    question = _clean(execution.get("original_query") or snapshot.get("focus"), 1_000)
+    question = report_research_direction(execution)
     audience_key = _clean(report.get("audience") or snapshot.get("audience"), 120)
     time_range_key = _clean(report.get("time_range") or snapshot.get("time_range"), 32)
     report_length_key = _clean(report.get("report_length") or snapshot.get("report_length"), 32)

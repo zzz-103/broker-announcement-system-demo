@@ -10,11 +10,8 @@ import type {
   IntelligenceReportTemplateStyle,
 } from "@/lib/api/contracts";
 import {
-  AUDIENCE_LABEL,
   REPORT_HEADING_CLASS,
-  REPORT_LENGTH_LABEL,
   REPORT_PROSE_CLASS,
-  TIME_RANGE_LABEL,
 } from "./custom-intelligence-constants";
 
 function safeUrl(value: string): string | null {
@@ -80,11 +77,8 @@ function ItemList({ items, sourceIndexes }: { items: IntelligenceReportItem[]; s
     <div className="divide-y divide-[#EAECF0]">
       {items.map((item, index) => (
         <div key={`${item.text}-${index}`} className={`flex gap-3 py-3 first:pt-1 ${item.type === "recommendation" ? "border-l-2 border-l-[#7FA3DF] pl-3" : ""}`}>
-          <span className="mt-0.5 shrink-0 font-mono text-[11px] text-[#98A2B3]">{String(index + 1).padStart(2, "0")}</span>
+          <span className="mt-0.5 shrink-0 font-mono text-[11px] font-semibold text-[#315EA8]">{index + 1}:</span>
           <p className="min-w-0 whitespace-pre-wrap break-words text-sm leading-6 text-[#344054]">
-            <span className={`mr-1.5 text-[10px] font-semibold ${item.type === "recommendation" ? "text-[#315EA8]" : item.type === "fact" ? "text-emerald-700" : "text-[#667085]"}`}>
-              {item.type === "recommendation" ? "建议" : item.type === "fact" ? "事实" : "分析"}
-            </span>
             {item.text}
             <SourceRefs ids={item.source_ids} sourceIndexes={sourceIndexes} />
           </p>
@@ -137,10 +131,8 @@ function NewsletterItems({ items, sourceIndexes }: { items: IntelligenceReportIt
     <div className="space-y-4">
       {items.map((item, index) => (
         <div key={`${item.text}-${index}`} className={`relative pl-4 ${item.type === "recommendation" ? "border-l-[3px] border-[#C62828]" : "border-l border-[#D0D5DD]"}`}>
-          <p className={`mb-1 text-[10px] font-bold uppercase tracking-[0.14em] ${item.type === "fact" ? "text-[#667085]" : item.type === "recommendation" ? "text-[#C62828]" : "text-[#AA1D1D]"}`}>
-            {item.type === "fact" ? "事实" : item.type === "recommendation" ? "建议" : "分析"} · {String(index + 1).padStart(2, "0")}
-          </p>
           <p className="whitespace-pre-wrap break-words text-[13px] leading-6 text-[#272727]">
+            <span className="mr-1.5 font-mono font-bold text-[#C62828]">{index + 1}:</span>
             {item.text}
             <SourceRefs ids={item.source_ids} sourceIndexes={sourceIndexes} />
           </p>
@@ -182,6 +174,11 @@ function NewsletterReportBody({ execution, report, sources, sourceIndexes }: { e
 
       <div className="border-y-[3px] border-[#111111] py-1" aria-hidden="true" />
 
+      <section className="border-b border-[#D0D5DD] pb-5">
+        <h1 className="text-xl font-black leading-8 tracking-wide text-[#1F1F1F]">{report.title}</h1>
+        <p className="mt-2 text-xs leading-5 text-[#667085]"><span className="font-semibold text-[#344054]">研究重点：</span>{execution.research_direction || report.title}</p>
+      </section>
+
       <section className="border-b border-[#D0D5DD] pb-6">
         <div className="mb-3 flex items-center gap-2">
           <span className="rounded-sm bg-[#C62828] px-2 py-1 text-[10px] font-bold tracking-[0.16em] text-white">独家分析</span>
@@ -219,7 +216,7 @@ function NewsletterReportBody({ execution, report, sources, sourceIndexes }: { e
       <footer className="border-t-[3px] border-[#111111] bg-[#111111] px-4 py-4 text-white">
         <p className="text-[10px] font-bold tracking-[0.14em] text-[#F4B4B4]">信息来源 · SOURCES</p>
         {sources.length ? (
-          <ol className="mt-3 space-y-1.5 text-[10px] leading-5 text-[#E4E4E4]">
+          <ol className="mt-3 list-none space-y-1.5 p-0 text-[10px] leading-5 text-[#E4E4E4]">
             {sources.map((source, index) => {
               const url = safeUrl(source.url);
               return (
@@ -271,11 +268,9 @@ export function ReportBody({ execution, templateStyle = "research" }: { executio
   ];
   return (
     <div className="space-y-8">
-      <section className="grid gap-x-5 gap-y-2 border-y border-[#D0D5DD] py-3 sm:grid-cols-4">
-        <div><p className="text-[10px] font-semibold uppercase tracking-wide text-[#98A2B3]">面向</p><p className="mt-1 text-xs text-[#344054]">{AUDIENCE_LABEL[report.audience] || report.audience || "—"}</p></div>
-        <div><p className="text-[10px] font-semibold uppercase tracking-wide text-[#98A2B3]">时间范围</p><p className="mt-1 text-xs text-[#344054]">{TIME_RANGE_LABEL[report.time_range] || report.time_range || "—"}</p></div>
-        <div><p className="text-[10px] font-semibold uppercase tracking-wide text-[#98A2B3]">报告篇幅</p><p className="mt-1 text-xs text-[#344054]">{REPORT_LENGTH_LABEL[report.report_length] || report.report_length || "—"}</p></div>
-        <div><p className="text-[10px] font-semibold uppercase tracking-wide text-[#98A2B3]">来源</p><p className="mt-1 text-xs text-[#344054]">{sources.length} 条</p></div>
+      <section className="border-b border-[#D0D5DD] pb-4">
+        <p className="text-[10px] font-semibold tracking-wide text-[#98A2B3]">研究重点</p>
+        <p className="mt-1.5 text-sm leading-6 text-[#344054]">{execution.research_direction || report.title}</p>
       </section>
       {sections.map(([title, value]) => <Section key={title} title={title}><ItemList items={itemList(value)} sourceIndexes={sourceIndexes} /></Section>)}
       {report.reference_warnings?.length ? <div className="border-l-2 border-amber-400 pl-3 text-xs leading-5 text-amber-800">{report.reference_warnings.join("；")}</div> : null}

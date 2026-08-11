@@ -1056,6 +1056,10 @@ class RouteOwnershipTests(unittest.TestCase):
             reference_aliases_json=json.dumps({"ref-1": "source-1"}),
             request_payload_json=json.dumps(
                 {
+                    "query_plan": {
+                        "intent": "经 DeepSeek 整理的行业研究方向",
+                        "queries": [],
+                    },
                     "search_summary": {
                         "requested_source_count": 15,
                         "unique_source_count": 1,
@@ -1088,6 +1092,10 @@ class RouteOwnershipTests(unittest.TestCase):
         detail = self.client.get(f"/api/custom-intelligence/executions/{execution_id}", headers=headers)
         self.assertEqual(detail.status_code, 200)
         self.assertNotIn("request_payload", detail.json()["execution"])
+        self.assertEqual(
+            detail.json()["execution"]["research_direction"],
+            "经 DeepSeek 整理的行业研究方向",
+        )
         self.assertEqual(detail.json()["execution"]["sources"][0]["id"], "source-1")
         self.assertNotIn("search_coverage", detail.json()["execution"])
         diagnostics = self.client.get(

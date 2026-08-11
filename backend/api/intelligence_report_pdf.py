@@ -137,7 +137,7 @@ def _item_paragraph(item: ReportItemView, styles: dict[str, ParagraphStyle], *, 
     if item.citation_numbers:
         citation = f' <font color="#667085" size="8.5">{" ".join(f"[{number}]" for number in item.citation_numbers)}</font>'
     text = (
-        f'<font color="#315EA8"><b>{item.number}. {escape(item.type_label)}：</b></font>'
+        f'<font color="#315EA8"><b>{item.number}:</b></font> '
         f"{_paragraph_text(item.text)}{citation}"
     )
     return Paragraph(text, styles["core_body" if core else "body"])
@@ -198,8 +198,6 @@ def _build_research_pdf(execution: dict) -> bytes:
         Paragraph(escape(view.title), styles["title"]),
         HRFlowable(width="100%", thickness=1.2, color=BLUE, spaceBefore=0, spaceAfter=8),
     ]
-    for label, value in view.meta:
-        story.append(Paragraph(f"{escape(label)}：{escape(value)}", styles["meta"]))
     if view.question:
         story.append(Paragraph(f"<b>研究重点：</b>{_paragraph_text(view.question, 1_000)}", styles["question"]))
     for section in view.sections:
@@ -316,7 +314,7 @@ def _newsletter_pdf_item(
         citation = f' <font color="#667085" size="7.8">{" ".join(f"[{number}]" for number in item.citation_numbers)}</font>'
     style_name = "recommendation" if recommendation else "body"
     text = (
-        f'<font color="#B42318"><b>{item.number}. {escape(item.type_label)}：</b></font>'
+        f'<font color="#B42318"><b>{item.number}:</b></font> '
         f"{_paragraph_text(item.text)}{citation}"
     )
     paragraph = Paragraph(text, styles[style_name])
@@ -398,8 +396,6 @@ def _build_newsletter_pdf(execution: dict) -> bytes:
         HRFlowable(width="100%", thickness=1.8, color=colors.HexColor("#111111"), spaceBefore=8, spaceAfter=10),
         Paragraph(escape(view.title), styles["title"]),
     ]
-    metadata = " · ".join(f"{label}：{value}" for label, value in view.meta if label != "生成时间")
-    story.append(Paragraph(escape(metadata), styles["meta"]))
     if view.question:
         story.append(Paragraph(f"研究重点：{_paragraph_text(view.question, 1_000)}", styles["question"]))
 

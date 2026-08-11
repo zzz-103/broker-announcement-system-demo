@@ -57,6 +57,7 @@ from ..custom_intelligence_service import (
 )
 from ..custom_intelligence_store import EXECUTIONS_RETENTION, TOPICS_PER_USER_LIMIT, TopicLimitError, TopicNameConflictError
 from ..intelligence_report_pdf import build_report_pdf, report_pdf_filename
+from ..intelligence_report_view import report_research_direction
 from ..qianfan_search import (
     QianfanConfigurationError,
     QianfanDisabledError,
@@ -223,6 +224,7 @@ def _public_execution(execution: dict[str, object]) -> dict[str, object]:
         "trigger_type": execution.get("trigger_type"),
         "snapshot": _public_assistant_fields(snapshot),
         "original_query": execution.get("original_query") or snapshot.get("focus") or snapshot.get("question") or "",
+        "research_direction": report_research_direction(execution),
         "report": report,
         "report_version": report.get("version") if report else None,
         "sources": sources if isinstance(sources, list) else [],

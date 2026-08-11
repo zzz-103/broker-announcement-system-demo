@@ -250,6 +250,7 @@ export interface IntelligenceAssistantExecution {
   trigger_type?: "instant" | "assistant" | "topic" | "rerun" | string;
   snapshot: Partial<IntelligenceAssistantRequest>;
   original_query?: string;
+  research_direction?: string;
   report: IntelligenceReportV2 | Partial<IntelligenceReportV2> | IntelligenceReport | null;
   sources: IntelligenceSource[];
   report_version?: number | null;
