@@ -13,6 +13,9 @@ import httpx
 from backend.api import custom_intelligence_service as service
 from backend.api.routes import custom_intelligence as custom_intelligence_routes
 from backend.api.custom_intelligence_service import (
+    PlannerConfigurationError,
+    PlannerConnectionError,
+    PlannerFormatError,
     _normalize_query_plan,
     _compose_query_plan,
     _search_with_queries,
@@ -1122,6 +1125,11 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
 
     def test_query_plan_preview_distinguishes_format_and_shared_service_failures(self) -> None:
         snapshot = {"focus": "近期监管变化", "time_range": "month"}
+        with patch.object(service, "_request_query_plan", side_effect=PlannerConfigurationError("raw details")):
+            config_preview = query_plan_preview(snapshot)
+        self.assertIn("共享 DeepSeek 配置不可用", config_preview["warning"])
+        self.assertNotIn("raw details", config_preview["warning"])
+
         with patch.object(service, "_request_query_plan", side_effect=PlannerFormatError("raw details")):
             format_preview = query_plan_preview(snapshot)
         self.assertIn("返回格式无法解析", format_preview["warning"])
@@ -1129,7 +1137,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
 
         with patch.object(service, "_request_query_plan", side_effect=PlannerConnectionError("raw details")):
             connection_preview = query_plan_preview(snapshot)
-        self.assertIn("共享 DeepSeek 配置或连接不可用", connection_preview["warning"])
+        self.assertIn("共享 DeepSeek 暂时连接失败", connection_preview["warning"])
         self.assertNotIn("raw details", connection_preview["warning"])
 
     def test_planner_failure_is_degraded_and_searches_focus_once(self) -> None:

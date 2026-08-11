@@ -291,7 +291,7 @@ export interface IntelligenceAssistantEmailResponse {
     id: number;
     execution_id: number;
     recipient: string;
-    format: "html" | "pdf" | "html_pdf";
+    format: IntelligenceDeliveryFormat | "html" | "pdf";
     status: "sent" | "failed";
     error_message?: string | null;
     sent_at?: string | null;

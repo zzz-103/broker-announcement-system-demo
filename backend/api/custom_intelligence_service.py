@@ -601,14 +601,14 @@ def query_plan_preview(snapshot: dict[str, object]) -> dict[str, object]:
             "intent": "研究重点降级检索",
             "directions": [fallback],
             "degraded": True,
-            "warning": "共享 DeepSeek 配置或连接不可用，确认后将使用研究重点进行一次降级检索。",
+            "warning": "共享 DeepSeek 配置不可用，请联系管理员检查本机 AI 技术配置；确认后将使用研究重点进行一次降级检索。",
         }
     except PlannerConnectionError:
         return {
             "intent": "研究重点降级检索",
             "directions": [fallback],
             "degraded": True,
-            "warning": "共享 DeepSeek 配置或连接不可用，确认后将使用研究重点进行一次降级检索。",
+            "warning": "共享 DeepSeek 暂时连接失败，请稍后重试；确认后将使用研究重点进行一次降级检索。",
         }
     except PlannerFormatError:
         return {
@@ -622,7 +622,7 @@ def query_plan_preview(snapshot: dict[str, object]) -> dict[str, object]:
             "intent": "研究重点降级检索",
             "directions": [fallback],
             "degraded": True,
-            "warning": "共享 DeepSeek 配置或连接不可用，确认后将使用研究重点进行一次降级检索。",
+            "warning": "共享 DeepSeek 暂时不可用，确认后将使用研究重点进行一次降级检索。",
         }
 
 

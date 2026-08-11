@@ -26,12 +26,14 @@ export function EmailDialog({
   execution,
   open,
   sending,
+  initialTemplateStyle,
   onOpenChange,
   onSend,
 }: {
   execution: IntelligenceAssistantExecution | null;
   open: boolean;
   sending: boolean;
+  initialTemplateStyle: IntelligenceReportTemplateStyle;
   onOpenChange: (open: boolean) => void;
   onSend: (payload: IntelligenceAssistantEmailInput) => Promise<void>;
 }) {
@@ -42,7 +44,7 @@ export function EmailDialog({
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [confirmExternal, setConfirmExternal] = useState(false);
-  const [templateStyle, setTemplateStyle] = useState<IntelligenceReportTemplateStyle>("research");
+  const [templateStyle, setTemplateStyle] = useState<IntelligenceReportTemplateStyle>(initialTemplateStyle);
   const [deliveryFormat, setDeliveryFormat] = useState<IntelligenceDeliveryFormat>("html_pdf");
 
   const reset = useCallback(() => {
@@ -53,9 +55,9 @@ export function EmailDialog({
     setNote("");
     setError("");
     setConfirmExternal(false);
-    setTemplateStyle("research");
+    setTemplateStyle(initialTemplateStyle);
     setDeliveryFormat("html_pdf");
-  }, []);
+  }, [initialTemplateStyle]);
 
   useEffect(() => {
     if (!open) reset();

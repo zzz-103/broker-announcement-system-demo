@@ -27,6 +27,7 @@ from ..intelligence_admin_config import (
     SMTPConfigUpdate,
     public_deepseek_config,
     reveal_deepseek_key,
+    resolve_email_delivery_format,
     save_deepseek_config,
     test_deepseek_configuration,
     verify_admin_password,
@@ -40,7 +41,6 @@ from ..intelligence_email import (
     send_report_email,
     test_smtp_configuration,
     validate_smtp_identity,
-    resolve_email_delivery_format,
 )
 from ..custom_intelligence_service import (
     ActiveExecutionError,

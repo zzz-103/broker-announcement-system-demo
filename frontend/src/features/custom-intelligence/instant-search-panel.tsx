@@ -89,6 +89,11 @@ function AudienceSuggestions({
       return;
     }
     if (withoutInserted.split("\n").some((line) => line.trim() === suggestion)) {
+      if (withoutInserted !== currentFocus) {
+        onApply(withoutInserted);
+        systemSuggestionRef.current = null;
+        setSystemSuggestion(null);
+      }
       setMessage("这条关注方向已经添加。");
       return;
     }
