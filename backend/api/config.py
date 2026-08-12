@@ -247,12 +247,20 @@ class Settings:
 
     @property
     def smtp_host(self) -> str:
-        return "smtp.126.com"
+        return os.getenv("SMTP_HOST", "smtp.csco.com.cn").strip() or "smtp.csco.com.cn"
 
     @property
     def smtp_port(self) -> int:
-        # 126.com's administrator flow is intentionally SSL-only on 465.
-        return 465
+        return bounded_int("SMTP_PORT", 465, 1, 65_535)
+
+    @property
+    def smtp_use_ssl(self) -> bool:
+        return os.getenv("SMTP_USE_SSL", "true").strip().casefold() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
 
     @property
     def smtp_username(self) -> str:

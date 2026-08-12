@@ -645,15 +645,18 @@ class RouteOwnershipTests(unittest.TestCase):
                 headers=admin_headers,
                 json={
                     "enabled": True,
-                    "username": "sender@126.com",
-                    "from_address": "sender@126.com",
+                    "host": "smtp.csco.com.cn",
+                    "port": 465,
+                    "use_ssl": True,
+                    "username": "sender@csco.com.cn",
+                    "from_address": "sender@csco.com.cn",
                     "authorization_code": smtp_secret,
                     "timeout_seconds": 30,
                 },
             )
             self.assertEqual(saved_smtp.status_code, 200)
             smtp_body = saved_smtp.json()
-            self.assertEqual((smtp_body["host"], smtp_body["port"], smtp_body["use_ssl"]), ("smtp.126.com", 465, True))
+            self.assertEqual((smtp_body["host"], smtp_body["port"], smtp_body["use_ssl"]), ("smtp.csco.com.cn", 465, True))
             self.assertNotIn(smtp_secret, saved_smtp.text)
             revealed_smtp = self.client.post(
                 "/api/admin/custom-intelligence/smtp-config/reveal-authorization-code",
@@ -667,13 +670,17 @@ class RouteOwnershipTests(unittest.TestCase):
                 headers=admin_headers,
                 json={
                     "enabled": True,
-                    "username": "sender@126.com",
-                    "from_address": "sender@126.com",
+                    "username": "sender@csco.com.cn",
+                    "from_address": "sender@csco.com.cn",
                     "authorization_code": replaced_smtp_secret,
                     "timeout_seconds": 30,
                 },
             )
             self.assertEqual(replaced_smtp.status_code, 200)
+            self.assertEqual(
+                (replaced_smtp.json()["host"], replaced_smtp.json()["port"], replaced_smtp.json()["use_ssl"]),
+                ("smtp.csco.com.cn", 465, True),
+            )
             self.assertNotIn(replaced_smtp_secret, replaced_smtp.text)
             self.assertEqual(
                 self.client.post(

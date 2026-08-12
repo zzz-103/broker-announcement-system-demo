@@ -6,7 +6,7 @@
 
 - 金采网及已配置券商官网公告采集、采购/结果公告 LLM 结构化与项目匹配
 - 招采看板、App 更新看板、AI 摘要与标准数据包导入/导出
-- 自定义情报搜索、报告持久化、PDF 与 126 邮箱发送
+- 自定义情报搜索、报告持久化、PDF 与可配置 SMTP 邮件发送
 - 管理员任务/SSE 日志、用户审批、反馈、审计与 AI 技术配置
 - 独立定时调度器，以及 Windows Docker Compose + Nginx 发布流程
 
@@ -36,6 +36,8 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
 访问 `http://localhost:3000`，健康检查为 `http://127.0.0.1:8000/api/health`。新 Clone 不含业务运行数据；管理员登录后在“管理控制台 → 前端数据包”导入可信的导出 ZIP，即可恢复招采、App 更新、AI 摘要以及可选的匹配增量基线，无需重跑历史爬虫。用户、审计、自定义情报、邮件配置和密钥不在数据包内，需在目标环境单独初始化。
+
+百度检索 API、共享 LLM API 和 SMTP 发件配置均可在“管理控制台 → 情报技术配置”维护。SMTP 支持配置主机、端口、SSL、用户名、发件地址和授权码；密钥仅返回掩码，查看原值需要二次验证管理员密码。
 
 Windows、生产 Compose、首次配置、数据导入/导出和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 

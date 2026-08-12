@@ -72,6 +72,9 @@ class SMTPConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     enabled: bool = False
+    host: str | None = Field(default=None, max_length=253)
+    port: int | None = Field(default=None, ge=1, le=65_535)
+    use_ssl: bool | None = None
     username: str = Field(default="", max_length=320)
     from_address: str = Field(default="", max_length=320)
     authorization_code: str | None = Field(default=None, max_length=1_000)

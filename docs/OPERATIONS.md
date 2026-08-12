@@ -71,6 +71,17 @@ App Watch 离线配置检查：
 .venv/bin/python -m backend.broker_app_watch.cli dry-run
 ```
 
+### 管理员技术配置与 SMTP
+
+百度检索 API、共享 LLM API 和 SMTP 发件服务统一在“管理控制台 → 情报技术配置”维护。SMTP 配置步骤：
+
+1. 填写 SMTP 主机、端口并选择是否使用 SSL；企业邮箱推荐 `smtp.csco.com.cn`、465、SSL。
+2. 用户名和发件地址填写同一个有效邮箱；输入邮箱授权码，保存后再点击“测试已保存配置”。连接测试只完成 SMTP 登录，不发送邮件。
+3. GET 配置只返回授权码掩码；查看完整授权码需要当前管理员密码二次验证。修改授权码后应立即保存，避免明文长时间停留在页面状态。
+4. 管理页配置保存在 `USER_DB_PATH`（或独立的 `CUSTOM_INTELLIGENCE_DB_PATH`），优先于 `.env` 回退值；生产必须持久挂载该数据库。dashboard-data ZIP 不携带这些 API 或邮件凭据，因此新 Clone 必须重新注入或通过管理页配置。
+
+根 `.env` 的 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USE_SSL`、`SMTP_USERNAME`、`SMTP_FROM_ADDRESS`、`SMTP_AUTHORIZATION_CODE` 只用于尚无数据库配置时的服务端回退。默认关闭邮件；未配置完整凭据前不要启用。非 SSL 的 25 端口仅在邮件服务器和网络策略明确允许时使用。
+
 ## 4. 从数据包恢复业务数据
 
 新环境优先导入，不要重跑全部历史爬虫。
@@ -160,7 +171,7 @@ git pull --ff-only
 - 导入后重启丢失：生产 Compose 必须挂载 `./runtime/data:/app/backend/data`，且 `DASHBOARD_DATA_EXPORT_DIR` 位于该挂载内。
 - 任务 409：已有互斥任务或数据包操作；等待或通过管理页取消对应任务。
 - 搜索/LLM 失败：在管理员 AI 技术配置检查服务端 Key、模型、base URL 和连接测试；503 常见于未配置，504 为上游超时。
-- 邮件失败：确认启用邮件、发件地址为 `@126.com`、用户名与发件地址一致，并使用客户端授权码连接 `smtp.126.com:465` SSL。
+- 邮件失败：确认已先保存配置，主机/端口/SSL 与邮件服务要求一致，用户名与发件地址相同，授权码有效且目标端口已放行；企业邮箱推荐 `smtp.csco.com.cn:465` SSL。
 - Docker 构建/启动失败：确认 Docker Compose v2、运行目录模板/受限配置文件齐全，执行 `docker compose config` 后查看四服务日志。本项目没有 Redis/Celery，勿按旧架构排查。
 
 ## 10. 最小 Smoke Test

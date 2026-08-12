@@ -39,6 +39,7 @@ from ..intelligence_email import (
     send_report_email,
     test_smtp_configuration,
     validate_smtp_identity,
+    validate_smtp_server,
 )
 from ..custom_intelligence_service import (
     ActiveExecutionError,
@@ -769,6 +770,9 @@ def post_admin_smtp_config(
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, object]:
     current = effective_smtp_config(store)
+    host = payload.host.strip() if payload.host is not None else current.host
+    port = payload.port if payload.port is not None else current.port
+    use_ssl = payload.use_ssl if payload.use_ssl is not None else current.use_ssl
     username = payload.username.strip()
     from_address = payload.from_address.strip() or username
     authorization_code = (payload.authorization_code or "").strip()
@@ -777,11 +781,15 @@ def post_admin_smtp_config(
         authorization_code = current.authorization_code
     try:
         if payload.enabled or username or from_address:
+            validate_smtp_server(host, port)
             validate_smtp_identity(username, from_address)
         if payload.enabled and not authorization_code:
             raise EmailConfigurationError("SMTP 客户端授权码不能为空")
         store.save_smtp_config(
             enabled=payload.enabled,
+            host=host,
+            port=port,
+            use_ssl=use_ssl,
             username=username,
             from_address=from_address,
             authorization_code=authorization_code,
@@ -794,7 +802,7 @@ def post_admin_smtp_config(
         authorization,
         "custom_intelligence_config_updated",
         action="replace" if replacing_secret else "update",
-        target="smtp_126",
+        target="smtp",
         metadata={"enabled": payload.enabled},
     )
     return public_smtp_config(store)
@@ -815,15 +823,15 @@ def post_admin_smtp_config_test(
             authorization,
             "custom_intelligence_connection_tested",
             action="test",
-            target="smtp_126",
+            target="smtp",
             result="failed",
         )
-        return {"status": "failed", "message": "网易 SMTP 连接测试失败，请检查授权码与网络。", "tested_at": tested_at}
+        return {"status": "failed", "message": "SMTP 连接测试失败，请检查服务器、端口、传输方式、授权码与网络。", "tested_at": tested_at}
     _audit_intelligence_event(
         authorization,
         "custom_intelligence_connection_tested",
         action="test",
-        target="smtp_126",
+        target="smtp",
     )
     return {**result, "tested_at": tested_at}
 
@@ -841,7 +849,7 @@ def post_admin_smtp_config_reveal_authorization_code(
             authorization,
             "custom_intelligence_secret_revealed",
             action="reveal",
-            target="smtp_126",
+            target="smtp",
             result="denied",
         )
         raise HTTPException(status_code=401, detail="管理员密码不正确")
@@ -852,7 +860,7 @@ def post_admin_smtp_config_reveal_authorization_code(
         authorization,
         "custom_intelligence_secret_revealed",
         action="reveal",
-        target="smtp_126",
+        target="smtp",
     )
     return {"authorization_code": authorization_code}
 

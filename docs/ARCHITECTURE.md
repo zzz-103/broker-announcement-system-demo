@@ -77,7 +77,7 @@ backend/config/broker_app_watch/brokers.yaml
 → 共享 LLM Report V2
 → SQLite 持久化
 → HTML / PDF
-→ 可选 smtp.126.com:465 SSL
+→ 可选的管理员配置 SMTP（默认 smtp.csco.com.cn:465 SSL）
 ```
 
 百度、LLM、SMTP 凭据只在服务端环境或管理员受限配置中保存；dashboard-data 导入不携带这些内容。
@@ -104,7 +104,7 @@ backend/config/broker_app_watch/brokers.yaml
 
 - 数据来源：金采网、`backend/broker_sources/sources.json` 中的券商官网、App Watch 配置中的公开页面/API
 - AI：`backend/config/llm_api_config.json` 或管理员覆盖配置指定的 OpenAI 兼容服务；百度千帆 Web Search
-- 邮件：`smtp.126.com:465`，SSL 与客户端授权码
+- 邮件：管理员可配置 SMTP 主机、端口及 SSL；默认企业邮件为 `smtp.csco.com.cn:465` SSL，也支持明确选择非 SSL 传输
 - 运行库：FastAPI/Uvicorn、requests/httpx、BeautifulSoup、pandas/openpyxl、OpenAI SDK、APScheduler、ReportLab、RapidOCR；前端为 Next.js/React/Zustand/TanStack Table/ECharts
 
 具体联网目标见 [network-whitelist.csv](network-whitelist.csv)。它是部署网络清单，不代表所有来源在离线验收中均已真实联调。

@@ -150,6 +150,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   const [smtpEnabled, setSmtpEnabled] = useState(true);
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState(465);
+  const [smtpUseSsl, setSmtpUseSsl] = useState(true);
   const [smtpUsername, setSmtpUsername] = useState("");
   const [smtpFrom, setSmtpFrom] = useState("");
   const [smtpTimeout, setSmtpTimeout] = useState(30);
@@ -181,7 +182,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
     setLlmConfig(next); setLlmEnabled(next.enabled); setLlmModel(next.model); setLlmEndpoint(next.base_url); setLlmTimeout(next.timeout_seconds); setLlmKey(""); setLlmKeyTouched(false);
   }, []);
   const applySmtpConfig = useCallback((next: IntelligenceSmtpConfigResponse) => {
-    setSmtpConfig(next); setSmtpEnabled(next.enabled); setSmtpHost(next.host); setSmtpPort(next.port); setSmtpUsername(next.username); setSmtpFrom(next.from_address); setSmtpTimeout(next.timeout_seconds); setSmtpAuthorizationCode(""); setSmtpAuthorizationCodeTouched(false);
+    setSmtpConfig(next); setSmtpEnabled(next.enabled); setSmtpHost(next.host); setSmtpPort(next.port); setSmtpUseSsl(next.use_ssl); setSmtpUsername(next.username); setSmtpFrom(next.from_address); setSmtpTimeout(next.timeout_seconds); setSmtpAuthorizationCode(""); setSmtpAuthorizationCodeTouched(false);
   }, []);
 
   useEffect(() => {
@@ -236,9 +237,13 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   };
   const saveSmtp = async () => {
     if (!token || saving) return;
-    if (!smtpUsername.trim() || !smtpFrom.trim() || !smtpUsername.trim().toLowerCase().endsWith("@126.com") || smtpUsername.trim().toLowerCase() !== smtpFrom.trim().toLowerCase()) { setError("网易 SMTP 用户名必须是 126 邮箱，且发件地址必须与用户名一致。"); return; }
+    const port = Number(smtpPort);
+    const timeout = Number(smtpTimeout);
+    if (!smtpHost.trim() || !Number.isInteger(port) || port < 1 || port > 65535) { setError("请填写有效的 SMTP 主机，并将端口设为 1-65535。"); return; }
+    if (!smtpUsername.trim() || !smtpFrom.trim() || smtpUsername.trim().toLowerCase() !== smtpFrom.trim().toLowerCase()) { setError("SMTP 用户名与发件地址必须填写同一个有效邮箱地址。"); return; }
+    if (!Number.isFinite(timeout) || timeout < 1 || timeout > 180) { setError("SMTP 连接超时必须为 1-180 秒。"); return; }
     setSaving("smtp");
-    try { applySmtpConfig(await saveAdminSmtpConfig(token, { enabled: smtpEnabled, username: smtpUsername.trim(), from_address: smtpFrom.trim(), timeout_seconds: smtpTimeout, authorization_code: smtpAuthorizationCodeTouched && smtpAuthorizationCode.trim() ? smtpAuthorizationCode.trim() : undefined })); finish("网易 SMTP 配置已保存。"); } catch (err) { handleError(err, "无法保存网易 SMTP 配置"); } finally { setSaving(null); }
+    try { applySmtpConfig(await saveAdminSmtpConfig(token, { enabled: smtpEnabled, host: smtpHost.trim(), port, use_ssl: smtpUseSsl, username: smtpUsername.trim(), from_address: smtpFrom.trim(), timeout_seconds: timeout, authorization_code: smtpAuthorizationCodeTouched && smtpAuthorizationCode.trim() ? smtpAuthorizationCode.trim() : undefined })); finish("SMTP 配置已保存，请测试连接。"); } catch (err) { handleError(err, "无法保存 SMTP 配置"); } finally { setSaving(null); }
   };
   const saveRules = async () => {
     if (!token || saving) return;
@@ -303,17 +308,18 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
         <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveLlm()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "llm" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("llm")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "llm" ? "测试中…" : "测试模型"}</button></div><TestResult result={llmTest} />
       </SectionCard>
 
-      <SectionCard title="网易 SMTP 邮件" description="发送 HTML 报告或 PDF 附件。系统仅保存邮箱授权码。">
+      <SectionCard title="SMTP 邮件" description="配置发信服务器并发送 HTML 报告或 PDF 附件。授权码只保存在服务端运行数据库中。">
         <div className="grid min-w-0 gap-4 [&>*]:min-w-0 lg:grid-cols-2">
           <Field label="服务状态"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={smtpEnabled} onChange={(event) => setSmtpEnabled(event.target.checked)} className="size-4 accent-[#2563EB]" />{smtpEnabled ? "已启用" : "已停用"}</label></Field>
-          <Field label="SMTP 主机"><div className="flex h-11 items-center rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 font-mono text-xs text-[#475467]">{smtpHost || "smtp.126.com"}</div></Field>
-          <Field label="端口 / 安全"><div className="flex h-11 items-center rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 text-xs text-[#475467]">{smtpPort || 465} · SSL</div></Field>
+          <Field label="SMTP 主机"><input value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} placeholder="smtp.csco.com.cn" className={cn(INPUT_CLASS, "font-mono")} /></Field>
+          <Field label="SMTP 端口"><input type="number" min={1} max={65535} value={smtpPort} onChange={(event) => setSmtpPort(Number(event.target.value))} className={INPUT_CLASS} /></Field>
+          <Field label="连接安全"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={smtpUseSsl} onChange={(event) => setSmtpUseSsl(event.target.checked)} className="size-4 accent-[#2563EB]" />{smtpUseSsl ? "SSL/TLS（常用端口 465）" : "非 SSL（常用端口 25）"}</label></Field>
           <Field label="用户名"><input value={smtpUsername} onChange={(event) => setSmtpUsername(event.target.value)} placeholder="发件邮箱地址" className={INPUT_CLASS} /></Field>
-          <Field label="发件地址"><input type="email" value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} placeholder="name@126.com" className={INPUT_CLASS} /></Field>
+          <Field label="发件地址"><input type="email" value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} placeholder="name@company.example" className={INPUT_CLASS} /></Field>
           <Field label="连接超时（秒）"><input type="number" min={1} max={180} value={smtpTimeout} onChange={(event) => setSmtpTimeout(Number(event.target.value))} className={INPUT_CLASS} /></Field>
           <SecretField label="邮箱授权码" masked={smtpConfig?.authorization_code_mask || ""} value={smtpAuthorizationCode} touched={smtpAuthorizationCodeTouched} onChange={(value) => { setSmtpAuthorizationCode(value); setSmtpAuthorizationCodeTouched(true); }} onReveal={() => setRevealTarget("smtp")} />
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveSmtp()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "smtp" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("smtp")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "smtp" ? "测试中…" : "测试连接"}</button></div><TestResult result={smtpTest} />
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveSmtp()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "smtp" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("smtp")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "smtp" ? "测试中…" : "测试已保存配置"}</button><span className="text-[11px] text-[#98A2B3]">修改后请先保存，再测试连接。</span></div><TestResult result={smtpTest} />
       </SectionCard>
 
       <SectionCard title="系统默认分析规则" description="规则应用于报告生成，不影响检索规划；来源与引用规则不可关闭。">

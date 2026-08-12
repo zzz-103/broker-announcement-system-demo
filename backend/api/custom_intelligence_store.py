@@ -189,7 +189,7 @@ class IntelligenceStore:
                 CREATE TABLE IF NOT EXISTS intelligence_smtp_config (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     enabled INTEGER NOT NULL DEFAULT 1,
-                    host TEXT NOT NULL DEFAULT 'smtp.126.com',
+                    host TEXT NOT NULL DEFAULT 'smtp.csco.com.cn',
                     port INTEGER NOT NULL DEFAULT 465,
                     username TEXT NOT NULL DEFAULT '',
                     from_address TEXT NOT NULL DEFAULT '',
@@ -740,7 +740,7 @@ class IntelligenceStore:
         return {
             "id": int(row["id"]),
             "enabled": bool(row["enabled"]),
-            "host": str(row["host"] or "smtp.126.com"),
+            "host": str(row["host"] or "smtp.csco.com.cn"),
             "port": int(row["port"] or 465),
             "username": str(row["username"] or ""),
             "from_address": str(row["from_address"] or ""),
@@ -766,6 +766,9 @@ class IntelligenceStore:
         self,
         *,
         enabled: bool,
+        host: str,
+        port: int,
+        use_ssl: bool,
         username: str,
         from_address: str,
         authorization_code: str,
@@ -781,24 +784,27 @@ class IntelligenceStore:
                     INSERT INTO intelligence_smtp_config
                         (id, enabled, host, port, username, from_address,
                          authorization_code, use_ssl, timeout_seconds, updated_at, updated_by_user_id)
-                    VALUES (1, ?, 'smtp.126.com', 465, ?, ?, ?, 1, ?, ?, ?)
+                    VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         enabled = excluded.enabled,
-                        host = 'smtp.126.com',
-                        port = 465,
+                        host = excluded.host,
+                        port = excluded.port,
                         username = excluded.username,
                         from_address = excluded.from_address,
                         authorization_code = excluded.authorization_code,
-                        use_ssl = 1,
+                        use_ssl = excluded.use_ssl,
                         timeout_seconds = excluded.timeout_seconds,
                         updated_at = excluded.updated_at,
                         updated_by_user_id = excluded.updated_by_user_id
                     """,
                     (
                         1 if enabled else 0,
+                        host,
+                        port,
                         username,
                         from_address,
                         authorization_code,
+                        1 if use_ssl else 0,
                         timeout_seconds,
                         now,
                         updated_by_user_id,

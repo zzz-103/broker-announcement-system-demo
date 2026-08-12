@@ -16,9 +16,12 @@ from backend.api.intelligence_email import (
     EmailConfigurationError,
     ExternalRecipientConfirmationRequired,
     build_email_message,
+    effective_smtp_config,
     normalize_recipients,
     render_report_html,
     send_report_email,
+    test_smtp_configuration as check_smtp_configuration,
+    validate_smtp_server,
 )
 from backend.api.intelligence_report_view import build_report_view
 from backend.llm_table.llm_client import (
@@ -47,7 +50,7 @@ class FakeSMTP:
         return None
 
     def login(self, username, authorization_code):
-        if username != "sender@126.com":
+        if username != "sender@csco.com.cn":
             raise AssertionError("unexpected SMTP username")
         if authorization_code != "test-auth-code":
             raise AssertionError("unexpected authorization code")
@@ -190,6 +193,34 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
         with self.assertRaises(ExternalRecipientConfirmationRequired):
             normalize_recipients(["outside@example.com"], external_confirmed=False)
 
+    def test_configurable_smtp_store_and_plain_transport(self):
+        store = IntelligenceStore()
+        store.save_smtp_config(
+            enabled=True,
+            host="smtp.csco.com.cn",
+            port=25,
+            use_ssl=False,
+            username="sender@csco.com.cn",
+            from_address="sender@csco.com.cn",
+            authorization_code="test-auth-code",
+            timeout_seconds=12,
+            updated_by_user_id=1,
+        )
+        config = effective_smtp_config(store)
+        self.assertEqual((config.host, config.port, config.use_ssl), ("smtp.csco.com.cn", 25, False))
+        with (
+            patch("backend.api.intelligence_email.smtplib.SMTP", FakeSMTP),
+            patch("backend.api.intelligence_email.smtplib.SMTP_SSL") as ssl_client,
+        ):
+            result = check_smtp_configuration(config)
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(FakeSMTP.calls[0]["args"], ("smtp.csco.com.cn", 25))
+        self.assertEqual(FakeSMTP.calls[0]["kwargs"], {"timeout": 12.0})
+        ssl_client.assert_not_called()
+
+        with self.assertRaisesRegex(EmailConfigurationError, "主机格式"):
+            validate_smtp_server("https://smtp.example.com", 465)
+
     def test_html_note_is_escaped_and_precedes_report(self):
         execution = {
             "status": "succeeded",
@@ -207,7 +238,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             message = build_email_message(
                 execution,
                 "owner@csco.com.cn",
-                config=EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test"),
+                config=EffectiveSMTPConfig(True, "smtp.csco.com.cn", 465, "sender@csco.com.cn", "sender@csco.com.cn", "test-auth-code", True, 5, "test"),
                 note="你好 <请查看>",
             )
         html_part = next(part for part in message.walk() if part.get_content_type() == "text/html")
@@ -228,7 +259,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             "sources": [{"id": "s1", "title": "来源", "url": "https://example.test"}],
             "report": {"version": 2, "title": "报告", "core_judgment": []},
         }
-        config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
+        config = EffectiveSMTPConfig(True, "smtp.csco.com.cn", 465, "sender@csco.com.cn", "sender@csco.com.cn", "test-auth-code", True, 5, "test")
         with patch("backend.api.intelligence_email.smtplib.SMTP_SSL", FakeSMTP):
             results = send_report_email(
                 execution,
@@ -238,7 +269,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             )
         self.assertEqual([item["status"] for item in results], ["sent", "sent"])
         self.assertEqual(len(FakeSMTP.sent), 2)
-        self.assertTrue(all(str(message["From"]) == "sender@126.com" for message in FakeSMTP.sent))
+        self.assertTrue(all(str(message["From"]) == "sender@csco.com.cn" for message in FakeSMTP.sent))
         self.assertTrue(all(str(message["Subject"]) == EMAIL_SUBJECT for message in FakeSMTP.sent))
         self.assertTrue(all(any(part.get_content_type() == "text/html" for part in message.walk()) for message in FakeSMTP.sent))
         self.assertTrue(all(any(part.get_content_type() == "application/pdf" for part in message.walk()) for message in FakeSMTP.sent))
@@ -253,7 +284,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             "sources": [{"id": "s1", "title": "来源", "url": "https://example.test"}],
             "report": {"version": 2, "title": "报告", "core_judgment": []},
         }
-        config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
+        config = EffectiveSMTPConfig(True, "smtp.csco.com.cn", 465, "sender@csco.com.cn", "sender@csco.com.cn", "test-auth-code", True, 5, "test")
         with patch("backend.api.intelligence_email.smtplib.SMTP_SSL", FailingSMTP):
             results = send_report_email(
                 execution,
@@ -274,7 +305,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
             "sources": [{"id": "s1", "title": "来源", "url": "https://example.test"}],
             "report": {"title": "旧版报告", "core_conclusion": "旧版结论"},
         }
-        config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
+        config = EffectiveSMTPConfig(True, "smtp.csco.com.cn", 465, "sender@csco.com.cn", "sender@csco.com.cn", "test-auth-code", True, 5, "test")
         with self.assertRaisesRegex(EmailConfigurationError, "Report V2"):
             send_report_email(
                 execution,
@@ -300,7 +331,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
                 "risks_and_watch_items": [],
             },
         }
-        config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
+        config = EffectiveSMTPConfig(True, "smtp.csco.com.cn", 465, "sender@csco.com.cn", "sender@csco.com.cn", "test-auth-code", True, 5, "test")
         with (
             patch("backend.api.intelligence_report_pdf.build_report_pdf", return_value=b"%PDF-mock") as pdf_builder,
             patch("backend.api.intelligence_report_pdf.report_pdf_filename", return_value="report.pdf"),
@@ -330,7 +361,7 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
                 "risks_and_watch_items": [{"type": "analysis", "text": "风险", "source_ids": ["s1"]}],
             },
         }
-        config = EffectiveSMTPConfig(True, "smtp.126.com", 465, "sender@126.com", "sender@126.com", "test-auth-code", True, 5, "test")
+        config = EffectiveSMTPConfig(True, "smtp.csco.com.cn", 465, "sender@csco.com.cn", "sender@csco.com.cn", "test-auth-code", True, 5, "test")
         _, newsletter_html = render_report_html(execution, "附言 <内容>", "newsletter")
         for heading in ("自定义情报助手", "金融科技情报日报", "Financial Tech Daily", "深圳", "独家分析", "重点动态", "研判与建议", "风险提示", "信息来源 · SOURCES", "打开原文"):
             self.assertIn(heading, newsletter_html)

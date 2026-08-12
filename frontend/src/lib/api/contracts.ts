@@ -377,6 +377,9 @@ export interface IntelligenceSmtpConfigResponse {
 }
 export interface IntelligenceSmtpConfigInput {
   enabled: boolean;
+  host: string;
+  port: number;
+  use_ssl: boolean;
   username: string;
   authorization_code?: string;
   from_address: string;

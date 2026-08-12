@@ -1,4 +1,4 @@
-"""Owner-triggered custom-intelligence report delivery over 126.com SMTP.
+"""Owner-triggered custom-intelligence report delivery over configured SMTP.
 
 The email is rendered from the already persisted Report V2 execution.  It
 always contains a plain-text part, a complete HTML report and the matching PDF
@@ -35,6 +35,7 @@ MAX_NOTE_LENGTH = 500
 ALLOWED_DOMAIN = "csco.com.cn"
 EMAIL_SUBJECT = "自定义情报订阅系统"
 EMAIL_PATTERN = re.compile(r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$")
+SMTP_HOST_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 ReportFormat = Literal["html", "pdf"]
 DeliveryFormat = Literal["html_pdf", "html_only", "pdf_only"]
 
@@ -70,11 +71,20 @@ class EffectiveSMTPConfig:
     config_source: str
 
 
-def validate_smtp_identity(username: str, from_address: str) -> None:
-    """Enforce the 126.com authorization-code identity invariant."""
+def validate_smtp_server(host: str, port: int) -> None:
+    if not host or not SMTP_HOST_PATTERN.fullmatch(host) or ".." in host:
+        raise EmailConfigurationError("SMTP 主机格式不正确")
+    if not 1 <= port <= 65_535:
+        raise EmailConfigurationError("SMTP 端口必须为 1-65535")
 
-    if not username or not username.casefold().endswith("@126.com"):
-        raise EmailConfigurationError("SMTP 用户名必须是 @126.com 邮箱")
+
+def validate_smtp_identity(username: str, from_address: str) -> None:
+    """Require a valid authenticated mailbox and matching From identity."""
+
+    if not username or not EMAIL_PATTERN.fullmatch(username):
+        raise EmailConfigurationError("SMTP 用户名必须是有效邮箱地址")
+    if not from_address or not EMAIL_PATTERN.fullmatch(from_address):
+        raise EmailConfigurationError("发件地址必须是有效邮箱地址")
     if from_address.casefold() != username.casefold():
         raise EmailConfigurationError("发件地址必须与 SMTP 用户名一致")
 
@@ -93,24 +103,24 @@ def effective_smtp_config(store: IntelligenceStore) -> EffectiveSMTPConfig:
         authorization_code = str(row.get("authorization_code") or "").strip() or settings.smtp_authorization_code
         return EffectiveSMTPConfig(
             enabled=bool(row.get("enabled")),
-            host="smtp.126.com",
-            port=465,
+            host=str(row.get("host") or "").strip() or settings.smtp_host,
+            port=int(row.get("port") or settings.smtp_port),
             username=username,
             from_address=from_address,
             authorization_code=authorization_code,
-            use_ssl=True,
+            use_ssl=bool(row.get("use_ssl")),
             timeout_seconds=float(row.get("timeout_seconds") or settings.smtp_timeout_seconds),
             config_source="database",
         )
     username = settings.smtp_username
     return EffectiveSMTPConfig(
         enabled=settings.smtp_enabled,
-        host="smtp.126.com",
-        port=465,
+        host=settings.smtp_host,
+        port=settings.smtp_port,
         username=username,
         from_address=settings.smtp_from_address or username,
         authorization_code=settings.smtp_authorization_code,
-        use_ssl=True,
+        use_ssl=settings.smtp_use_ssl,
         timeout_seconds=settings.smtp_timeout_seconds,
         config_source="environment",
     )
@@ -529,14 +539,20 @@ def test_smtp_configuration(config: EffectiveSMTPConfig) -> dict[str, object]:
         raise EmailConfigurationError("邮件发送服务已停用")
     if not config.username or not config.from_address or not config.authorization_code:
         raise EmailConfigurationError("SMTP 未配置用户名、发件地址或授权码")
+    validate_smtp_server(config.host, config.port)
     validate_smtp_identity(config.username, config.from_address)
     try:
-        with smtplib.SMTP_SSL(
-            config.host,
-            config.port,
-            timeout=config.timeout_seconds,
-            context=_smtp_ssl_context(),
-        ) as smtp:
+        client = (
+            smtplib.SMTP_SSL(
+                config.host,
+                config.port,
+                timeout=config.timeout_seconds,
+                context=_smtp_ssl_context(),
+            )
+            if config.use_ssl
+            else smtplib.SMTP(config.host, config.port, timeout=config.timeout_seconds)
+        )
+        with client as smtp:
             smtp.ehlo()
             smtp.login(config.username, config.authorization_code)
     except Exception as exc:
@@ -576,15 +592,21 @@ def send_report_email(
         raise EmailConfigurationError("邮件发送服务已停用")
     if not config.username or not config.from_address or not config.authorization_code:
         raise EmailConfigurationError("SMTP 未配置用户名、发件地址或授权码")
+    validate_smtp_server(config.host, config.port)
     validate_smtp_identity(config.username, config.from_address)
     results: list[dict[str, object]] = []
     try:
-        with smtplib.SMTP_SSL(
-            config.host,
-            config.port,
-            timeout=config.timeout_seconds,
-            context=_smtp_ssl_context(),
-        ) as smtp:
+        client = (
+            smtplib.SMTP_SSL(
+                config.host,
+                config.port,
+                timeout=config.timeout_seconds,
+                context=_smtp_ssl_context(),
+            )
+            if config.use_ssl
+            else smtplib.SMTP(config.host, config.port, timeout=config.timeout_seconds)
+        )
+        with client as smtp:
             smtp.ehlo()
             smtp.login(config.username, config.authorization_code)
             for recipient in normalized:

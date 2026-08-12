@@ -2,7 +2,7 @@
 1,生产运行,自定义情报,Backend,qianfan.baidubce.com,HTTPS,443,POST /v2/ai_search/web_search 百度普通网页搜索,长期,backend/api/qianfan_search.py; backend/api/custom_intelligence_store.py,代码固定使用 web_search；密钥仅从服务端配置读取
 2,生产运行,LLM,Backend / Worker,api.deepseek.com,HTTPS,443,OpenAI-compatible chat.completions：招采 LLM、匹配复核、AI 分析、App Watch、自定义情报,按配置,backend/config/llm_api_config.json; backend/llm_table/llm_client.py,仅在受限配置选用该域名时放行；管理员 override 可替换目标
 3,生产运行,LLM（自建候选）,Backend / Worker,cscocrm.csco.com.cn,HTTPS,11443,OpenAI-compatible 自建 DeepSeek chat.completions,按配置,backend/config/llm_api_config.example.json; backend/llm_table/llm_client.py,示例/候选地址，不是当前 fallback；若在内网则不申请外网；IP、证书和连通性待确认
-4,生产运行,邮件,Backend,smtp.126.com,SMTP over TLS,465,SMTP_SSL 发送研究简报/情报日报,长期,backend/api/config.py; backend/api/intelligence_email.py,默认开启但仍需配置 126 邮箱、发件地址和客户端授权码；HTTP Proxy 不适用，需要直连或公司 SMTP Relay
+4,生产运行,邮件,Backend,smtp.csco.com.cn,SMTP over SSL / SMTP,465 / 25,发送研究简报/情报日报,长期,backend/api/config.py; backend/api/intelligence_email.py,默认关闭；推荐 465 + SSL，25 非 SSL 仅在服务器与网络策略明确允许时启用；管理员配置可替换目标，HTTP Proxy 不适用
 5,生产运行,招采,Backend / Scraper,www.cfcpn.com,HTTP,80,公告列表/详情 POST 及附件下载代理,长期,backend/python-http-www-cfcpn-com-jcw/cfcpn_scraper/models.py; client.py; parser.py,生产明确使用 HTTP 非加密访问
 6,生产运行,招采,Backend / Worker,www.cs.ecitic.com,HTTPS,443,中信证券公告列表和详情,长期,backend/broker_sources/sources.json; backend/broker_sources/collectors/citic.py,GET；常规重定向最终域名需上线前核对
 7,生产运行,招采,Backend / Worker,www.hx168.com.cn,HTTPS,443,华西证券 /servlet/json 列表 API及公告详情,长期,backend/broker_sources/sources.json; backend/broker_sources/collectors/huaxi.py,列表 POST、详情 GET；常规重定向最终域名需上线前核对
