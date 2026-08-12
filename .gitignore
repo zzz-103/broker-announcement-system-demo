@@ -5,6 +5,7 @@
 backend/config/llm_api_config.json
 backend/config/user_qualification.csv
 backend/config/broker_app_watch/settings.yaml
+docs/network-whitelist.csv
 runtime/
 
 # Generated crawler and task output

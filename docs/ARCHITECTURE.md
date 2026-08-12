@@ -107,7 +107,7 @@ backend/config/broker_app_watch/brokers.yaml
 - 邮件：管理员可配置 SMTP 主机、端口及 SSL；默认企业邮件为 `smtp.csco.com.cn:465` SSL，也支持明确选择非 SSL 传输
 - 运行库：FastAPI/Uvicorn、requests/httpx、BeautifulSoup、pandas/openpyxl、OpenAI SDK、APScheduler、ReportLab、RapidOCR；前端为 Next.js/React/Zustand/TanStack Table/ECharts
 
-具体联网目标见 [network-whitelist.csv](network-whitelist.csv)。它是部署网络清单，不代表所有来源在离线验收中均已真实联调。
+部署网络清单属于受控交接附件，不随源码版本控制。若交接包提供本地 `docs/network-whitelist.csv`，应结合目标环境逐项确认；该清单不代表所有来源在离线验收中均已真实联调。
 
 ## 稳定性与安全边界
 
