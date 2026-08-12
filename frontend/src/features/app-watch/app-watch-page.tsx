@@ -282,7 +282,12 @@ export default function AppUpdatesPage() {
         {/* View toggle & filter bar */}
         <div className="space-y-3">
           {/* View toggle */}
-          <div className="flex items-center gap-1 border-b border-[#E4EAF2]" role="tablist" aria-label="App 更新内容">
+          <div
+            className="sticky top-[68px] z-30 -mx-3 overflow-x-auto border-b border-[#E4EAF2] bg-[#F4F7FB]/95 px-3 py-1.5 backdrop-blur-sm sm:-mx-8 sm:px-8"
+            role="tablist"
+            aria-label="App 更新内容"
+          >
+            <div className="flex min-w-full w-max items-center gap-1.5">
             <button
               type="button"
               role="tab"
@@ -297,10 +302,10 @@ export default function AppUpdatesPage() {
                 setViewMode("details");
                 requestAnimationFrame(() => document.getElementById("app-updates-tab-details")?.focus());
               }}
-              className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none ${
+              className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-3.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none ${
                 viewMode === "overview"
-                  ? "border-[#2563EB] text-[#2563EB]"
-                  : "border-transparent text-[#667085] hover:text-[#344054]"
+                  ? "border-[#D7E5FF] bg-white text-[#2563EB]"
+                  : "border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
               }`}
             >
               <TrendingUp className="w-4 h-4" />
@@ -320,10 +325,10 @@ export default function AppUpdatesPage() {
                 setViewMode("overview");
                 requestAnimationFrame(() => document.getElementById("app-updates-tab-overview")?.focus());
               }}
-              className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors duration-150 motion-reduce:transition-none ${
+              className={`inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md border px-3.5 text-[13px] font-semibold transition-colors motion-reduce:transition-none ${
                 viewMode === "details"
-                  ? "border-[#2563EB] text-[#2563EB]"
-                  : "border-transparent text-[#667085] hover:text-[#344054]"
+                  ? "border-[#D7E5FF] bg-white text-[#2563EB]"
+                  : "border-transparent text-[#667085] hover:bg-white/75 hover:text-[#344054]"
               }`}
             >
               <List className="w-4 h-4" />
@@ -336,6 +341,7 @@ export default function AppUpdatesPage() {
                 {formatCount(filteredRecords.length)}
               </span>
             </button>
+            </div>
           </div>
 
           {/* Filter bar */}

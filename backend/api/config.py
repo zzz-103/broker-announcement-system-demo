@@ -83,6 +83,20 @@ class Settings:
         )
 
     @property
+    def dashboard_data_imported_zip_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("DASHBOARD_DATA_IMPORTED_ZIP_PATH"),
+            self.dashboard_data_export_dir / "imported-dashboard-data.zip",
+        )
+
+    @property
+    def dashboard_data_source_preference_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("DASHBOARD_DATA_SOURCE_PREFERENCE_PATH"),
+            self.dashboard_data_export_dir / "source-preference.json",
+        )
+
+    @property
     def merged_announcement_csv_path(self) -> Path:
         output_dir = resolve_project_path(
             os.getenv("MATCHING_MERGED_OUTPUT_DIR"),

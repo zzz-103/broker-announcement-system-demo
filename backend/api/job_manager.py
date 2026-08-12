@@ -810,6 +810,7 @@ class JobManager(JobCommandFactory):
             "publish": "推送",
             "ai_analysis": "AI 情报分析",
             "dashboard_export": "前端数据包导出",
+            "dashboard_import": "前端数据包导入",
             "app-watch": "券商App更新",
         }
         return labels.get(operation_type, operation_type)

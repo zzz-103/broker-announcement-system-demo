@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -323,6 +324,49 @@ def _safe_id(row: dict[str, str], project_key: str) -> str:
     return hashlib.sha1(f"{project_key}|{_text(row.get('publish_date'))}|{_text(row.get('announcement_stage'))}".encode("utf-8")).hexdigest()
 
 
+def _ensure_unique_tender_ids(records: list[dict[str, Any]]) -> None:
+    """Disambiguate source-hash collisions without depending on row order.
+
+    A unique legacy hash remains unchanged.  When a hash occurs more than
+    once, every row receives a digest of its normalized display record; truly
+    identical rows get deterministic ordinal suffixes.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault(_text(record.get("id")), []).append(record)
+
+    used: set[str] = {
+        base
+        for base, group in grouped.items()
+        if base and len(group) == 1
+    }
+    for base in sorted(grouped):
+        group = grouped[base]
+        if not base or len(group) <= 1:
+            continue
+        keyed: list[tuple[str, str, dict[str, Any]]] = []
+        for record in group:
+            display = {key: value for key, value in record.items() if key != "id"}
+            canonical = json.dumps(display, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            digest = hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:12]
+            keyed.append((canonical, digest, record))
+        keyed.sort(key=lambda item: (item[0], item[1]))
+        digest_counts = Counter(item[1] for item in keyed)
+        digest_ordinals: dict[str, int] = {}
+        for _, digest, record in keyed:
+            digest_ordinals[digest] = digest_ordinals.get(digest, 0) + 1
+            ordinal = digest_ordinals[digest]
+            candidate = f"{base}-{digest}"
+            if digest_counts[digest] > 1 and ordinal > 1:
+                candidate = f"{candidate}-{ordinal}"
+            while candidate in used:
+                ordinal += 1
+                digest_ordinals[digest] = ordinal
+                candidate = f"{base}-{digest}-{ordinal}"
+            record["id"] = candidate
+            used.add(candidate)
+
+
 def _read_csv(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         return []
@@ -379,6 +423,7 @@ def _build_tenders(path: Path) -> list[dict[str, Any]]:
         }
         record["search_text"] = "\n".join((project, broker, supplier, record["procurement_method"])).lower()
         records.append(record)
+    _ensure_unique_tender_ids(records)
     baseline = max((r["publish_timestamp"] for r in records if r["publish_timestamp"] is not None), default=None)
     for record in records:
         record["priority_score"], record["priority_reason"] = _score(record, baseline)
@@ -493,9 +538,12 @@ class PackageArtifact:
 class DashboardPackage:
     manifest: dict[str, Any]
     artifacts: dict[str, PackageArtifact]
+    manifest_body: bytes | None = None
 
     def body(self, key: str) -> bytes:
         if key == "manifest":
+            if self.manifest_body is not None:
+                return self.manifest_body
             return json.dumps(self.manifest, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
         return self.artifacts[key].body
 
@@ -516,8 +564,8 @@ class DashboardPackageBuilder:
     def export_manifest_path(self) -> Path:
         return settings.dashboard_data_export_dir / "manifest.json"
 
-    def build(self, force: bool = False) -> DashboardPackage:
-        paths = self.source_paths()
+    def build(self, force: bool = False, *, paths_override: dict[str, Path] | None = None) -> DashboardPackage:
+        paths = paths_override or self.source_paths()
         fingerprint = tuple(_fingerprint(paths[key]) for key in ("tender_projects", "app_updates", "ai_analysis"))
         with self._lock:
             if not force and self._package is not None and self._fingerprint == fingerprint:

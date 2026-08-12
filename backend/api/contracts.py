@@ -49,6 +49,12 @@ class DashboardViewRequest(BaseModel):
     source: str | None = None
 
 
+class DashboardDataSourceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: Literal["live", "imported"]
+
+
 class FeedbackCreateRequest(BaseModel):
     category: str
     broker_name: str = ""

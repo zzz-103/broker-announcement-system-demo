@@ -77,6 +77,10 @@ class RouteOwnershipTests(unittest.TestCase):
             ("GET", "/api/dashboard-data/manifest"),
             ("GET", "/api/dashboard-data/files/{dataset}"),
             ("GET", "/api/dashboard-data/export-status"),
+            ("GET", "/api/dashboard-data/source"),
+            ("POST", "/api/dashboard-data/source"),
+            ("POST", "/api/dashboard-data/import/preview"),
+            ("POST", "/api/dashboard-data/import"),
             ("POST", "/api/dashboard-data/export"),
             ("GET", "/api/dashboard-data/export.zip"),
             ("GET", "/api/jobs/{job_id}"),
@@ -125,6 +129,33 @@ class RouteOwnershipTests(unittest.TestCase):
             / "backend-client.ts"
         ).read_text(encoding="utf-8")
         self.assertNotIn("/api/auth/login", client_source)
+
+    def test_dashboard_source_and_import_require_admin_and_map_bad_zip(self) -> None:
+        for method, path in (
+            ("get", "/api/dashboard-data/source"),
+            ("post", "/api/dashboard-data/source"),
+            ("post", "/api/dashboard-data/import/preview"),
+            ("post", "/api/dashboard-data/import"),
+        ):
+            kwargs = {"json": {"source": "live"}} if path.endswith("/source") and method == "post" else {}
+            response = getattr(self.client, method)(path, **kwargs)
+            self.assertEqual(response.status_code, 401, path)
+
+        headers = self._admin_headers()
+        invalid = self.client.post(
+            "/api/dashboard-data/import/preview",
+            headers={**headers, "content-type": "application/zip"},
+            content=b"not-a-zip",
+        )
+        self.assertEqual(invalid.status_code, 422)
+        self.assertIn("ZIP", invalid.json()["detail"])
+
+        invalid_source = self.client.post(
+            "/api/dashboard-data/source",
+            headers=headers,
+            json={"source": "invalid"},
+        )
+        self.assertEqual(invalid_source.status_code, 422)
 
     def test_fastapi_serves_static_export_page_routes(self) -> None:
         if not main._frontend_dist.is_dir():
