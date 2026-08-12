@@ -64,6 +64,7 @@ def _crawl(args: argparse.Namespace) -> int:
     if args.broker:
         try:
             output = crawl_broker(catalog, args.broker)
+            output = Path(output.name)
         except Exception as exc:  # noqa: BLE001 - CLI converts one failure to exit code
             print(f"成功：0\n失败：1\n\n{args.broker} -> {type(exc).__name__}")
             return 1
@@ -73,6 +74,7 @@ def _crawl(args: argparse.Namespace) -> int:
     summary = crawl_all(catalog, progress=_progress)
     print(f"成功：{len(summary.success)}\n失败：{len(summary.failures)}")
     for broker_code, output in summary.success.items():
+        output = Path(output.name)
         print(f"\n{broker_code} -> {output.as_posix()}")
     for broker_code in summary.failures:
         print(f"\n{broker_code} -> 失败")
@@ -81,13 +83,11 @@ def _crawl(args: argparse.Namespace) -> int:
 
 def _resolve_path(value: str) -> Path:
     path = Path(value)
-    return path if path.is_absolute() else PROJECT_ROOT / path
+    resolved = path if path.is_absolute() else PROJECT_ROOT / path
+    return resolved.resolve()
 
 
 def _refresh(args: argparse.Namespace) -> int:
-    if not args.all:
-        print("refresh 目前只支持 --all。")
-        return 2
     try:
         client = OpenAICompatibleAppReleaseClient.from_config(_resolve_path(args.llm_config))
         catalog = load_broker_catalog()
@@ -142,6 +142,7 @@ def _process(args: argparse.Namespace) -> int:
         return 1
     print(f"App 更新处理完成：导出 {result.exported_rows} 条记录。")
     for path, message in sorted(result.failures.items()):
+        path = Path(path).name
         print(f"警告：{path} -> {message}")
     return 0
 
@@ -156,7 +157,12 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_group.add_argument("--broker", help="单个券商代码")
     crawl_group.add_argument("--all", action="store_true", help="全部已启用来源")
     refresh_parser = subparsers.add_parser("refresh", help="抓取并生成结构化 App 更新 CSV")
-    refresh_parser.add_argument("--all", action="store_true", help="刷新全部已启用来源")
+    refresh_parser.add_argument(
+        "--all",
+        action="store_true",
+        required=True,
+        help="刷新全部已启用来源",
+    )
     refresh_parser.add_argument("--llm-config", required=True, help="LLM JSON 配置路径")
     refresh_parser.add_argument(
         "--export-path",

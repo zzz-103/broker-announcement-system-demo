@@ -1,4 +1,4 @@
-import { requestBodyJson, requestJson } from "./core";
+import { requestBlob, requestBodyJson, requestJson } from "./core";
 import type {
   AppUpdateData,
   AiAnalysisResponse,
@@ -56,6 +56,15 @@ export function fetchDashboardAiAnalysis(token: string): Promise<DashboardAiAnal
 
 export function exportDashboardData(token: string, signal?: AbortSignal): Promise<DashboardExportResponse> {
   return requestJson<DashboardExportResponse>("/api/dashboard-data/export", { method: "POST", signal }, token);
+}
+
+export async function downloadDashboardData(
+  token: string,
+  downloadUrl: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const { blob } = await requestBlob(downloadUrl, { signal }, token);
+  return blob;
 }
 
 export function fetchDashboardSource(token: string, signal?: AbortSignal): Promise<DashboardDataSourceResponse> {

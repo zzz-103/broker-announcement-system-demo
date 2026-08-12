@@ -185,6 +185,15 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
       fetchAssistantExecutions(token, 1, EXECUTIONS_PAGE_SIZE, controller.signal),
     ]).then((results) => {
       if (controller.signal.aborted) return;
+      const unauthorized = results.find(
+        (result) => result.status === "rejected"
+          && result.reason instanceof BackendApiError
+          && result.reason.status === 401,
+      );
+      if (unauthorized?.status === "rejected") {
+        handleError(unauthorized.reason, "登录已失效，请重新登录");
+        return;
+      }
       const options = results[0];
       if (options.status === "fulfilled") setServiceAvailable(options.value.service_status === "enabled");
       else setServiceAvailable(true);
@@ -199,7 +208,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
       if (results.some((result) => result.status === "rejected" && !isAbortError(result.reason))) setNotice("部分助手数据暂时不可用，可以稍后刷新重试。");
     }).finally(() => { if (!controller.signal.aborted) setOptionsLoading(false); });
     return () => controller.abort();
-  }, [token]);
+  }, [handleError, token]);
 
   useEffect(() => {
     if (!token || activeExecutionId === null) return;
@@ -213,12 +222,19 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
         if (isActive(execution)) timer = setTimeout(poll, 2000);
         else { setActiveExecutionId(null); setNotice(execution.status === "succeeded" ? "报告已生成。" : execution.error_message || "本次生成已结束。"); void loadExecutions(1); }
       } catch (error) {
-        if (!disposed) { setPageError(readableError(error, "报告状态暂时无法更新；系统会继续重试。")); timer = setTimeout(poll, 5000); }
+        if (!disposed) {
+          if (error instanceof BackendApiError && error.status === 401) {
+            handleError(error, "登录已失效，请重新登录");
+            return;
+          }
+          setPageError(readableError(error, "报告状态暂时无法更新；系统会继续重试。"));
+          timer = setTimeout(poll, 5000);
+        }
       }
     };
     timer = setTimeout(poll, 1200);
     return () => { disposed = true; if (timer) clearTimeout(timer); };
-  }, [activeExecutionId, loadExecutions, token]);
+  }, [activeExecutionId, handleError, loadExecutions, token]);
 
   const startExecution = useCallback((execution: IntelligenceAssistantExecution) => { setExecutions((current) => mergeExecution(current, execution)); setActiveExecutionId(execution.id); setWorkspaceExecution(execution); setSelectedExecution(execution); setForm(formFromExecution(execution)); setActiveTab("generate"); setWorkspaceMode(true); setPageError(""); }, []);
 

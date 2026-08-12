@@ -600,6 +600,10 @@ export function useJobRunner({
     try {
       await cancelJob(jobId, token);
     } catch (error) {
+      if (error instanceof BackendApiError && error.status === 401) {
+        handleUnauthorized();
+        return;
+      }
       appendLog(
         active.cardId,
         "system",
@@ -609,11 +613,12 @@ export function useJobRunner({
             ? error.message
             : "停止任务失败。",
       );
+      return;
     }
     const summary = `${active.label}已手动停止。`;
     appendLog(active.cardId, "system", summary);
     finalizeTask(active.id, "cancelled", summary);
-  }, [appendLog, finalizeTask, token]);
+  }, [appendLog, finalizeTask, handleUnauthorized, token]);
 
   const stopLocalMonitoring = useCallback(() => {
     activeControllerRef.current?.abort();

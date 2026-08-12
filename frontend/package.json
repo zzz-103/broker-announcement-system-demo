@@ -8,8 +8,8 @@
     "preinstall": "only-allow pnpm",
     "lint": "eslint",
     "lint:build": "eslint . --quiet",
-    "ts-check": "tsc -p tsconfig.json",
-    "validate": "pnpm run --parallel '/^(ts-check|lint:build)$/'"
+    "ts-check": "next typegen && tsc -p tsconfig.json",
+    "validate": "pnpm run ts-check && pnpm run lint:build"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -39,6 +39,7 @@
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
+    "node": ">=20.9.0",
     "pnpm": ">=9.0.0"
   }
 }

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
+import tempfile
 import threading
 import time
 import unittest
-import os
+from pathlib import Path
 from unittest.mock import patch
 
 from backend.api.job_manager import JobManager
@@ -14,11 +16,33 @@ class DualScraperJobTests(unittest.TestCase):
     def test_legacy_result_input_env_is_migrated_to_selected_directory(self) -> None:
         manager = JobManager()
         legacy_path = str(PROJECT_ROOT / "backend" / "python-http-www-cfcpn-com-jcw" / "output" / "result" / "notices")
-        with (
-            patch.dict(os.environ, {"LLM_RESULT_INPUT_DIR": legacy_path}),
-            patch("backend.api.job_commands.llm_config_available", return_value=True),
-        ):
-            command, _working_dir, _env = manager._build_llm_command(notice_type="result")
+        selected_path = (
+            PROJECT_ROOT
+            / "backend"
+            / "python-http-www-cfcpn-com-jcw"
+            / "output"
+            / "selected"
+            / "result"
+            / "notices"
+        ).resolve()
+        original_exists = Path.exists
+
+        def exists_with_selected_input(path: Path) -> bool:
+            return path.resolve() == selected_path or original_exists(path)
+
+        with tempfile.TemporaryDirectory() as output_dir:
+            with (
+                patch.dict(
+                    os.environ,
+                    {
+                        "LLM_RESULT_INPUT_DIR": legacy_path,
+                        "LLM_RESULT_OUTPUT_DIR": output_dir,
+                    },
+                ),
+                patch("backend.api.job_commands.llm_config_available", return_value=True),
+                patch.object(Path, "exists", autospec=True, side_effect=exists_with_selected_input),
+            ):
+                command, _working_dir, _env = manager._build_llm_command(notice_type="result")
         input_index = command.index("--input-dir") + 1
         self.assertTrue(
             command[input_index]

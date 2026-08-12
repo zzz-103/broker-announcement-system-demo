@@ -39,12 +39,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   BackendApiError,
-  buildApiUrl,
+  downloadDashboardData,
   exportDashboardData,
   fetchDashboardSource,
   importDashboardData,
   previewDashboardImport,
-  readError,
   setDashboardSource,
   verifyAdminPassword,
   type DashboardDataSource,
@@ -307,9 +306,7 @@ function DashboardDataManager({
     setError(null);
     try {
       const result = await exportDashboardData(token);
-      const response = await fetch(buildApiUrl(result.download_url), { headers: { Authorization: `Bearer ${token}` } });
-      if (!response.ok) throw new BackendApiError(await readError(response), response.status);
-      const blob = await response.blob();
+      const blob = await downloadDashboardData(token, result.download_url);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;

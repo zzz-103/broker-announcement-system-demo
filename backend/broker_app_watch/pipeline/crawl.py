@@ -160,7 +160,7 @@ def crawl_all(
                     f"[App Watch] 采集进度 {index}/{total}：{source.broker_code} 完成"
                 )
         except Exception as exc:  # noqa: BLE001 - one source must not stop --all
-            failures[source.broker_code] = str(exc)
+            failures[source.broker_code] = type(exc).__name__
             LOGGER.error("处理 %s 失败：%s", source.broker_code, type(exc).__name__)
             if progress:
                 progress(

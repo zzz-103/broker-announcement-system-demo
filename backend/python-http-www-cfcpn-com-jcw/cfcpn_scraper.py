@@ -31,6 +31,7 @@ from cfcpn_scraper.models import CfcpnError
 
 
 LOGGER = logging.getLogger("cfcpn_scraper")
+SCRIPT_DIR = Path(__file__).resolve().parent
 FRONT_MATTER_RE = re.compile(r"\A---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FRONT_MATTER_LINE_RE = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*):\s*(?P<value>.*)$")
 SLEEP_FUNC = time.sleep
@@ -41,6 +42,13 @@ NOTICE_TYPE_CONFIGS = {
     "procurement": {"column": "cggg", "list_notice_type": "1", "label": "采购公告"},
     "result": {"column": "jggg", "list_notice_type": "4", "label": "结果公告"},
 }
+
+
+def display_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(SCRIPT_DIR).as_posix()
+    except ValueError:
+        return path.name
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -66,6 +74,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--end-page must be greater than or equal to --start-page")
 
     output_dir = Path(args.output_dir)
+    if not output_dir.is_absolute():
+        output_dir = SCRIPT_DIR / output_dir
+    output_dir = output_dir.resolve()
     runtime_paths = resolve_runtime_paths(output_dir, args.notice_type, args.checkpoint_file)
     notices_dir = runtime_paths["notices_dir"]
     index_path = runtime_paths["index_path"]
@@ -143,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     stop_reason = ""
     circuit_breaker = False
+    interrupted = False
     consecutive_known_pages = 0
     throttle = Throttle(args)
     forbidden_state = {"consecutive": 0}
@@ -198,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
                     break
                 stats["list_pages"] += 1
             except Exception as exc:
-                LOGGER.error("列表第 %s 页请求失败：%s", page_no, exc)
+                LOGGER.error("列表第 %s 页请求失败：%s", page_no, type(exc).__name__)
                 append_failure(
                     failures_path,
                     {
@@ -361,12 +373,13 @@ def main(argv: list[str] | None = None) -> int:
                 emit_progress("completed", 100, "已检查所有列表，没有新增的公告需要爬取。", current=0, total=0)
     except KeyboardInterrupt:
         stop_reason = "用户中断"
+        interrupted = True
         LOGGER.warning("用户中断，正在重建索引")
 
     if stats["saved"] > 0 or not index_path.exists():
         rebuild_index(index_records, index_path)
     else:
-        LOGGER.info("没有新增公告，保留现有索引文件：%s", index_path)
+        LOGGER.info("没有新增公告，保留现有索引文件：%s", display_path(index_path))
     if not stop_reason:
         stop_reason = "已到最后一页"
     write_checkpoint(
@@ -385,6 +398,8 @@ def main(argv: list[str] | None = None) -> int:
         },
     )
     print_stats(stats, output_dir, index_path, checkpoint_path, args.update, stop_reason, circuit_breaker)
+    if interrupted:
+        return 130
     return 0 if stats["failed"] == 0 else 2
 
 
@@ -795,7 +810,7 @@ def download_and_save_item(
             forbidden_state["consecutive"],
         )
     except Exception as exc:
-        LOGGER.error("详情请求失败：%s %s %s", notice_id, title, exc)
+        LOGGER.error("详情请求失败：%s %s %s", notice_id, title, type(exc).__name__)
         stats["failed"] += 1
         append_failure(
             failures_path,
@@ -817,7 +832,7 @@ def download_and_save_item(
             column=args.column,
         )
     except Exception as exc:
-        LOGGER.error("字段解析失败：%s %s %s", notice_id, title, exc)
+        LOGGER.error("字段解析失败：%s %s %s", notice_id, title, type(exc).__name__)
         stats["failed"] += 1
         append_failure(
             failures_path,
@@ -846,9 +861,9 @@ def download_and_save_item(
             "path": path,
         }
         stats["saved"] += 1
-        LOGGER.info("已保存：%s", path)
+        LOGGER.info("已保存：%s", display_path(path))
     except Exception as exc:
-        LOGGER.error("写入失败：%s %s %s", notice_id, title, exc)
+        LOGGER.error("写入失败：%s %s %s", notice_id, title, type(exc).__name__)
         stats["failed"] += 1
         append_failure(
             failures_path,
@@ -909,12 +924,12 @@ def parse_publish_date(value: Any) -> date | None:
 
 def load_checkpoint(path: Path) -> dict[str, Any]:
     if not path.exists():
-        LOGGER.info("未找到 checkpoint：%s", path)
+        LOGGER.info("未找到 checkpoint：%s", display_path(path))
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        LOGGER.warning("checkpoint 无法读取：%s %s", path, exc)
+        LOGGER.warning("checkpoint 无法读取：%s %s", display_path(path), type(exc).__name__)
         return {}
 
 
@@ -1026,9 +1041,9 @@ def print_stats(
     print(f"403 数量: {stats['forbidden']}")
     print(f"是否触发熔断: {'是' if circuit_breaker else '否'}")
     print(f"停止原因: {stop_reason}")
-    print(f"checkpoint 路径: {checkpoint_path}")
-    print(f"输出目录: {output_dir}")
-    print(f"索引文件路径: {index_path}")
+    print(f"checkpoint 路径: {display_path(checkpoint_path)}")
+    print(f"输出目录: {display_path(output_dir)}")
+    print(f"索引文件路径: {display_path(index_path)}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 序号,分类,所属模块,源端,目标域名,协议,目标端口,用途,开放类型,配置来源,备注
-1,生产运行,自定义情报,Backend,qianfan.baidubce.com,HTTPS,443,POST /v2/ai_search/web_search 百度普通网页搜索,长期,backend/api/qianfan_search.py; backend/api/custom_intelligence_store.py,代码固定使用 web_search；.env.example 中的 Endpoint 字段为旧示例且未被实际代码读取
-2,生产运行,LLM,Backend / Worker,api.deepseek.com,HTTPS,443,OpenAI-compatible chat.completions：招采 LLM、匹配复核、AI 分析、App Watch、自定义情报,按配置,backend/config/llm_api_config.json; backend/llm_table/llm_client.py,当前工作区 fallback Base URL；生产可由 override 替换
+1,生产运行,自定义情报,Backend,qianfan.baidubce.com,HTTPS,443,POST /v2/ai_search/web_search 百度普通网页搜索,长期,backend/api/qianfan_search.py; backend/api/custom_intelligence_store.py,代码固定使用 web_search；密钥仅从服务端配置读取
+2,生产运行,LLM,Backend / Worker,api.deepseek.com,HTTPS,443,OpenAI-compatible chat.completions：招采 LLM、匹配复核、AI 分析、App Watch、自定义情报,按配置,backend/config/llm_api_config.json; backend/llm_table/llm_client.py,仅在受限配置选用该域名时放行；管理员 override 可替换目标
 3,生产运行,LLM（自建候选）,Backend / Worker,cscocrm.csco.com.cn,HTTPS,11443,OpenAI-compatible 自建 DeepSeek chat.completions,按配置,backend/config/llm_api_config.example.json; backend/llm_table/llm_client.py,示例/候选地址，不是当前 fallback；若在内网则不申请外网；IP、证书和连通性待确认
 4,生产运行,邮件,Backend,smtp.126.com,SMTP over TLS,465,SMTP_SSL 发送研究简报/情报日报,长期,backend/api/config.py; backend/api/intelligence_email.py,默认开启但仍需配置 126 邮箱、发件地址和客户端授权码；HTTP Proxy 不适用，需要直连或公司 SMTP Relay
 5,生产运行,招采,Backend / Scraper,www.cfcpn.com,HTTP,80,公告列表/详情 POST 及附件下载代理,长期,backend/python-http-www-cfcpn-com-jcw/cfcpn_scraper/models.py; client.py; parser.py,生产明确使用 HTTP 非加密访问
@@ -25,10 +25,9 @@
 24,生产运行,App更新动态资源,Backend / App Watch,响应中的图片 CDN FQDN（待实测）,HTTPS,443,平安图片 OCR 图片下载,按功能启用,backend/broker_app_watch/parsers/broker_specific/pingan_image_ocr.py; backend/broker_app_watch/collectors/http_collector.py,从 API 图片列表动态取得并 follow_redirects；pazq 默认禁用
 25,生产运行,App更新动态资源,Backend / App Watch,各来源 301/302 最终 FQDN（待实测）,HTTPS/HTTP,按最终 URL,App Watch 来源请求重定向,按功能启用,backend/broker_app_watch/collectors/http_collector.py,所有 App Watch HTTP 请求 follow_redirects=True；需用一次低频采集补齐实际主机
 26,部署升级,源码发布,Release host,github.com,HTTPS,443,git fetch origin release branch,临时,scripts/deploy-release.ps1; git remote,当前仓库 origin 指向 GitHub；如改用内网 Git 镜像则删除此项并替换为镜像 FQDN
-27,部署升级,前端依赖,Build host,registry.npmmirror.com,HTTPS,443,pnpm fetch/install 前端依赖,临时,frontend/.npmrc,本地/显式 pnpm 使用；Dockerfile 的 pnpm fetch 在 COPY frontend/ 之前，未必使用此 .npmrc
-28,部署升级,前端依赖,Build host,默认 npm registry（FQDN 待确认）,HTTPS,443,干净 frontend.Dockerfile 构建中的 pnpm fetch,临时,frontend.Dockerfile,构建前未复制 .npmrc；需以构建日志/环境确认，不直接按此占用固定白名单
-29,部署升级,后端依赖,Build host,pypi.org,HTTPS,443,pip 默认包索引（若未配置内部镜像）,临时,backend.Dockerfile; requirements.txt,仓库未固定 pip index；需以构建机 pip.conf/环境为准
-30,部署升级,后端依赖,Build host,files.pythonhosted.org,HTTPS,443,pip wheel 下载分发域名（若使用公共 PyPI）,临时,backend.Dockerfile; requirements.txt,仓库未固定；若内部镜像不返回此域名则不申请
-31,部署升级,Docker镜像,Build host,Docker daemon 配置的 Registry/Mirror（待确认）,HTTPS,443,拉取 python/node/nginx 基础镜像,临时,backend.Dockerfile; frontend.Dockerfile; deploy/docker-compose.example.yml,镜像名未限定 registry；以 Docker daemon 实际 mirror 为准，不直接申请全 Docker Hub
-32,部署升级,Linux软件源,Build host,基础镜像内 APT 源 FQDN（待确认）,HTTP/HTTPS,80/443,backend.Dockerfile 的 apt-get update/install,临时,backend.Dockerfile,源地址来自 python:3.11-slim 镜像内部配置；建议在联网构建机完成
-33,开发测试,本地开发,Developer workstation,localhost / 127.0.0.1,HTTP,3000/8000,Next.js 开发前端与本地 FastAPI,不申请,frontend/.env.example; .env.example,仅回环地址；不属于外网白名单
+27,部署升级,前端依赖,Build host,registry.npmmirror.com,HTTPS,443,pnpm fetch/install 前端依赖,临时,frontend/.npmrc; frontend.Dockerfile,本地安装和容器构建均在 fetch 前读取该 registry 配置
+28,部署升级,后端依赖,Build host,pypi.org,HTTPS,443,pip 默认包索引（若未配置内部镜像）,临时,backend.Dockerfile; requirements.txt,仓库未固定 pip index；需以构建机 pip.conf/环境为准
+29,部署升级,后端依赖,Build host,files.pythonhosted.org,HTTPS,443,pip wheel 下载分发域名（若使用公共 PyPI）,临时,backend.Dockerfile; requirements.txt,仓库未固定；若内部镜像不返回此域名则不申请
+30,部署升级,Docker镜像,Build host,Docker daemon 配置的 Registry/Mirror（待确认）,HTTPS,443,拉取 python/node/nginx 基础镜像,临时,backend.Dockerfile; frontend.Dockerfile; deploy/docker-compose.example.yml,镜像名未限定 registry；以 Docker daemon 实际 mirror 为准，不直接申请全 Docker Hub
+31,部署升级,Linux软件源,Build host,基础镜像内 APT 源 FQDN（待确认）,HTTP/HTTPS,80/443,backend.Dockerfile 的 apt-get update/install,临时,backend.Dockerfile,源地址来自 python:3.11-slim 镜像内部配置；建议在联网构建机完成
+32,开发测试,本地开发,Developer workstation,localhost / 127.0.0.1,HTTP,3000/8000,Next.js 开发前端与本地 FastAPI,不申请,frontend/.env.example; .env.example,仅回环地址；不属于外网白名单

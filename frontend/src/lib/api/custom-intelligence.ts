@@ -1,4 +1,4 @@
-import { BackendApiError, buildApiUrl, readError, requestJson } from "./core";
+import { requestBlob, requestJson } from "./core";
 import type {
   CustomIntelligenceOptionsResponse,
   IntelligenceSearchConfigInput,
@@ -91,23 +91,13 @@ export async function downloadCustomIntelligenceReportPdf(
 ): Promise<{ blob: Blob; filename: string | null }> {
   const templateStyle = typeof templateStyleOrSignal === "string" ? templateStyleOrSignal : "research";
   const requestSignal = typeof templateStyleOrSignal === "string" ? signal : templateStyleOrSignal;
-  let response: Response;
-  try {
-    const params = new URLSearchParams({ template_style: templateStyle });
-    response = await fetch(
-      buildApiUrl(`/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/report/pdf?${params.toString()}`),
-      {
-        cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
-        signal: requestSignal,
-      },
-    );
-  } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") throw error;
-    throw new BackendApiError("无法访问后端 API", 0);
-  }
-  if (!response.ok) throw new BackendApiError(await readError(response), response.status);
-  const disposition = response.headers.get("Content-Disposition") || "";
+  const params = new URLSearchParams({ template_style: templateStyle });
+  const { blob, headers } = await requestBlob(
+    `/api/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/report/pdf?${params.toString()}`,
+    { signal: requestSignal },
+    token,
+  );
+  const disposition = headers.get("Content-Disposition") || "";
   let filename: string | null = null;
   const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
   if (utf8Match) {
@@ -117,7 +107,7 @@ export async function downloadCustomIntelligenceReportPdf(
       filename = null;
     }
   }
-  return { blob: await response.blob(), filename };
+  return { blob, filename };
 }
 
 const assistantPath = (suffix = "") => `/api/custom-intelligence${suffix}`;

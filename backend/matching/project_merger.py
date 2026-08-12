@@ -89,6 +89,13 @@ class InputError(ValueError):
     """Raised when the merger input cannot support a conservative merge."""
 
 
+def display_path(path: Path) -> str:
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return path.name
+
+
 def normalize_text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
@@ -98,24 +105,25 @@ def notice_id(row: dict[str, str]) -> str:
 
 
 def read_csv(path: Path, label: str) -> tuple[list[str], list[dict[str, str]]]:
+    visible_path = display_path(path)
     if not path.is_file():
-        raise InputError(f"{label} CSV 不存在: {path}")
+        raise InputError(f"{label} CSV 不存在: {visible_path}")
     try:
         with path.open("r", encoding="utf-8-sig", newline="") as file:
             reader = csv.DictReader(file)
             if reader.fieldnames is None:
-                raise InputError(f"{label} CSV 缺少表头: {path}")
+                raise InputError(f"{label} CSV 缺少表头: {visible_path}")
             fieldnames = [normalize_text(field) for field in reader.fieldnames]
             if not fieldnames or not any(fieldnames):
-                raise InputError(f"{label} CSV 缺少表头: {path}")
+                raise InputError(f"{label} CSV 缺少表头: {visible_path}")
             rows = [
                 {normalize_text(key): normalize_text(value) for key, value in row.items()}
                 for row in reader
             ]
     except OSError as exc:
-        raise InputError(f"无法读取 {label} CSV: {path} ({exc})") from exc
+        raise InputError(f"无法读取 {label} CSV: {visible_path} ({type(exc).__name__})") from exc
     if not rows:
-        raise InputError(f"{label} CSV 只有表头或没有记录: {path}")
+        raise InputError(f"{label} CSV 只有表头或没有记录: {visible_path}")
     return fieldnames, rows
 
 

@@ -497,7 +497,7 @@ def call_pass(
         decision = sanitize_decision(raw, candidate_ids)
         return PassResult(pass_name, True, decision, raw, "")
     except Exception as exc:
-        return PassResult(pass_name, False, None, None, f"{exc.__class__.__name__}: {exc}")
+        return PassResult(pass_name, False, None, None, exc.__class__.__name__)
 
 
 def choose_final_status(
@@ -1185,6 +1185,26 @@ def load_client(llm_config_path: Path) -> MatchingLLMClient:
     return MatchingLLMClient(config)
 
 
+def positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return number
+
+
+def non_negative_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return number
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="LLM 双重复核采购公告与结果公告匹配。")
     parser.add_argument("--result-csv", type=Path, default=DEFAULT_RESULT_CSV)
@@ -1203,9 +1223,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=Path,
         default=DEFAULT_RESULT_MARKDOWN_DIR,
     )
-    parser.add_argument("--max-candidates", type=int, default=DEFAULT_MAX_CANDIDATES)
-    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-    parser.add_argument("--max-files", type=int, default=None)
+    parser.add_argument("--max-candidates", type=positive_int, default=DEFAULT_MAX_CANDIDATES)
+    parser.add_argument("--workers", type=positive_int, default=DEFAULT_WORKERS)
+    parser.add_argument("--max-files", type=non_negative_int, default=None)
     parser.add_argument("--full-refresh", action="store_true")
     return parser
 
@@ -1215,8 +1235,8 @@ def main() -> int:
     args = parser.parse_args()
     paths = [args.result_csv, args.procurement_csv, args.links_csv, args.candidate_scores_csv, args.llm_config]
     for path in paths:
-        if not path.exists():
-            parser.error(f"文件不存在: {path}")
+        if not path.is_file():
+            parser.error(f"文件不存在: {path.name}")
     try:
         client = load_client(args.llm_config.resolve())
         summary = run_llm_matching(
@@ -1233,10 +1253,10 @@ def main() -> int:
             procurement_markdown_dir=args.procurement_markdown_dir.resolve(),
             result_markdown_dir=args.result_markdown_dir.resolve(),
         )
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         parser.error(str(exc))
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0
+    return 1 if int(summary.get("failed_count") or 0) > 0 else 0
 
 
 if __name__ == "__main__":

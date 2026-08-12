@@ -1,903 +1,96 @@
-# AGENTS.md
+# Codex / AI Agent 项目入口
 
-## 1. 项目目标
+## 项目与原则
 
-这是一个公司内部使用的券商招采智能分析系统。
+这是公司内部使用的券商招采智能分析系统。正式链路由 Next.js 静态前端、单 worker FastAPI、Python 采集/LLM/匹配任务，以及独立 APScheduler 进程组成。
 
-核心目标：管理员登录前端后，可运行爬虫、查看实时日志、运行 LLM 结构化处理、刷新看板数据，并生成与展示 AI 情报分析。
+修改优先级：尽快可用、职责清晰、改动小、保持业务口径稳定。以真实代码、类型、`argparse` 和 OpenAPI 为准；文档冲突时先修正文档。不要进行无关重构，不要引入 Redis、Celery、消息队列、微服务、WebSocket 或第二套认证/任务/LLM 配置。
 
-项目优先级：
+## 开始工作前
 
-1. 尽快可用。
-2. 前后端职责清晰。
-3. 改动范围小。
-4. 不引入不必要的基础设施。
-5. 保持现有爬虫、LLM 和看板业务逻辑稳定。
+1. 阅读本文件和任务涉及的真实代码、调用方、测试与配置。
+2. 删除前检查 import、脚本、Compose、发布、CI、文档和低频运维引用。
+3. 保留用户已有改动与运行数据，不格式化无关文件。
+4. 真实爬虫、搜索、LLM 和邮件调用需要任务明确授权与凭据；未执行时写“未验证”。
 
----
-
-## 2. Codex 工作原则
-
-开始工作前必须：
-
-1. 阅读本文件。
-2. 阅读与当前任务相关的真实代码。
-3. 以实际代码、`argparse`、类型定义和接口实现为准。
-4. 当本文、`intro.md` 和代码不一致时，以代码为准。
-5. 只完成当前明确要求的阶段，不主动扩展范围。
-6. 优先复用已有模块，避免复制近似实现。
-7. 不进行无关重构。
-8. 不为了“更先进”引入复杂架构。
-
-本项目为内部单机优先的首版系统。除非任务明确要求，不使用 Redis、Celery、BullMQ、Kafka、RabbitMQ、数据库任务表、WebSocket、微服务、Kubernetes 或分布式锁。
-
----
-
-## 3. 项目路径
-
-本地常用路径：
+## 目录与边界
 
 ```text
-D:\broker-announcement-system-demo
+frontend/                         唯一正式前端；静态导出，不承载后端逻辑
+backend/api/                      FastAPI、认证、任务/SSE、数据包、管理与情报 API
+backend/python-http-*/            金采网公告采集
+backend/broker_sources/           券商官网来源采集与来源选择
+backend/llm_table/                公告 LLM 结构化
+backend/matching/                 采购/结果公告匹配、复核和合并
+backend/broker_app_watch/         App 更新采集、解析、LLM、存储与 CLI
+backend/config/                   非敏感示例配置；真实配置不提交
+backend/data/                     运行数据；Git 只保留必要目录占位
+shared/dashboard-data/            前后端共享数据包 TypeScript 契约
+scripts/                          长期发布与无界面导出入口
+deploy/                           Windows 生产 Compose 与 Nginx 模板
+docs/ARCHITECTURE.md              当前真实架构、模块和数据流
+docs/OPERATIONS.md                从零安装、运行、导入、发布和排障
 ```
 
-代码中禁止写死该绝对路径。代码必须通过环境变量、`pathlib.Path`、`path.resolve` 或 `path.join` 处理路径。文档和本地启动示例可以使用该路径。
+前端只能通过 `frontend/src/lib/api/` 访问 FastAPI，不得执行 Python、读取后端文件、持有 LLM Key 或调用外部 LLM。后端通过固定可信命令启动子进程，不接受浏览器传入脚本路径或任意 CLI 参数。
 
----
+## 关键运行约束
 
-## 4. 当前架构
+- FastAPI 必须单 worker：Session、任务状态、互斥锁和日志在进程内。
+- 子进程使用无缓冲 UTF-8 输出；退出码决定成败，stdout/stderr 都收集，结束必须释放锁。
+- SSE 使用带 Bearer Header 的 `fetch`；首包 2KB 注释 padding，前端维护跨 chunk buffer，10 秒无业务事件后轮询兜底。
+- Token 仅在前端内存和 `sessionStorage`；禁止 `localStorage`。401 清会话，409 显示冲突任务。
+- 正式数据和缓存采用同目录临时文件 + `os.replace` 原子替换；失败不得破坏上一版。
+- 完整 Pipeline 顺序执行采集、双公告结构化、匹配复核、合并、安全发布和可选 AI 分析。除非任务明确要求，不修改匹配规则、CSV 字段或 Prompt。
+- 看板读取 `/api/dashboard-data/*` 当前源。数据包包含 Manifest、5 个标准数据集，并可按 Manifest 携带 `matching_baseline.json`；导入不覆盖用户、审计、情报/邮件数据库或任何凭据。
+- 自定义情报默认复用 `USER_DB_PATH`；百度、共享 LLM、SMTP 凭据只在服务端环境或受限运行配置中保存。
+- 前端保持 Next.js 静态导出；不得新增需要常驻 Node.js 的 Route Handler、Server Action 或 cookies。
 
-```text
- Next.js 构建阶段
-   ↓ 静态导出 frontend/out
- 浏览器
-   ↓ 同源 HTTP / SSE
- FastAPI 后端（单 worker，托管静态前端与 API）
-   ↓ subprocess
- Python 爬虫 / LLM 结构化 / 自动化流水线
-   ↓
- backend/data/*.csv / *.json
+## 配置与数据
 
- 独立调度器进程 (APScheduler)
-   ↓ HTTP (X-Scheduler-Token)
- FastAPI 后端
-```
+配置入口是根 `.env`、`backend/config/llm_api_config.json` 和管理员“AI 技术配置”。仓库只提交 `.env.example`、`llm_api_config.example.json`、资格名单示例及 App Watch 非敏感配置。
 
-### Next.js 静态前端负责
+重要运行路径：
 
-- 登录界面
-- 管理员操作界面
-- 调用 FastAPI
-- 读取 SSE
-- 展示任务状态和日志
-- 请求看板数据
-- 提供采购看板、App 更新与 AI 自定义情报中心页面
-- 展示图表、表格和 AI 分析结果
-- 仅在开发和构建阶段运行 Node.js；生产由 FastAPI 托管静态产物
+- 正式招采：`backend/data/announcement_table.csv`
+- App 更新：`backend/data/broker_app_watch/exports/app_releases.csv`
+- AI 摘要：`backend/data/ai-analysis.json`
+- 数据包与源状态：`DASHBOARD_DATA_EXPORT_DIR`
+- 用户/情报：`USER_DB_PATH`
+- 审计：`AUDIT_DB_PATH`
+- LLM 中间数据：`backend/data/staging/`
 
-### FastAPI 后端负责
+禁止提交或输出 `.env`、真实 API Key、密码、Token、Cookie、资格名单、SQLite、运行 CSV/JSON、日志、缓存、构建产物或开发者绝对路径。
 
-- 管理员认证
-- Bearer Token 校验
-- 启动 Python 子进程 (包括 Scraper, LLM) 及管理流水线 (Pipeline)
-- 任务状态管理
-- SSE 日志推送与取消任务控制
-- 任务与操作互斥
-- 结构化数据接口
-- AI 情报分析接口与缓存读写
-- 验证定时调度器的 `X-Scheduler-Token` 安全头并触发内部任务
-- 从 `frontend/out` 提供生产静态页面与长期缓存的哈希资源
+## API 与扩展入口
 
-### 独立调度器进程负责
+接口以 `backend/api/routes/` 和运行时 `/docs` 为准。领域路由包括账号/审计、数据集、任务/SSE、AI 分析、dashboard-data 导入导出与源选择、自定义情报及其管理员配置。
 
-- 定时触发：基于轻量级 APScheduler 进程，读取 CRON 表达式触发流水线，并可选触发 App Watch
-- 重试机制：支持网络瞬断等异常时的重试策略
-- 认证鉴权：持有并发送 `X-Scheduler-Token` 请求后端
+新增数据源时：在独立后端模块完成采集和原子输出，在 `JobCommandFactory` 注册固定命令，在集中配置声明路径，再通过领域 API 和 `frontend/src/lib/api/` 接入。新增页面放入 `frontend/src/features/<name>/`，保持静态导出兼容。
 
-### Python 业务脚本负责
+## 测试与验收
 
-- 爬虫抓取
-- Markdown 公告生成
-- LLM 结构化提取
-- CSV、JSONL、XLSX 生成
+测试应少而清晰，保护认证、任务互斥/取消、发布保护、数据包 Export=Import、公告匹配、采集解析、App Watch 和自定义情报持久化。测试产物写临时目录，不调用真实外部服务。
 
-前端不得直接执行 Python、了解 Python 解释器路径、构造 Python 命令、读取后端文件系统、获取 LLM API Key 或直接调用外部 LLM。
-
----
-
-## 5. 重要目录
-
-```text
-frontend/
-├── src/app/
-│   ├── page.tsx              # 主看板页面（采购看板）
-│   ├── app-updates/page.tsx  # App 更新页面
-│   ├── custom-intelligence/page.tsx # AI 自定义情报中心页面
-│   ├── globals.css           # 全局样式
-│   └── layout.tsx            # 全局布局
-├── src/components/
-│   ├── admin-task-progress.tsx / admin-task-log-dialog.tsx # 任务进度与日志弹窗
-│   ├── ai-summary.tsx / charts.tsx / project-table.tsx     # 看板图表、摘要与表格
-│   ├── app-watch/            # App 更新筛选、图表与表格组件
-│   ├── procurement/          # 招采页签与筛选组件
-│   └── ui/                   # 通用展示组件
-├── src/features/
-│   ├── admin/                # 管理员控制台、useJobRunner 任务管理
-│   ├── app-watch/            # App Watch 页面模块
-│   ├── custom-intelligence/  # AI 自定义情报中心页面模块
-│   └── procurement/          # 采购看板页面模块
-├── src/lib/
-│   ├── api/                  # 集中式 FastAPI/SSE 客户端与领域 API
-│   ├── announcement-data.ts  # 招采数据模型与转换逻辑
-│   └── utils.ts              # 通用辅助工具
-├── src/store/                # 登录会话与筛选条件状态
-├── src/hooks/                # 通用 React Hooks
-└── .env.example              # 前端环境变量模板
-
-backend/
-├── api/
-│   ├── main.py               # FastAPI 入口：应用装配、中间件与静态托管
-│   ├── routes/               # 领域路由（accounts/datasets/jobs/ai/dashboard-data/custom-intelligence）
-│   ├── job_manager.py        # 子进程任务调度与状态管理锁
-│   ├── job_commands.py       # 可信子进程固定命令
-│   ├── scheduler.py          # 独立定时任务调度进程 (APScheduler)
-│   ├── ai_analysis.py        # AI 智能情报分析处理逻辑
-│   ├── dashboard_package.py / dashboard_data.py # dashboard-data 数据包与公告响应缓存
-│   ├── custom_intelligence_service.py / qianfan_search.py # 自定义情报服务与百度千帆搜索
-│   ├── auth.py / session_store.py / user_store.py / audit_store.py # 认证、会话、账号与审计
-│   └── requirements.txt      # 后端 Python 依赖清单
-├── broker_app_watch/         # 券商 App 更新采集、解析、LLM、存储与 CLI
-├── broker_sources/           # 券商官网来源选择与直连采集
-├── matching/                 # 采购/结果公告规则匹配与复核
-├── llm_table/                # LLM 结构化表格提取与解析
-├── config/
-│   ├── broker_app_watch/     # App 来源与分类配置
-│   ├── llm_api_config.json   # 外部 LLM API 密钥与配置 (不提交)
-│   └── llm_api_config.example.json # LLM 配置模板
-├── data/
-│   ├── announcement_table.csv  # 正式结构化招采数据 CSV (原子替换)
-│   ├── ai-analysis.json        # AI 情报分析结果缓存 JSON (原子替换)
-│   ├── dashboard-data/         # 标准数据包导出目录
-│   ├── broker_app_watch/       # App raw/processed/exports 运行数据
-│   ├── users.db / audit.db     # 用户账号与审计 SQLite 数据库
-│   ├── supplemental/           # 可选持久补充数据目录
-│   └── staging/                # LLM 候选、匹配与汇总临时数据
-
-shared/dashboard-data/        # 标准数据包 Schema（前后端共享）
-scripts/                      # Windows 发布脚本与无界面数据导出
-docs/                         # 架构与运维文档
-```
-
-正式结构化数据默认位于 `backend/data/announcement_table.csv`，前端不直接读取原始 CSV。
-
----
-
-## 6. 核心数据流
-
-### 爬虫
-
-```text
-cfcpn_scraper.py
-→ backend/python-http-www-cfcpn-com-jcw/output/notices/*.md
-```
-
-### LLM 结构化
-
-```text
-output/notices/*.md
-→ llm_markdown_table_builder.py
-→ backend/data/staging/announcement_table.csv (候选数据源)
-```
-
-### 自动化流水线 (Pipeline)
-
-```text
-后端启动或调度器触发 pipeline 任务
-→ 依次运行:
-  1. 采购公告与结果公告 cfcpn_scraper.py
-  2. 采购公告与结果公告 llm_markdown_table_builder.py
-  3. 规则候选匹配、LLM 双重复核与保守汇总
-  4. AI 情报分析重构 (若 PIPELINE_ANALYSIS_ENABLED 为 true)
-```
-
-### 看板
-
-```text
-backend/data/announcement_table.csv
-→ GET /api/data/announcements
-→ Next.js 看板
-```
-
-### AI 情报分析
-
-```text
-announcement_table.csv
-→ FastAPI AI 分析接口
-→ backend/config/llm_api_config.json
-→ 外部 LLM
-→ backend/data/ai-analysis.json
-→ Next.js AI 情报分析区域
-```
-
----
-
-## 7. FastAPI 接口
-
-实际字段必须以代码为准。
-
-当前核心接口（以代码为准，领域路由见 `backend/api/routes/`）：
-
-```text
-POST /api/login
-GET  /api/health
-
-POST /api/jobs/scraper
-POST /api/jobs/llm
-POST /api/jobs/llm-external
-POST /api/jobs/pipeline
-POST /api/jobs/app-watch
-POST /api/internal/scheduled-pipeline
-POST /api/internal/scheduled-app-watch
-GET  /api/jobs/{job_id}
-POST /api/jobs/{job_id}/cancel
-GET  /api/jobs/{job_id}/events
-
-GET  /api/data/announcements
-POST /api/data/announcements/publish
-GET  /api/app-releases
-
-GET  /api/ai-analysis
-POST /api/ai-analysis
-
-GET  /api/dashboard-data/manifest
-GET  /api/dashboard-data/files/{dataset}
-GET  /api/dashboard-data/export-status
-POST /api/dashboard-data/export
-GET  /api/dashboard-data/export.zip
-
-GET  /api/custom-intelligence/options
-POST /api/custom-intelligence/keyword-suggestions
-GET/POST /api/custom-intelligence/topics
-GET/POST/DELETE /api/custom-intelligence/topics/{topic_id}
-POST /api/custom-intelligence/topics/{topic_id}/enabled
-POST /api/custom-intelligence/topics/{topic_id}/execute
-GET/POST /api/custom-intelligence/executions
-GET /api/custom-intelligence/executions/{execution_id}
-POST /api/custom-intelligence/executions/{execution_id}/rerun
-
-GET/POST/DELETE /api/admin/users
-GET  /api/admin/audit/summary
-GET  /api/admin/audit/events
-GET  /api/admin/feedback
-POST /api/admin/feedback/{feedback_id}/status
-POST /api/admin/verify-password
-POST /api/users/apply
-POST /api/audit/qr-visit
-POST /api/audit/dashboard-view
-POST /api/feedback
-```
-
----
-
-## 8. 认证规则
-
-管理员配置来自环境变量：
-
-```env
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-me
-```
-
-规则：
-
-1. 禁止在代码中写死管理员密码。
-2. 禁止使用 `admin2026` 等默认密码回退。
-3. `/api/login` 成功后返回随机 Session Token 和角色信息。
-4. Token 及角色保存在 FastAPI 进程内存中。
-5. 受保护接口使用 `Authorization: Bearer <token>`。
-6. 前端 Token 只保存在 React 状态和 `sessionStorage`。
-7. 禁止使用 `localStorage` 保存管理员 Token。
-8. 401 时前端清除登录状态并要求重新登录。
-9. FastAPI 重启后 Token 失效是首版可接受行为。
-10. 暂不引入 JWT、OAuth、NextAuth 或第三方认证框架。
-11. 审批用户可登录看板，但不得访问管理员任务和用户审批接口。
-
----
-
-## 9. 任务执行规则
-
-任务通过 FastAPI 使用 `subprocess.Popen` 启动，并启用无缓冲输出：
-
-```text
-python -u
-PYTHONUNBUFFERED=1
-PYTHONIOENCODING=utf-8
-```
-
-任务状态：
-
-```text
-pending
-running
-succeeded
-failed
-```
-
-规则：
-
-1. stdout 和 stderr 都收集。
-2. stderr 不直接表示任务失败。
-3. 最终以进程退出码判断成功或失败。
-4. 子进程启动失败必须标记为 `failed`。
-5. 无论成功、失败或异常，都必须释放锁。
-6. 后端日志最多保留最近 500 行。
-7. 前端最多显示最近 300 行。
-8. 客户端断开 SSE 不得停止后端任务。
-9. 不允许客户端传入脚本路径、命令或任意命令参数。
-10. Python 路径、脚本路径、工作目录和数据目录通过环境变量配置。
-
----
-
-## 10. 任务互斥规则
-
-项目使用进程内锁：
-
-- 互斥关系：
-  - 爬虫运行时，不能启动 LLM 或自动化流水线（Pipeline）。
-  - LLM 运行时，不能启动爬虫或自动化流水线（Pipeline）。
-  - 自动化流水线（Pipeline）运行时，不能启动爬虫、LLM 或其它流水线，且锁住推送（Publish）与 AI 分析（AI Analysis）操作。
-  - 推送（Publish）、AI分析（AI Analysis）运行时与流水线（Pipeline）互斥。
-- 同类任务或冲突操作不能重复启动。
-- 冲突返回 HTTP 409，错误信息应指出当前正在运行的任务类型。
-- 任务取消：支持运行中任务的手动取消接口 (`POST /api/jobs/{job_id}/cancel`)，可中止运行中的子进程或整个流水线，中止后释放全局锁。
-- 定时任务：已通过独立调度器进程实现周级/配置级定时触发流水线任务。
-
----
-
-## 11. SSE 规则
-
-接口：
-
-```text
-GET /api/jobs/{job_id}/events
-```
-
-响应类型：
-
-```text
-text/event-stream
-```
-
-事件示例：
-
-```json
-{"type":"start","job_id":"...","job_type":"scraper","message":"任务开始","timestamp":"..."}
-{"type":"log","job_id":"...","stream":"stdout","message":"...","timestamp":"..."}
-{"type":"log","job_id":"...","stream":"stderr","message":"...","timestamp":"..."}
-{"type":"done","job_id":"...","status":"succeeded","exit_code":0,"timestamp":"..."}
-```
-
-规则：
-
-1. 连接后，后端在最开始必须立即发送 2KB 规格的以冒号 `:` 开头的注释 Padding，强行冲刷（Flush）浏览器或代理的缓冲区，使前端能瞬间激活 `reader.read()` 开始接收日志。
-2. 连接后先发送已有日志，再继续发送新日志。
-3. 无日志时可以发送 `: ping`。
-4. 任务结束后发送 `done` 并关闭连接。
-5. 前端不能使用原生 `EventSource`，因为接口需要 Bearer Header。
-6. 前端使用 `fetch`、`response.body.getReader()` 和 `TextDecoder`。
-7. 必须正确处理 SSE 跨网络 chunk 拆分。
-8. 必须维护字符串 buffer。
-9. 不能对单个 chunk 直接 `split("\n")` 后立即 `JSON.parse`。
-10. SSE 异常断开后，前端查询一次任务最终状态。
-11. 前端启动任务后，10 秒未收到 SSE 业务事件时进入状态轮询回退。
-12. 状态轮询每 2 秒查询 `GET /api/jobs/{job_id}`，看到 `succeeded` 或 `failed` 必须结束运行态。
-
----
-
-## 12. 数据接口规则
-
-接口：
-
-```text
-GET /api/data/announcements
-```
-
-默认文件：
-
-```text
-backend/data/announcement_table.csv
-```
-
-环境变量：
-
-```env
-ANNOUNCEMENT_CSV_PATH=backend/data/announcement_table.csv
-```
-
-建议响应：
-
-```json
-{
-  "records": [],
-  "meta": {
-    "count": 0,
-    "updated_at": "ISO-8601 或 null"
-  }
-}
-```
-
-规则：
-
-1. 使用 Python 标准库 `csv`。
-2. 使用 `utf-8-sig` 兼容 BOM。
-3. 不返回服务器绝对路径。
-4. 文件不存在返回 404。
-5. 文件为空但表头有效时返回空数组。
-6. 无法解析返回 500。
-7. 错误响应不得包含 traceback。
-8. 前端不得再请求 `/data/announcement_table.csv`。
-9. LLM 成功后通过状态刷新重新请求数据。
-10. 不优先使用整页 `window.location.reload()`。
-
----
-
-## 13. AI 情报分析规则
-
-唯一 LLM 配置来源：
-
-```text
-backend/config/llm_api_config.json
-```
-
-禁止把 API Key 放到前端、写死到代码、打印到日志、放入响应或写进 `.env.example`。
-
-目标流程：
-
-```text
-读取 announcement_table.csv
-→ 筛选最近 30 天数据
-→ 复用现有分析提示词
-→ 调用配置文件指定的 LLM
-→ 校验模型响应
-→ 原子写入 ai-analysis.json
-→ 返回前端
-```
-
-默认缓存：
-
-```text
-backend/data/ai-analysis.json
-```
-
-建议环境变量：
-
-```env
-AI_ANALYSIS_CACHE_PATH=backend/data/ai-analysis.json
-AI_ANALYSIS_WINDOW_DAYS=30
-AI_ANALYSIS_TIMEOUT_SECONDS=120
-```
-
-规则：
-
-1. GET 读取缓存。
-2. POST 重新生成。
-3. GET 需要 Bearer Token；POST 需要管理员 Bearer Token。
-4. 同时只允许一个 AI 分析请求执行。
-5. 重复 POST 返回 409。
-6. 本阶段不需要 SSE。
-7. LLM 超时返回 504。
-8. 上游 LLM 错误返回 502。
-9. 模型输出无法解析返回 502。
-10. 允许清理 Markdown JSON 代码块后再解析。
-11. 新结果必须原子写入缓存。
-12. 失败时不得破坏上一版有效缓存。
-13. 前端失败时保留上一版已显示结果。
-14. 旧 Next.js `/api/ai-analysis` 迁移完成后应删除或明确废弃。
-15. 前端最终必须调用 FastAPI，而不是旧 Next.js API Route。
-
----
-
-## 14. 文件写入规则
-
-正式数据和缓存应使用原子替换：
-
-```text
-写入同目录临时文件
-→ flush/close
-→ os.replace
-```
-
-适用于：
-
-- `announcement_table.csv`
-- `ai-analysis.json`
-
-规则：
-
-1. 临时文件和目标文件必须在同一目录。
-2. 写入失败不能破坏上一版有效文件。
-3. 异常时清理临时文件。
-4. 不提交真实运行数据，除非任务明确要求。
-5. `backend/data/.gitkeep` 可以保留。
-
----
-
-## 15. 前端规则
-
-技术栈：Next.js、TypeScript、React、原生 `fetch`、现有 UI 组件。
-
-规则：
-
-1. 不引入 Axios，除非任务明确要求。
-2. 不复制 API 请求逻辑。
-3. API 调用优先集中在 `frontend/src/lib/api/backend-client.ts`。
-4. 数据转换优先集中在 `frontend/src/lib/announcement-data.ts`。
-5. 不随意使用 `any`。
-6. 为接口响应和 SSE 事件定义简单类型。
-7. 不大改现有看板样式。
-8. 不重构无关页面。
-9. 运行期间禁用对应按钮。
-10. 401 自动退出登录。
-11. 409 显示明确冲突提示。
-12. 网络错误显示可理解信息。
-13. 数据加载失败不能导致整个页面白屏。
-14. 组件卸载时用 `AbortController` 停止前端流读取。
-15. 前端停止读取不等于取消后端任务。
-16. LLM 成功后刷新看板；爬虫成功后不刷新结构化看板。
-17. AI 分析成功后只更新分析区域，不整页刷新。
-
----
-
-## 16. 后端规则
-
-技术栈：FastAPI、Python 标准库优先、`subprocess.Popen`、进程内任务状态、进程内 Session Token、进程内锁。
-
-规则：
-
-1. 优先复用 `job_manager.py`。
-2. 不为新任务复制一整套任务管理实现。
-3. 只在确实必要时增加依赖。
-4. 新依赖必须写入 `backend/api/requirements.txt`。
-5. 使用 `pathlib.Path`。
-6. CORS 只允许配置的前端 Origin。
-7. 不使用 `*` 作为生产默认 CORS。
-8. HTTP 错误使用简洁 `detail`。
-9. 不向前端返回 traceback。
-10. 不向前端返回服务器绝对路径。
-11. 配置错误不能导致整个服务崩溃。
-12. 外部 LLM 调用必须设置超时。
-13. API Key、Token 和密码不得进入日志。
-
----
-
-## 17. 环境变量
-
-前端：
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
-
-后端常用变量：
-
-```env
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=change-me
-FRONTEND_ORIGIN=http://localhost:3000,http://localhost:5000
-FRONTEND_DIST_PATH=frontend/out
-
-SCRAPER_PYTHON_EXECUTABLE=
-SCRAPER_SCRIPT_PATH=
-SCRAPER_WORKING_DIR=
-
-LLM_PYTHON_EXECUTABLE=
-LLM_SCRIPT_PATH=
-LLM_WORKING_DIR=
-LLM_INPUT_DIR=
-LLM_OUTPUT_DIR=backend/data/staging
-LLM_CONFIG_PATH=backend/config/llm_api_config.json
-LLM_WORKERS=4
-
-ANNOUNCEMENT_STAGING_CSV_PATH=backend/data/staging/announcement_table.csv
-ANNOUNCEMENT_CSV_PATH=backend/data/announcement_table.csv
-ANNOUNCEMENT_BACKUP_RETENTION=3
-USER_DB_PATH=backend/data/users.db
-AUDIT_DB_PATH=backend/data/audit.db
-
-AI_ANALYSIS_CACHE_PATH=backend/data/ai-analysis.json
-AI_ANALYSIS_WINDOW_DAYS=30
-AI_ANALYSIS_TIMEOUT_SECONDS=120
-
-# AI 自定义情报中心（密钥仅配置在后端环境，不使用 NEXT_PUBLIC_ 前缀）
-CUSTOM_INTELLIGENCE_DB_PATH=
-CUSTOM_INTELLIGENCE_MAX_WORKERS=2
-BAIDU_QIANFAN_API_KEY=
-BAIDU_QIANFAN_MODEL=
-BAIDU_QIANFAN_ENDPOINT=https://qianfan.baidubce.com/v2/ai_search/chat/completions
-BAIDU_QIANFAN_AUTH_HEADER=Authorization
-BAIDU_QIANFAN_TIMEOUT_SECONDS=120
-
-# dashboard-data 标准数据包导出目录
-DASHBOARD_DATA_EXPORT_DIR=backend/data/dashboard-data
-
-# 流水线阶段 AI 分析配置
-PIPELINE_ANALYSIS_ENABLED=true
-PIPELINE_ANALYSIS_DAYS=30
-
-# 独立调度器进程配置
-SCHEDULER_ENABLED=true
-SCHEDULER_TIMEZONE=Asia/Shanghai
-SCHEDULER_CRON=0 12 * * sun
-SCHEDULER_API_URL=http://127.0.0.1:5000
-SCHEDULER_TOKEN=change-me
-APP_WATCH_SCHEDULER_ENABLED=false
-APP_WATCH_SCHEDULER_CRON=30 12 * * sun
-```
-
-规则：
-
-1. `.env.example` 只放示例。
-2. 禁止提交真实密码和 API Key。
-3. 前端可公开变量只能使用 `NEXT_PUBLIC_`。
-4. API Key 不能使用 `NEXT_PUBLIC_`。
-5. 修改环境变量后必须重启对应服务。
-6. `FRONTEND_ORIGIN` 可用英文逗号配置多个本地 Origin，例如 `http://localhost:3000,http://127.0.0.1:3000`。
-
----
-
-## 18. 本地启动命令
-
-### FastAPI（Windows 生产）
-
-在项目根目录：
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r backend\api\requirements.txt
-.\.venv\Scripts\python.exe -m uvicorn backend.api.main:app --host 0.0.0.0 --port 5000 --workers 1
-```
-
-检查：
-
-```text
-http://localhost:5000/api/health
-http://localhost:5000/docs
-```
-
-### 独立调度器 (Scheduler)
-
-在项目根目录：
-
-```powershell
-.\.venv\Scripts\python.exe -m backend.api.scheduler
-```
-
-### Next.js（开发与生产构建）
-
-在 `frontend` 目录：
-
-```powershell
-pnpm install
-pnpm build
-pnpm dev
-```
-
-开发地址通常是 `http://localhost:3000`。生产构建必须将 `NEXT_PUBLIC_API_BASE_URL` 置空并生成 `frontend/out`，生产环境不得运行 `next start`。Uvicorn 必须保持单 worker，否则内存 Session、任务锁、任务状态和公告缓存会不一致。
-
-### 任务联调
-
-任务接口：
-
-```text
-POST /api/jobs/scraper
-POST /api/jobs/llm
-POST /api/jobs/pipeline
-POST /api/internal/scheduled-pipeline
-GET  /api/jobs/{job_id}
-GET  /api/jobs/{job_id}/events
-POST /api/jobs/{job_id}/cancel
-```
-
-`GET /api/jobs/{job_id}` 可返回 `pid`、`log_count`、`last_event_at`、`process_alive` 和最近事件 `events` 等非敏感诊断字段，用于 SSE 异常时前端轮询回补。SSE 首包必须有 2KB 注释 padding，无业务日志时约 10 秒发送 `: ping`。如任务异常卡住，可用管理员 Token 调用 cancel 接口，或在本机确认 PID 后手动终止对应 Python 子进程；不得把命令行密钥或 Token 写入日志。
-
----
-
-## 19. 验证要求
-
-每次修改至少完成与任务相关的验证。
-
-### 本仓库常用验证命令（Windows / PowerShell）
-
-为避免在当前 Windows 环境中反复试错，Codex 优先使用以下命令：
-
-```powershell
-# Python 语法验证（常规）
-.\.venv\Scripts\python.exe -m py_compile backend\api\main.py backend\api\user_store.py backend\api\job_manager.py backend\llm_table\llm_markdown_table_builder.py
-
-# 如果 py_compile 出现 WinError 5 / __pycache__ 写入权限问题，不要反复重试；
-# 只允许改用一次内存 compile 验证语法，或按权限规则申请提升权限后重跑 py_compile。
-.\.venv\Scripts\python.exe -c "from pathlib import Path; files=['backend/api/main.py','backend/api/user_store.py','backend/api/job_manager.py','backend/llm_table/llm_markdown_table_builder.py']; [compile(Path(f).read_text(encoding='utf-8-sig'), f, 'exec') for f in files]; print('syntax ok')"
-
-# 前端 TypeScript 验证
+```bash
+.venv/bin/python -m pytest -q
 cd frontend
-.\node_modules\.bin\tsc.cmd -p tsconfig.json
-
-# 前端 Next 构建验证
-.\node_modules\.bin\next.cmd build
+pnpm run ts-check
+pnpm run lint:build
+NEXT_PUBLIC_API_BASE_URL= pnpm build
 ```
 
-前端验证规则：
+按风险补充 health、登录、401/403、数据包导入导出和页面 smoke。只有命令真实退出 0 才能称为通过。
 
-1. 在 Windows/PowerShell 中，`pnpm build` 可能因为 bash 包装脚本输出异常或 `.next` 产物权限问题失败；不要连续反复执行。
-2. 优先执行 `.\node_modules\.bin\tsc.cmd -p tsconfig.json` 和 `.\node_modules\.bin\next.cmd build`。
-3. 如果 `next build` 报 `.next` 下 `EPERM unlink/rename`，先说明是构建产物权限问题；如确需完整构建验证，只申请一次权限删除 `frontend\.next` 后重跑 `next build`。
-4. 只有 `next build` 真实完成并退出 0，才能写“前端构建通过”；只有 `tsc` 退出 0，才能写“TypeScript 验证通过”。
-5. 不要把 `pnpm build` 包装脚本失败但底层 `next build` 通过，描述为 `pnpm build` 通过。
+## 子代理协作
 
-### 后端基础验证
+- 几分钟内可完成的任务留在主线程；体量大、边界独立的任务优先委派 `luna_worker`。
+- worker 任务写清目标、读取范围、唯一允许修改的文件、禁止范围、输出与验收标准；只读权限可宽于写权限。
+- 并发写入使用独立 worktree；无法隔离时串行。worker 不得扩大范围或回退他人改动。
+- worker 返回：状态、结论、修改文件、关键变更、验证命令、验证结果。主线程按委派标准复核。
 
-```powershell
-.\.venv\Scripts\python.exe -m py_compile backend\api\main.py backend\api\user_store.py backend\api\job_manager.py backend\llm_table\llm_markdown_table_builder.py
-```
+## 禁止事项
 
-按需验证：
+不要建立第二套前端、认证、任务管理或 LLM 配置；不要把运行数据当测试 fixture；不要硬编码本机路径；不要使用 `shell=True` 执行用户输入；不要泄露 traceback 或服务器绝对路径；不要为了“规范”移动稳定模块或建立复杂测试体系。
 
-- 健康检查
-- 正确/错误登录
-- 无 Token 401
-- 重复任务 409
-- 成功/失败状态
-- 失败后可重启
-- SSE 逐步输出
-- 数据文件不存在 404
-- 临时 CSV 正常解析
-- 配置错误时服务不崩溃
-
-### 前端基础验证
-
-```powershell
-cd frontend
-.\node_modules\.bin\tsc.cmd -p tsconfig.json
-.\node_modules\.bin\next.cmd build
-```
-
-按需验证：
-
-- 登录请求调用 FastAPI
-- 不再调用旧 Next API
-- Token 使用 `sessionStorage`
-- 页面刷新恢复会话
-- SSE 实时显示
-- 按钮运行期间禁用
-- 401 自动退出
-- 409 明确提示
-- 数据接口 404 有正常空状态
-- 无白屏
-- 浏览器控制台无关键错误
-- LLM 成功后看板刷新
-- AI 分析成功后分析区域更新
-
-### 真实外部调用
-
-除非任务明确允许：
-
-- 不主动消耗真实 LLM 配额。
-- 可以使用模拟响应验证流程。
-- 未调用真实服务时必须写“未验证”。
-- 不得声称真实链路已经验证。
-
----
-
-## 20. 修改范围纪律
-
-Codex 必须遵守：
-
-1. 一次只解决当前任务。
-2. 不主动增加“顺便优化”。
-3. 不大规模格式化无关文件。
-4. 不改无关变量名。
-5. 不修改爬虫核心逻辑，除非任务明确要求。
-6. 不修改 LLM 提取提示词，除非任务明确要求。
-7. 不修改 CSV 字段定义，除非任务明确要求。
-8. 不重做看板 UI。
-9. 不创建第二套认证。
-10. 不创建第二套任务管理。
-11. 不创建第二套 LLM 配置。
-12. 不保留两套仍在使用的同功能 API。
-13. 迁移完成后删除或明确废弃旧入口。
-14. 发现实现与任务描述冲突时，以代码为准并在结果中说明。
-
----
-
-## 21. 安全要求
-
-禁止提交或输出：
-
-- 管理员真实密码
-- LLM API Key
-- Bearer Token
-- Cookie
-- 内部凭据
-- 完整生产配置
-- 服务器 traceback
-- 服务器绝对路径
-- 用户可控系统命令
-
-禁止：
-
-- 使用 `shell=True` 执行用户输入
-- 接收客户端脚本路径
-- 接收客户端任意 CLI 参数
-- 把 LLM 配置暴露给浏览器
-- 在前端调用外部 LLM
-- 使用默认弱密码作为回退
-
----
-
-## 22. 当前项目状态
-
-当前正式链路已就绪：
-
-- `frontend/` 是唯一正式前端（采购看板、App 更新、管理员控制台、AI 自定义情报中心）；独立纯前端版本（`frontend-coze`）已废弃并删除，不再维护两套前端。
-- 后端按领域路由拆分（账号、数据、任务/SSE、AI 分析、dashboard-data、自定义情报），任务生命周期与互斥统一由 `job_manager.py` 和前端 `useJobRunner` 管理。
-- 正式看板数据通过 `dashboard-data` 标准数据包由 FastAPI 提供；Windows 发布由 `scripts/deploy-release.ps1` 与部署目录 Compose（backend-api、backend-scheduler、frontend、gateway 四服务）执行。
-
-待完成或待最终验收：
-
-- 真实端到端流程验证（爬虫→LLM→推送→看板刷新全链路）
-- 真实 LLM AI 情报分析调用验证（需 llm_api_config.json 配置）
-- 百度千帆智能搜索真实鉴权头与简洁搜索链路验证（需在服务端安全注入 API Key 和模型）
-- 真实结果公告数据匹配质量验收（当前本地 `result_table.csv` 仅有表头）
-- Windows 实机生产部署最终验收
-
----
-
-## 23. Codex 返回格式
-
-为了节约 Token，完成任务后不要粘贴完整代码或 diff。
-
-默认只返回：
-
-```text
-状态：完成 / 部分完成
-
-修改文件：
-- 文件路径
-- 文件路径
-
-验证：
-- 通过：...
-- 未验证：...
-
-关键说明：
-- ...
-
-阻塞：
-- 无
-```
-
-规则：
-
-1. 总回复尽量控制在 15 行以内。
-2. 不重复任务描述。
-3. 不粘贴完整代码。
-4. 不粘贴完整 diff。
-5. 不输出长篇解释。
-6. 未验证内容必须明确列出。
-7. 只有真实执行过的验证才能写“通过”。
-
----
-
-## 24. 完成定义
-
-一项任务只有同时满足以下条件，才可以标记“完成”：
-
-1. 代码已经修改。
-2. 相关接口或页面已经接通。
-3. 至少完成可执行的基础验证。
-4. 未验证项已明确列出。
-5. 没有泄露密码、Token 或 API Key。
-6. 没有引入范围外的复杂依赖。
-7. 没有破坏已稳定链路。
-8. 环境变量示例和必要说明已经同步更新。
-
-如果缺少构建、浏览器端到端或真实外部服务验证，应在“未验证”中明确说明，不能把“代码已写”描述为“完整链路已验证”。
+交接、部署与故障处理只维护在 [README.md](README.md)、[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [docs/OPERATIONS.md](docs/OPERATIONS.md)。

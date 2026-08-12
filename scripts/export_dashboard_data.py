@@ -12,6 +12,7 @@ standardized dashboard-data directory consumed by the frontend API.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from pathlib import Path
@@ -23,7 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from backend.api.dashboard_package import dashboard_package_builder  # noqa: E402
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="导出世纪证券标准看板数据包")
     parser.add_argument(
         "--output",
@@ -38,12 +39,16 @@ def main() -> None:
     )
     args = parser.parse_args()
     output = args.output if args.output.is_absolute() else PROJECT_ROOT / args.output
-    package = dashboard_package_builder.build(force=True)
-    dashboard_package_builder.export(package, target=output, write_zip=args.zip)
+    try:
+        package = dashboard_package_builder.build(force=True)
+        dashboard_package_builder.export(package, target=output, write_zip=args.zip)
+    except (OSError, ValueError, TypeError, KeyError, csv.Error) as exc:
+        print(f"导出失败：{type(exc).__name__}", file=sys.stderr)
+        return 1
     try:
         display_output = str(output.resolve().relative_to(PROJECT_ROOT))
     except ValueError:
-        display_output = str(output.resolve())
+        display_output = output.name
     print(json.dumps({
         "output": display_output,
         "generated_at": package.manifest["generated_at"],
@@ -53,7 +58,8 @@ def main() -> None:
             for key, value in package.manifest["datasets"].items()
         },
     }, ensure_ascii=False, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

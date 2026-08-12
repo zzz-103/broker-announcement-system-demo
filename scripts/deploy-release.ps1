@@ -6,7 +6,8 @@ param(
 
     [switch]$Force,
 
-    [string]$DeployDir = 'D:\broker-system',
+    [Parameter(Mandatory = $true)]
+    [string]$DeployDir,
 
     [string]$ReleaseBranch = 'master'
 )
@@ -214,8 +215,6 @@ try {
     docker build --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
     Assert-LastExitCode 'Build frontend image'
 
-    New-Item -ItemType Directory -Force -Path $ReleaseDir | Out-Null
-    Copy-Item -LiteralPath $EnvFile -Destination (Join-Path $ReleaseDir ".env.before-$Timestamp.bak") -Force
     Set-EnvValue -Path $EnvFile -Key 'BROKER_VERSION' -Value $Version
     $DeploymentStarted = $true
     Push-Location $DeployDir

@@ -1,117 +1,90 @@
 # 券商招采智能分析系统
 
-一个由 FastAPI、Next.js 和 Python 采集流水线组成的内部看板系统。
+这是一个公司内部情报看板：管理员可以采集和结构化招采公告、匹配采购与结果公告、更新券商 App 数据、生成 AI 情报和邮件报告，并管理用户、审计、反馈与看板数据包。审批用户登录后可浏览招采、App 更新和自定义情报页面。
 
-- `frontend/`：唯一正式前端，连接 FastAPI，提供登录、任务控制、实时日志、看板和管理功能。
-- `backend/`：FastAPI 后端，负责认证、任务与 SSE、数据接口和静态托管。
+## 主要能力
 
-## 先做什么
+- 金采网及已配置券商官网公告采集、采购/结果公告 LLM 结构化与项目匹配
+- 招采看板、App 更新看板、AI 摘要与标准数据包导入/导出
+- 自定义情报搜索、报告持久化、PDF 与 126 邮箱发送
+- 管理员任务/SSE 日志、用户审批、反馈、审计与 AI 技术配置
+- 独立定时调度器，以及 Windows Docker Compose + Nginx 发布流程
 
-### macOS 本地开发
+## 快速开始
+
+需要 Git、Python 3.10+、Node.js 20+、Corepack 和 pnpm 9。Docker 仅为生产式部署必需。
 
 ```bash
+git clone https://github.com/zzz-103/broker-announcement-system-demo.git
+cd broker-announcement-system-demo
+cp .env.example .env
 python3 -m venv .venv
 .venv/bin/python -m pip install -r backend/api/requirements.txt
-cd frontend && pnpm install && cd ..
-cp .env.example .env
+corepack prepare pnpm@9.0.0 --activate
+cd frontend && pnpm install --frozen-lockfile && cd ..
 ```
 
-终端一启动后端，终端二启动前端：
+编辑 `.env`，至少替换 `ADMIN_PASSWORD` 和 `SCHEDULER_TOKEN`。本地开发分别启动：
 
 ```bash
 .venv/bin/python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+```bash
 cd frontend
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
 ```
 
-需要运行定时任务时，在第三个终端从仓库根目录启动现有调度器：
+访问 `http://localhost:3000`，健康检查为 `http://127.0.0.1:8000/api/health`。新 Clone 不含业务运行数据；管理员登录后在“管理控制台 → 前端数据包”导入可信的导出 ZIP，即可恢复招采、App 更新、AI 摘要以及可选的匹配增量基线，无需重跑历史爬虫。用户、审计、自定义情报、邮件配置和密钥不在数据包内，需在目标环境单独初始化。
 
-```bash
-.venv/bin/python -m backend.api.scheduler
-```
+Windows、生产 Compose、首次配置、数据导入/导出和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
-打开 `http://localhost:3000`。真实爬虫、LLM 和 App Watch 任务需要相应私密配置；只看页面时可使用已有样例数据。
-
-首次启用“申请账号”前，将 `backend/config/user_qualification.example.csv` 复制为私有的 `backend/config/user_qualification.csv`，按同一表头填入真实名单；真实名单不要提交。`.env.example` 的本地 CORS 与调度器端口已和上述命令对齐。
-
-## 核心业务流
+## 核心链路
 
 ```text
-采集（金采网 + 已启用券商官网）
-→ 来源选择（空结果拒绝覆盖上一代）
+金采网 + 券商官网
+→ 来源选择与空结果保护
 → 采购/结果 LLM 结构化
-→ 规则匹配 + LLM 复核 + 合并
-→ 留存比例校验 + 原子发布正式 CSV
+→ 规则候选 + LLM 复核 + 合并
+→ 留存比例校验 + 原子发布
 → 可选 AI 分析
-→ dashboard-data 导出层
-→ 正式前端
+→ dashboard-data 标准包
+→ FastAPI API → Next.js 静态前端
 ```
 
-完整 Pipeline 会自动安全发布合并结果；“更新看板”仅保留为单独运行 LLM 后的人工发布或故障恢复入口。发布前会检查候选非空及 `PUBLISH_MIN_RETAIN_RATIO`，失败不会覆盖上一版正式 CSV。
+App Watch 和自定义情报是独立业务模块，复用同一个后端与认证，但不改变招采数据口径。完整架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
-## 标准数据包
-
-后端把正式 CSV/JSON 一次转换为标准化 `dashboard-data` 数据包（Manifest、统计、SHA-256 校验），正式前端通过受保护的 `/api/dashboard-data/*` 接口读取，不再直接解析原始 CSV。管理员可在“管理控制台 → 前端数据包”导出 ZIP，也可在仓库根目录执行：
-
-```bash
-python scripts/export_dashboard_data.py --zip
-```
-
-数据包包含 `manifest.json`、`overview.json`、`filters.json`、
-`tender_projects.json`、`app_updates.json` 和 `ai_analysis.json`，不包含用户表、
-密码、Token、服务器路径或 LLM 配置。
-
-## 代码与数据边界
+## 项目结构
 
 ```text
-backend/api/                 FastAPI、认证、任务、数据包导出
-backend/data/                正式 CSV/JSON 和导出的 dashboard-data
-backend/broker_sources/      券商官网来源选择与采集
-backend/matching/            采购/结果公告匹配与复核
-backend/broker_app_watch/    券商 App 更新采集与结构化
-backend/config/broker_app_watch/  App 来源与分类配置
-backend/data/broker_app_watch/    App raw/processed/exports 运行数据
-backend/python-*/            金采网公告爬虫
-backend/*/tests/              按模块归档的后端测试与 fixtures
-frontend/src/features/       正式前端业务模块（procurement / app-watch / admin / custom-intelligence）
-shared/dashboard-data/       标准数据包 Schema
+backend/api/              FastAPI、认证、任务、数据包、管理和情报 API
+backend/broker_sources/   券商官网招采来源
+backend/llm_table/        公告结构化
+backend/matching/         采购/结果匹配
+backend/broker_app_watch/ App 更新采集与处理
+frontend/                 唯一正式 Next.js 前端
+shared/dashboard-data/    前后端共享数据包契约
+scripts/                  发布与无界面数据包导出
+deploy/                   生产 Compose 与 Nginx 模板
+docs/                     架构和操作手册
 ```
 
-复杂清洗、去重、归一化、分类、统计和排序字段在后端导出层完成；前端只做筛选、简单排序、分页和展示。
-
-App 更新模块从仓库根目录手动检查或 dry-run：
-
-```bash
-.venv/bin/python -m backend.broker_app_watch.cli check-config
-.venv/bin/python -m backend.broker_app_watch.cli dry-run
-```
-
-Windows 使用 `.venv\Scripts\python.exe` 替换解释器路径。正式刷新仍由主 FastAPI 任务入口调用；可选定时入口复用 `python -m backend.api.scheduler`。
-
-AI 自定义情报中心提供即时搜索、主题管理与后台执行，默认复用 `USER_DB_PATH` 数据库；百度千帆密钥仅配置在后端环境变量（详见 [docs/operations.md](docs/operations.md)）。
+运行数据、SQLite、`.env`、真实 LLM 配置、资格名单、日志和构建产物均不进入 Git。
 
 ## 常用验证
 
 ```bash
-./.venv/bin/python -m unittest discover -s backend/api/tests -p 'test*.py'
-cd frontend && pnpm run ts-check && pnpm run lint:build
-```
-
-生产静态构建：
-
-```bash
+.venv/bin/python -m pytest -q
 cd frontend
+pnpm run ts-check
+pnpm run lint:build
 NEXT_PUBLIC_API_BASE_URL= pnpm build
 ```
 
-## 文档导航
+真实爬虫、搜索、LLM、SMTP 和生产发布需要对应网络与凭据；离线测试通过不代表这些外部链路已联调。
 
-- [运行与发布](docs/operations.md)：本地启动、Windows 发布和排障。
-- [架构边界](docs/architecture.md)：模块职责和标准数据包流程。
-- [交接速查](docs/handoff.md)：数据流、配置、日志、扩展点和兼容接口。
-- [正式前端](frontend/README.md)：看板开发与样式约束。
-- [官网来源采集](backend/broker_sources/README.md)：券商官网与金采网的来源选择。
-- [金采网爬虫](backend/python-http-www-cfcpn-com-jcw/README.md)：公告抓取命令和输出目录。
-- [App Watch](backend/broker_app_watch/README.md)：券商 App 更新采集与刷新。
+## 文档入口
 
-`AGENTS.md` 及各目录下的 `AGENTS.md` 是开发约束，不是运行手册；修改代码前请先阅读对应文件。
+- [AGENTS.md](AGENTS.md)：未来 Codex / AI Agent 的修改边界与验证规则。
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：真实架构、模块职责、数据流与外部依赖。
+- [docs/OPERATIONS.md](docs/OPERATIONS.md)：从零安装、启动、数据恢复、发布与排障。

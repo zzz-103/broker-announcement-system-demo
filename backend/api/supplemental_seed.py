@@ -472,16 +472,21 @@ def merge_for_publication(staging_path: Path, destination_dir: Path) -> MergeRes
     )
 
 
-def main() -> None:
+def main() -> int:
     parser = argparse.ArgumentParser(description="Import a temporary supplemental announcement CSV")
     parser.add_argument("--source", required=True, type=Path, help="CSV file to preserve and normalize")
     parser.add_argument("--supplemental-dir", type=Path, help="Override the supplemental data directory")
     args = parser.parse_args()
     project_root = Path(__file__).resolve().parents[2]
     destination = args.supplemental_dir or supplemental_data_dir(project_root)
-    result = import_temporary_seed(args.source, destination)
+    try:
+        result = import_temporary_seed(args.source, destination)
+    except SupplementalDataError as exc:
+        print(f"补充数据导入失败：{exc}")
+        return 1
     print(json.dumps(result, ensure_ascii=False))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

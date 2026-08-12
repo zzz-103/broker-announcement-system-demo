@@ -27,6 +27,23 @@ def resolve_path(value: str | None, default: Path) -> Path:
     return path.resolve()
 
 
+def positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return number
+
+
+def iso_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be YYYY-MM-DD") from exc
+
+
 def make_collector(
     config: BrokerSourceConfig,
     output_root: Path,
@@ -59,7 +76,7 @@ def make_collector(
 
 
 def collect_command(args: argparse.Namespace) -> int:
-    configs = load_configs(args.config.resolve())
+    configs = load_configs(resolve_path(str(args.config), DEFAULT_CONFIG_PATH))
     requested = args.broker or [
         key for key, config in configs.items() if config.enabled
     ]
@@ -108,7 +125,7 @@ def collect_command(args: argparse.Namespace) -> int:
 
 
 def prepare_command(args: argparse.Namespace) -> int:
-    configs = load_configs(args.config.resolve())
+    configs = load_configs(resolve_path(str(args.config), DEFAULT_CONFIG_PATH))
     result = prepare_selected_sources(
         project_root=PROJECT_ROOT,
         configs=configs,
@@ -147,18 +164,18 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--include-disabled", action="store_true")
     collect.add_argument(
         "--since-date",
-        type=date.fromisoformat,
-        default=date.fromisoformat(os.getenv("OFFICIAL_SOURCE_SINCE_DATE", "2026-04-01")),
+        type=iso_date,
+        default=os.getenv("OFFICIAL_SOURCE_SINCE_DATE", "2026-04-01"),
         help="只采集此日期及之后的公告，默认 2026-04-01，可由 OFFICIAL_SOURCE_SINCE_DATE 覆盖",
     )
     collect.add_argument(
         "--max-pages",
-        type=int,
+        type=positive_int,
         help="最多扫描页数；传入日期时默认 100",
     )
     collect.add_argument(
         "--workers",
-        type=int,
+        type=positive_int,
         default=8,
         help="详情并发数，默认 8",
     )

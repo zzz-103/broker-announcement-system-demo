@@ -24,7 +24,7 @@ class BrokerSource(BaseModel):
     broker_name: str
     app_name: str
     source_url: HttpUrl
-    source_type: Literal["http", "api", "browser"]
+    source_type: Literal["http", "api"]
     parser: str
     enabled: bool = True
     fetch_url: HttpUrl | None = None
@@ -64,9 +64,6 @@ class AppSettings(BaseSettings):
     )
 
     environment: str = "development"
-    log_level: str = "INFO"
-    database_url: str | None = None
-    browser_enabled: bool = False
     request_timeout_seconds: float = 20.0
 
 

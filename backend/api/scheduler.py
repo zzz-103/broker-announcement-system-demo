@@ -26,6 +26,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit, urlunsplit
 
 from .config import settings
 
@@ -59,8 +60,7 @@ _RETRY_DELAY = 30              # seconds between retries
 def _post_scheduled_job(endpoint: str, label: str) -> None:
     """Call one internal scheduled-job endpoint with retry logic."""
     if not SCHEDULER_TOKEN:
-        logger.error("SCHEDULER_TOKEN is not set; skipping trigger")
-        return
+        raise RuntimeError("SCHEDULER_TOKEN is not set")
 
     url = f"{SCHEDULER_API_URL}{endpoint}"
     headers = {
@@ -110,6 +110,28 @@ def _post_scheduled_job(endpoint: str, label: str) -> None:
 
         if attempt < _RETRY_MAX:
             time.sleep(_RETRY_DELAY)
+    raise RuntimeError(f"{label} trigger failed after {_RETRY_MAX} attempts")
+
+
+def _validated_api_origin(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("SCHEDULER_API_URL is invalid") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path.rstrip("/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("SCHEDULER_API_URL must be a credential-free HTTP(S) base URL")
+    host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+    netloc = f"{host}:{port}" if port is not None else host
+    return urlunsplit((parsed.scheme, netloc, "", "", ""))
 
 
 def _post_scheduled_pipeline() -> None:
@@ -128,6 +150,14 @@ def main() -> None:
     if SCHEDULER_ENABLED in ("false", "0", "no", "off"):
         logger.info("SCHEDULER_ENABLED=false; exiting")
         return
+    if not SCHEDULER_TOKEN:
+        logger.error("SCHEDULER_TOKEN is required when the scheduler is enabled")
+        raise SystemExit(1)
+    try:
+        api_origin = _validated_api_origin(SCHEDULER_API_URL)
+    except ValueError as exc:
+        logger.error("%s", exc)
+        raise SystemExit(1) from None
 
     # Lazy import so the rest of the module can be imported without APScheduler
     try:
@@ -216,7 +246,7 @@ def main() -> None:
         "Scheduler starting — cron=%r timezone=%r api=%s",
         SCHEDULER_CRON,
         SCHEDULER_TIMEZONE,
-        SCHEDULER_API_URL,
+        api_origin,
     )
     if app_watch_enabled:
         logger.info("App Watch schedule enabled — cron=%r", APP_WATCH_SCHEDULER_CRON)

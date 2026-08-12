@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 backend/config/llm_api_config.json
+backend/config/user_qualification.csv
 backend/config/broker_app_watch/settings.yaml
 runtime/
 
@@ -94,3 +95,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.vscode/
+.idea/
+.coze
+.cozeproj/

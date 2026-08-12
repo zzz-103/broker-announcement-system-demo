@@ -744,6 +744,16 @@ def run_matcher(
     return summary
 
 
+def positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return number
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="规则匹配采购公告与结果公告，输出候选分数、最终链接和未匹配结果。",
@@ -751,7 +761,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--procurement-csv", type=Path, default=resolve_default_procurement_csv())
     parser.add_argument("--result-csv", type=Path, default=DEFAULT_RESULT_CSV)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--max-candidates", type=int, default=DEFAULT_MAX_CANDIDATES)
+    parser.add_argument("--max-candidates", type=positive_int, default=DEFAULT_MAX_CANDIDATES)
     parser.add_argument("--verified-links-csv", type=Path, default=DEFAULT_VERIFIED_LINKS_CSV)
     parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE_PATH)
     return parser
@@ -764,12 +774,12 @@ def main() -> int:
     procurement_csv = args.procurement_csv.resolve()
     result_csv = args.result_csv.resolve()
     output_dir = args.output_dir.resolve()
-    max_candidates = max(1, args.max_candidates)
+    max_candidates = args.max_candidates
 
-    if not procurement_csv.exists():
-        parser.error(f"采购公告 CSV 不存在: {procurement_csv}")
-    if not result_csv.exists():
-        parser.error(f"结果公告 CSV 不存在: {result_csv}")
+    if not procurement_csv.is_file():
+        parser.error(f"采购公告 CSV 不存在: {procurement_csv.name}")
+    if not result_csv.is_file():
+        parser.error(f"结果公告 CSV 不存在: {result_csv.name}")
 
     summary = run_matcher(
         procurement_csv,

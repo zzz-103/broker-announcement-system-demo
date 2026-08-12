@@ -84,19 +84,11 @@ class LLMApiConfig:
 
     @classmethod
     def load(cls, config_path: Path) -> "LLMApiConfig":
-        override_path = resolve_llm_override_path()
         source_path = resolve_llm_config_source(config_path)
         payload = json.loads(source_path.read_text(encoding="utf-8"))
-        # An administrator-saved override is authoritative.  Keep the legacy
-        # environment-key precedence only for the original fallback file.
-        api_key = None if source_path == override_path else os.environ.get("LLM_API_KEY")
-        if api_key is None:
-            api_key = str(payload.get("api_key", "")).strip()
-        else:
-            api_key = api_key.strip()
         return cls(
             base_url=str(payload.get("base_url", "")).strip(),
-            api_key=api_key,
+            api_key=str(payload.get("api_key", "")).strip(),
             model=str(payload.get("model", "")).strip(),
             temperature=float(payload.get("temperature", 0.1)),
             top_p=float(payload.get("top_p", 1.0)),
@@ -114,7 +106,14 @@ class LLMApiConfig:
             parsed_base_url = urlsplit(self.base_url)
         except ValueError as exc:
             raise ValueError("llm_api_config.json 的 base_url 无效") from exc
-        if parsed_base_url.scheme not in {"http", "https"} or not parsed_base_url.hostname:
+        if (
+            parsed_base_url.scheme not in {"http", "https"}
+            or not parsed_base_url.hostname
+            or parsed_base_url.username
+            or parsed_base_url.password
+            or parsed_base_url.query
+            or parsed_base_url.fragment
+        ):
             raise ValueError("llm_api_config.json 的 base_url 必须是有效的 HTTP(S) 地址")
         if not self.api_key:
             raise ValueError("llm_api_config.json 缺少 api_key")

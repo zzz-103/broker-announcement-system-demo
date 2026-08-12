@@ -32,6 +32,8 @@ frontend/.env.local
 # LLM 敏感配置（排除真实 API Key，保留无密钥模板）
 backend/config/llm_api_config.json
 !backend/config/llm_api_config.example.json
+backend/config/user_qualification.csv
+backend/config/broker_app_watch/settings.yaml
 
 # 宿主机本地运行目录与挂载目录
 runtime/

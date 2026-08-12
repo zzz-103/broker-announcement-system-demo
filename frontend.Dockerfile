@@ -10,7 +10,7 @@ RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 ARG NEXT_PUBLIC_API_BASE_URL=
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
 
-COPY frontend/pnpm-lock.yaml ./
+COPY frontend/pnpm-lock.yaml frontend/.npmrc ./
 
 RUN --mount=type=cache,id=broker-frontend-pnpm,target=/pnpm/store \
     pnpm fetch --frozen-lockfile --store-dir=/pnpm/store

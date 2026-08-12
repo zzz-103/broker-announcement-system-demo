@@ -2,7 +2,7 @@
 # copied into the external deployment directory and includes frontend + gateway.
 services:
   backend-api:
-    image: ${BROKER_IMAGE:-broker-backend:1.3.1}
+    image: ${BROKER_IMAGE:-broker-backend:1.7.1}
     ports:
       - "5000:8000"
     restart: unless-stopped
@@ -30,14 +30,17 @@ services:
         max-file: "5"
 
   backend-scheduler:
-    image: ${BROKER_IMAGE:-broker-backend:1.3.1}
+    image: ${BROKER_IMAGE:-broker-backend:1.7.1}
     command: python -m backend.api.scheduler
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      - SCHEDULER_ENABLED=true
-      - SCHEDULER_API_URL=http://backend-api:8000
+      SCHEDULER_ENABLED: "true"
+      SCHEDULER_API_URL: http://backend-api:8000
+      SCHEDULER_TOKEN: ${SCHEDULER_TOKEN:?SCHEDULER_TOKEN is required}
+      SCHEDULER_TIMEZONE: ${SCHEDULER_TIMEZONE:-Asia/Shanghai}
+      SCHEDULER_CRON: ${SCHEDULER_CRON:-0 12 * * sun}
+      APP_WATCH_SCHEDULER_ENABLED: ${APP_WATCH_SCHEDULER_ENABLED:-false}
+      APP_WATCH_SCHEDULER_CRON: ${APP_WATCH_SCHEDULER_CRON:-30 12 * * sun}
     depends_on:
       backend-api:
         condition: service_healthy

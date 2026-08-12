@@ -80,6 +80,7 @@ class AppWatchIntegrationTests(unittest.TestCase):
             patch("apscheduler.schedulers.blocking.BlockingScheduler", FakeScheduler),
             patch("apscheduler.triggers.cron.CronTrigger", return_value=object()),
             patch.object(scheduler, "SCHEDULER_ENABLED", "true"),
+            patch.object(scheduler, "SCHEDULER_TOKEN", "test-scheduler-token"),
             patch.object(scheduler, "APP_WATCH_SCHEDULER_ENABLED", "true"),
             patch.object(scheduler, "SCHEDULER_CRON", "0 12 * * sun"),
             patch.object(scheduler, "APP_WATCH_SCHEDULER_CRON", "30 12 * * sun"),

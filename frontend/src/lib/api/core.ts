@@ -115,3 +115,26 @@ export async function requestBodyJson<T>(
   if (!response.ok) throw new BackendApiError(await readError(response), response.status);
   return (await response.json()) as T;
 }
+
+export async function requestBlob(
+  path: string,
+  init: RequestInit = {},
+  token?: string,
+): Promise<{ blob: Blob; headers: Headers }> {
+  let response: Response;
+  try {
+    response = await fetch(buildApiUrl(path), {
+      ...init,
+      cache: init.cache ?? "no-store",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init.headers,
+      },
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw new BackendApiError("无法访问后端 API", 0);
+  }
+  if (!response.ok) throw new BackendApiError(await readError(response), response.status);
+  return { blob: await response.blob(), headers: response.headers };
+}

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 try:
     from backend.llm_table.llm_client import (
@@ -503,36 +504,37 @@ def validate_external_markdown_files(
     seen_sha256: set[str] = set()
 
     for path in files:
+        display_path = portable_path(path)
         if path.suffix.lower() != ".md":
-            print(f"[external] 跳过非 Markdown 文件: {path}", file=sys.stderr)
+            print(f"[external] 跳过非 Markdown 文件: {display_path}", file=sys.stderr)
             skipped_count += 1
             continue
         try:
             markdown = normalized_markdown_body(read_markdown_text(path))
         except UnicodeDecodeError as exc:
-            print(f"[external] 跳过无法按 UTF-8 读取的文件: {path}: {exc}", file=sys.stderr)
+            print(f"[external] 跳过无法按 UTF-8 读取的文件: {display_path}: {type(exc).__name__}", file=sys.stderr)
             skipped_count += 1
             continue
         except OSError as exc:
-            print(f"[external] 跳过无法读取的文件: {path}: {exc}", file=sys.stderr)
+            print(f"[external] 跳过无法读取的文件: {display_path}: {type(exc).__name__}", file=sys.stderr)
             skipped_count += 1
             continue
         if not markdown:
-            print(f"[external] 跳过空 Markdown 文件: {path}", file=sys.stderr)
+            print(f"[external] 跳过空 Markdown 文件: {display_path}", file=sys.stderr)
             skipped_count += 1
             continue
         title = extract_markdown_title(markdown)
         if not title:
-            print(f"[external] 跳过缺少一级标题的文件: {path}", file=sys.stderr)
+            print(f"[external] 跳过缺少一级标题的文件: {display_path}", file=sys.stderr)
             skipped_count += 1
             continue
         document_sha256 = sha256_text(markdown)
         if document_sha256 in processed_sha256:
-            print(f"[external] 跳过已成功处理过的重复正文: {path}")
+            print(f"[external] 跳过已成功处理过的重复正文: {display_path}")
             skipped_count += 1
             continue
         if document_sha256 in seen_sha256:
-            print(f"[external] 跳过本批次重复正文: {path}")
+            print(f"[external] 跳过本批次重复正文: {display_path}")
             skipped_count += 1
             continue
         seen_sha256.add(document_sha256)
@@ -1206,7 +1208,7 @@ def portable_path(path: Path, base: Path = PROJECT_ROOT) -> str:
     try:
         return path.resolve().relative_to(base.resolve()).as_posix()
     except ValueError:
-        return path.as_posix()
+        return path.name
 
 
 def normalize_scalar(value: Any) -> str:
@@ -1289,16 +1291,17 @@ def request_progress_logger(
 ) -> None:
     timeout_warning_printed = False
     interval = max(1.0, log_interval_seconds)
+    display_path = portable_path(path)
 
     while not stop_event.wait(interval):
         elapsed = time.monotonic() - started_at
         print(
-            f"[RUNNING] {path} 已运行 {elapsed:.1f}s / 超时阈值 {timeout_seconds:.1f}s",
+            f"[RUNNING] {display_path} 已运行 {elapsed:.1f}s / 超时阈值 {timeout_seconds:.1f}s",
             flush=True,
         )
         if elapsed >= timeout_seconds and not timeout_warning_printed:
             print(
-                f"[TIMEOUT-WAIT] {path} 已超过超时阈值，正在等待底层请求返回异常...",
+                f"[TIMEOUT-WAIT] {display_path} 已超过超时阈值，正在等待底层请求返回异常...",
                 flush=True,
             )
             timeout_warning_printed = True
@@ -1334,7 +1337,7 @@ def process_markdown_file(
 
     markdown = normalized_markdown_body(read_markdown_text(path))
     if not markdown:
-        return FileExtractionResult(rows=[], raw_payload=None, error=f"Empty markdown: {path}")
+        return FileExtractionResult(rows=[], raw_payload=None, error="EmptyMarkdown")
 
     metadata = {
         "broker_folder": path.parent.name,
@@ -1367,8 +1370,9 @@ def process_markdown_file(
                 next_allowed_call_at[0] = time.monotonic() + min_interval_seconds
 
         started_at = time.monotonic()
+        display_path = portable_path(path)
         print(
-            f"[REQUEST START] {path} (timeout={client.config.timeout_seconds}s)",
+            f"[REQUEST START] {display_path} (timeout={client.config.timeout_seconds}s)",
             flush=True,
         )
         stop_event = threading.Event()
@@ -1392,12 +1396,12 @@ def process_markdown_file(
             elapsed = time.monotonic() - started_at
             if is_timeout_error(exc):
                 print(
-                    f"[REQUEST TIMEOUT] {path} 在 {elapsed:.1f}s 后超时: {exc}",
+                    f"[REQUEST TIMEOUT] {display_path} 在 {elapsed:.1f}s 后超时: {type(exc).__name__}",
                     flush=True,
                 )
             else:
                 print(
-                    f"[REQUEST ERROR] {path} 在 {elapsed:.1f}s 后失败: {exc}",
+                    f"[REQUEST ERROR] {display_path} 在 {elapsed:.1f}s 后失败: {type(exc).__name__}",
                     flush=True,
                 )
             raise
@@ -1406,7 +1410,7 @@ def process_markdown_file(
 
         elapsed = time.monotonic() - started_at
         print(
-            f"[REQUEST DONE] {path} 用时 {elapsed:.1f}s",
+            f"[REQUEST DONE] {display_path} 用时 {elapsed:.1f}s",
             flush=True,
         )
     raw_json_path.write_text(
@@ -1551,6 +1555,49 @@ def write_output_bundle(
     }
 
 
+def positive_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return number
+
+
+def non_negative_int(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return number
+
+
+def non_negative_float(value: str) -> float:
+    try:
+        number = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return number
+
+
+def public_api_origin(base_url: str) -> str:
+    parsed = urlsplit(base_url)
+    host = parsed.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    netloc = f"{host}:{port}" if port is not None else host
+    return urlunsplit((parsed.scheme, netloc, "", "", ""))
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="调用大模型 API，将 Markdown 招投标公告抽取为结构化 JSON 和汇总表。",
@@ -1574,30 +1621,30 @@ def build_argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="列出 input-dir 下可用的券商目录及其可识别缩写，然后退出",
     )
-    parser.add_argument("--max-files", type=int, default=None)
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--max-files", type=non_negative_int, default=None)
+    parser.add_argument("--workers", type=positive_int, default=4)
     parser.add_argument(
         "--max-concurrent-requests",
-        type=int,
+        type=positive_int,
         default=None,
         help="同时进行中的 LLM API 请求上限，默认等于 workers（当前默认 4）",
     )
     parser.add_argument(
         "--timeout-seconds",
-        type=int,
+        type=positive_int,
         default=120,
         help="单个 LLM 请求超时秒数，默认 120，会覆盖 llm_api_config.json 中的 timeout_seconds",
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
         "--min-interval-seconds",
-        type=float,
+        type=non_negative_float,
         default=0.0,
         help="相邻请求的最小启动间隔秒数；默认 0，表示不做全局串行节流",
     )
     parser.add_argument(
         "--request-log-interval-seconds",
-        type=float,
+        type=non_negative_float,
         default=60.0,
         help="单个请求执行中实时提示的输出间隔秒数，默认 60；设为 0 可关闭",
     )
@@ -1704,18 +1751,14 @@ def main() -> int:
         return 1
 
     if not llm_config_available(llm_config_path):
-        parser.error(f"未找到 LLM 配置文件: {llm_config_path}")
+        parser.error(f"未找到 LLM 配置文件: {portable_path(llm_config_path)}")
 
-    llm_config = LLMApiConfig.load(llm_config_path)
-    llm_config.timeout_seconds = max(1, args.timeout_seconds)
-    if not llm_config.api_key:
-        emit_progress("failed", 100, "LLM API key is missing. Set LLM_API_KEY or api_key in llm_api_config.json.")
-        print(
-            "LLM API key is missing. Set LLM_API_KEY or api_key in llm_api_config.json.",
-            file=sys.stderr,
-        )
-        return 1
-    llm_config.validate()
+    try:
+        llm_config = LLMApiConfig.load(llm_config_path)
+        llm_config.timeout_seconds = args.timeout_seconds
+        llm_config.validate()
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        parser.error("LLM 配置无效或无法读取，请检查服务端配置文件")
 
     existing_rows = load_existing_output_rows(output_dir, runtime.table_fields, runtime.output_stem)
     existing_rows, migrated_legacy_rows = migrate_legacy_file_keys(
@@ -1771,7 +1814,7 @@ def main() -> int:
             "broker_output_root": portable_path(output_dir / "brokers") if runtime.write_broker_outputs else "",
             "llm_config_path": portable_path(llm_config_path),
             "model": llm_config.model,
-            "api_base_url": llm_config.base_url,
+            "api_base_url": public_api_origin(llm_config.base_url),
             "incremental": True,
             "discovered_files": len(discovered_files),
             "llm_requested_files": 0,
@@ -1822,9 +1865,9 @@ def main() -> int:
         print(f"增量跳过未变更文件数: {len(selection.skipped_files)}")
         print(f"新增文件数: {len(selection.new_files)}")
         print(f"内容变更文件数: {len(selection.changed_files)}")
-    print(f"输出目录: {output_dir}")
+    print(f"输出目录: {portable_path(output_dir)}")
     print(f"模型: {llm_config.model}")
-    print(f"LLM 配置: {llm_config_path}")
+    print(f"LLM 配置: {portable_path(llm_config_path)}")
     print(f"单请求超时秒数: {llm_config.timeout_seconds}")
     print(f"工作线程数: {max(1, args.workers)}")
     print(f"最大并发请求数: {max_concurrent_requests}")
@@ -1861,7 +1904,7 @@ def main() -> int:
                 result = future.result()
                 if result.error:
                     failures.append({"file": portable_path(path), "error": result.error})
-                    print(f"[{index}/{len(plans)}] FAILED {path}: {result.error}")
+                    print(f"[{index}/{len(plans)}] FAILED {portable_path(path)}")
                     emit_progress(
                         "processing",
                         int(index * 90 / max(1, len(plans))),
@@ -1876,7 +1919,7 @@ def main() -> int:
                 if document_sha256:
                     processed_sha256.add(document_sha256)
                 print(
-                    f"[{index}/{len(plans)}] OK {path} -> {len(result.rows)} rows "
+                    f"[{index}/{len(plans)}] OK {portable_path(path)} -> {len(result.rows)} rows "
                     f"({plan.reason})"
                 )
                 emit_progress(
@@ -1887,8 +1930,8 @@ def main() -> int:
                     total=len(plans),
                 )
             except (TimeoutError, ValueError, json.JSONDecodeError) as exc:
-                failures.append({"file": portable_path(path), "error": repr(exc)})
-                print(f"[{index}/{len(plans)}] FAILED {path}: {exc}")
+                failures.append({"file": portable_path(path), "error": type(exc).__name__})
+                print(f"[{index}/{len(plans)}] FAILED {portable_path(path)}: {type(exc).__name__}")
                 emit_progress(
                     "processing",
                     int(index * 90 / max(1, len(plans))),
@@ -1897,8 +1940,8 @@ def main() -> int:
                     total=len(plans),
                 )
             except Exception as exc:
-                failures.append({"file": portable_path(path), "error": repr(exc)})
-                print(f"[{index}/{len(plans)}] FAILED {path}: {exc}")
+                failures.append({"file": portable_path(path), "error": type(exc).__name__})
+                print(f"[{index}/{len(plans)}] FAILED {portable_path(path)}: {type(exc).__name__}")
                 emit_progress(
                     "processing",
                     int(index * 90 / max(1, len(plans))),
@@ -1961,7 +2004,7 @@ def main() -> int:
         "broker_output_root": portable_path(broker_output_root) if runtime.write_broker_outputs else "",
         "llm_config_path": portable_path(llm_config_path),
         "model": llm_config.model,
-        "api_base_url": llm_config.base_url,
+        "api_base_url": public_api_origin(llm_config.base_url),
         "incremental": args.incremental,
         "discovered_files": len(discovered_files),
         "llm_requested_files": llm_requested_files,
