@@ -30,7 +30,7 @@ export default function CustomIntelligencePage() {
   const workspaceLayout = page.activeTab === "generate" && page.workspaceMode;
 
   return (
-    <div className={`min-h-screen min-w-0 overflow-x-hidden bg-[#F4F7FB] ${workspaceLayout ? "lg:h-dvh lg:overflow-hidden" : ""}`}>
+    <div className={`min-h-screen min-w-0 overflow-x-clip bg-[#F4F7FB] ${workspaceLayout ? "lg:h-dvh lg:overflow-hidden" : ""}`}>
       <DashboardHeader
         username={page.username}
         isAdmin={page.isAdmin}

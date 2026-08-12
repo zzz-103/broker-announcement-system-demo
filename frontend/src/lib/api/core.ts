@@ -87,3 +87,31 @@ export async function requestJson<T>(
   if (!response.ok) throw new BackendApiError(await readError(response), response.status);
   return (await response.json()) as T;
 }
+
+/** POST a raw request body (for example an application/zip upload) and parse JSON. */
+export async function requestBodyJson<T>(
+  path: string,
+  body: BodyInit,
+  token?: string,
+  signal?: AbortSignal,
+  contentType = "application/octet-stream",
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(buildApiUrl(path), {
+      method: "POST",
+      body,
+      signal,
+      cache: "no-store",
+      headers: {
+        "Content-Type": contentType,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    throw new BackendApiError("无法访问后端 API", 0);
+  }
+  if (!response.ok) throw new BackendApiError(await readError(response), response.status);
+  return (await response.json()) as T;
+}

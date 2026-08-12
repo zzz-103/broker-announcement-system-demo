@@ -1,9 +1,13 @@
-import { requestJson } from "./core";
+import { requestBodyJson, requestJson } from "./core";
 import type {
   AppUpdateData,
   AiAnalysisResponse,
   DashboardAiAnalysis,
   DashboardExportResponse,
+  DashboardDataSource,
+  DashboardDataSourceResponse,
+  DashboardImportPreviewResponse,
+  DashboardImportResponse,
   DashboardFilters,
   DashboardManifest,
   DashboardOverview,
@@ -52,4 +56,48 @@ export function fetchDashboardAiAnalysis(token: string): Promise<DashboardAiAnal
 
 export function exportDashboardData(token: string, signal?: AbortSignal): Promise<DashboardExportResponse> {
   return requestJson<DashboardExportResponse>("/api/dashboard-data/export", { method: "POST", signal }, token);
+}
+
+export function fetchDashboardSource(token: string, signal?: AbortSignal): Promise<DashboardDataSourceResponse> {
+  return requestJson<DashboardDataSourceResponse>("/api/dashboard-data/source", { signal }, token);
+}
+
+export function setDashboardSource(
+  token: string,
+  source: DashboardDataSource,
+  signal?: AbortSignal,
+): Promise<DashboardDataSourceResponse> {
+  return requestJson<DashboardDataSourceResponse>(
+    "/api/dashboard-data/source",
+    { method: "POST", body: JSON.stringify({ source }), signal },
+    token,
+  );
+}
+
+export function previewDashboardImport(
+  token: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<DashboardImportPreviewResponse> {
+  return requestBodyJson<DashboardImportPreviewResponse>(
+    "/api/dashboard-data/import/preview",
+    file,
+    token,
+    signal,
+    "application/zip",
+  );
+}
+
+export function importDashboardData(
+  token: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<DashboardImportResponse> {
+  return requestBodyJson<DashboardImportResponse>(
+    "/api/dashboard-data/import",
+    file,
+    token,
+    signal,
+    "application/zip",
+  );
 }

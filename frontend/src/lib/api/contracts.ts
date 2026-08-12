@@ -78,6 +78,34 @@ export interface DashboardExportResponse {
   manifest: DashboardManifest;
   download_url: string;
 }
+
+export type DashboardDataSource = "live" | "imported";
+
+export interface DashboardDataSourceEntry {
+  available: boolean;
+  reason: string | null;
+  manifest: DashboardManifest | null;
+}
+
+export interface DashboardDataSourceResponse {
+  preferred_source: DashboardDataSource;
+  active_source: DashboardDataSource | null;
+  fallback_reason: string | null;
+  sources: Record<DashboardDataSource, DashboardDataSourceEntry>;
+}
+
+export interface DashboardImportPreviewResponse {
+  valid: boolean;
+  manifest: DashboardManifest | null;
+  warnings: string[];
+}
+
+export interface DashboardImportResponse {
+  message: string;
+  manifest: DashboardManifest;
+  warnings: string[];
+  source: DashboardDataSourceResponse;
+}
 export interface AiAnalysisResponse {
   content: string | null; updatedAt: string | null;
   analysis?: { content?: string; [key: string]: unknown };

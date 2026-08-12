@@ -178,7 +178,7 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   return (
     <header
-      className="sticky top-0 z-40 h-[68px] min-w-0 overflow-visible border-b border-blue-400/20 bg-[linear-gradient(105deg,#102847_0%,#17385F_58%,#1E4070_100%)] text-white"
+      className="sticky top-0 z-40 h-[68px] min-w-0 overflow-visible border-b border-white/10 bg-[#102847]/95 text-white shadow-[0_8px_24px_rgba(16,40,71,0.16)] backdrop-blur-md"
       aria-label="平台导航"
     >
       <div className="mx-auto flex h-full min-w-0 max-w-[1600px] items-center gap-1.5 px-3 sm:gap-3 sm:px-6 lg:px-8">
