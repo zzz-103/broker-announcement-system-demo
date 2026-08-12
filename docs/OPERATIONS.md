@@ -116,7 +116,7 @@ App Watch 离线配置检查：
 
 属于业务模块的 CLI 保留在对应包内：`python -m backend.api.scheduler`、`python -m backend.broker_app_watch.cli`、`python -m backend.broker_sources.cli`。金采网、LLM 结构化和 matching 模块是 Pipeline 的内部阶段，由 `JobCommandFactory` 以固定参数调用；日常操作优先使用管理页任务，不复制第二套包装脚本。
 
-前端命令统一由 `frontend/package.json` 管理：`dev`、`build`、`ts-check`、`lint:build`、`validate`。使用 `pnpm install --frozen-lockfile`，以提交的 `frontend/pnpm-lock.yaml` 为准。仓库不维护重复的 `.sh`、`.cmd` 或旧平台启动包装。
+前端命令统一由 `frontend/package.json` 管理：`dev`、`build`、`ts-check`、`lint:build`、`validate`。使用 `pnpm install --frozen-lockfile`，以提交的 `frontend/pnpm-lock.yaml` 为准。`frontend/next-env.d.ts` 由 Next.js 按 dev/build 输出目录自动生成并已忽略，不要重新加入 Git。仓库不维护重复的 `.sh`、`.cmd` 或旧平台启动包装。
 
 ## 6. 日常开发与验证
 
@@ -126,9 +126,11 @@ cd frontend
 pnpm run ts-check
 pnpm run lint:build
 NEXT_PUBLIC_API_BASE_URL= pnpm build
+cd ..
+RUN_FRONTEND_STATIC_SMOKE=1 .venv/bin/python -m pytest -q backend/api/tests/test_route_ownership.py -k static_export
 ```
 
-生产构建生成 `frontend/out`。FastAPI 在该目录存在时可同源托管静态页面；开发时通常仍使用 Next dev。查看任务日志使用管理页 SSE；查看服务日志使用启动终端或 `docker compose logs -f <service>`。
+生产构建生成 `frontend/out`。最后一条显式 smoke 会检查首页、`/admin`、`/app-updates`、`/custom-intelligence` 与 `/version.json`；若产物不存在则直接失败。FastAPI 在该目录存在时可同源托管静态页面；开发时通常仍使用 Next dev。查看任务日志使用管理页 SSE；查看服务日志使用启动终端或 `docker compose logs -f <service>`。
 
 修改 `.env` 后重启 API/调度器；修改前端公开环境变量后重新构建。真实采集、LLM、搜索与邮件不得用离线测试结果替代真实联调结论。
 
@@ -160,6 +162,8 @@ git pull --ff-only
 
 `.env`、`backend/config/llm_api_config.json`、管理员覆盖配置和 SMTP 授权码只能通过受限文件/挂载或密钥管理注入。若凭据曾出现在共享目录、终端输出或历史提交中，立即轮换；删除当前代码不使用的旧密钥变量。
 
+版本交接以 Git 提交、可信 dashboard-data 数据包和受控配置三者为准；数据包不替代凭据或用户/审计数据库备份。
+
 交接审阅确认旧 Git 历史曾跟踪 `.env` 和 `backend/config/llm_api_config.json`，其中出现过非空管理员密码、调度 Token 和 LLM API Key 字段。当前版本已忽略这些文件，但“删除当前文件”不能使历史凭据恢复安全；部署前必须轮换相关凭据。若组织决定清理 Git 历史，应单独制定停机、备份、强制推送和所有 Clone 重新同步方案，不要在日常发布中直接改写历史。
 
 ## 9. 常见故障
@@ -186,9 +190,9 @@ git pull --ff-only
 
 ## 11. 最近一次从零交接验收
 
-基线提交 `8193c8f`（2026-08-12）在全新临时 Clone 中按本手册完成了以下验证：
+基线提交 `8193c8f`（2026-08-12）在全新临时 Clone 中按当时版本的安装说明完成了以下验证：
 
-- 从 constraints 锁定的 Python 依赖与 pnpm frozen lockfile 安装后，执行了后端测试、前端检查和空 API Base URL 的生产构建；具体通过数量随版本变化，不作为长期承诺。
+- 安装 Python 依赖并按 pnpm frozen lockfile 安装前端依赖后，执行了后端测试、前端检查和空 API Base URL 的生产构建；本轮新增的 `requirements-lock.txt` 记录该交接环境的直接依赖版本基线，具体测试数量不作为长期承诺。
 - 启动 FastAPI 后，health、管理员登录、无效 Token 401、用户/审计/自定义情报 SQLite 初始化及四个静态页面通过。
 - 导入一份来自另一台机器的标准 ZIP：预览无警告，恢复 1,425 条招采、69 条 App 更新和 AI 分析；该包未声明可选 matching baseline，故未恢复基线是预期行为。
 - 重启 API 后仍以 imported 为活动源；导出的新 ZIP 可再次通过预览校验。前台会按产品口径筛选记录，页面数字不必等于 Manifest 全量数，管理页数据源卡片应与 Manifest 一致。

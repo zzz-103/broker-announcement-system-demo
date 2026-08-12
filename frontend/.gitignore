@@ -7,6 +7,8 @@ node_modules/
 .next/
 out/
 dist/
+# Next.js rewrites this generated declaration for dev and production dist dirs.
+next-env.d.ts
 
 # Test, type-check and tool caches
 coverage/
