@@ -59,6 +59,38 @@ CUSTOM_INTELLIGENCE_MAX_WORKERS=2
 
 邮件发送固定使用 `smtp.126.com:465` 和 SSL，SMTP 用户名必须与 `@126.com` 发件地址一致，登录只使用客户端授权码。普通用户最多选择 5 个收件人，可选择“研究简报”或“情报日报”模板，并选择 HTML + PDF、仅 HTML 或仅 PDF；公司域外地址必须再次确认。系统为每个收件人分别生成邮件，所有呈现形式始终复用已经持久化的同一份 Report V2，不会再次调用模型。
 
+## 展示版：导入数据包手工流程
+
+展示版只对招采/App 看板使用已经准备好的 dashboard-data，不运行爬虫、LLM、Pipeline
+或 App Watch 采集。它仍然使用同一套 FastAPI/前端镜像，不新增部署模式环境变量；
+自定义情报和邮件链路按本环境既有配置照常在线，不参与 dashboard-data 同步。
+
+数据包必须是完整的六文件 Export=Import 包：
+`manifest.json`、`overview.json`、`filters.json`、`tender_projects.json`、
+`app_updates.json`、`ai_analysis.json`。不要把 CSV、SQLite、`.env`、LLM 配置或
+自定义情报导出物混进包内。
+
+1. 在受限的临时目录保存待导入包，先核对 Manifest 的 schema/version、六个文件名、
+   SHA-256、字节数和记录数；确认包来自可信的生产导出。
+2. 按正常生产 Compose 启动 `backend-api`、`frontend` 和 `gateway`；展示期间保持
+   `backend-scheduler` 停止或不安排采集任务，不执行爬虫/LLM/Pipeline/App Watch 任务。
+   自定义情报和邮件仍按本环境已有的百度、共享 LLM、SMTP、用户数据库配置运行；这些
+   secrets 只保留在原受限路径，不进入导入包。首次部署仍需按发布脚本要求准备受限配置文件。
+3. 以管理员身份在“管理控制台 → 前端数据包”执行导入。导入成功后，后端校验并原子保存
+   六文件 ZIP 和来源偏好文件到 `DASHBOARD_DATA_EXPORT_DIR`，再将当前来源切换为
+   `imported`。不要手工覆盖 `users.db`、`audit.db` 或其他运行数据库来“导入”看板。
+4. 在界面和 `/api/dashboard-data/manifest` 核对来源状态为 `imported`，再打开采购看板、
+   App 更新和 AI 分析页面确认数据可见；核对导入 ZIP 与来源偏好文件仍位于主机
+   `<DeployDir>\runtime\data\dashboard-data\`。
+5. 重建或重启容器后再次核对来源状态和 Manifest。生产 Compose 的
+   `./runtime/data:/app/backend/data` 已覆盖 `DASHBOARD_DATA_EXPORT_DIR`，所以来源状态和
+   导入 ZIP 应跨容器重建保留。
+
+展示版需要恢复实时数据时，必须使用管理员界面提供的显式“恢复 live/实时数据”操作，
+然后再启动调度器；不要通过删除导入文件、修改状态文件或替换用户数据库来切换来源。
+服务默认来源是 `live`。若 live 文件缺失、损坏或校验失败，系统会自动回退到最近一次
+有效的 imported 包；没有有效 imported 包时应明确显示数据不可用，而不是伪造空的生产事实。
+
 ## Windows 本地验证
 
 Windows 使用与锁文件一致的 Corepack pnpm 9：
@@ -99,8 +131,20 @@ cd D:\broker-system
 - `.env` 已设置真实管理员密码、调度器 Token 和 LLM 配置。
 - `.env` 已设置 `BROKER_VERSION` 与 `BROKER_PUBLIC_URL`；Compose 校验能看到 backend-api、backend-scheduler、frontend、gateway 四项服务。
 - `FRONTEND_ORIGIN`、`FRONTEND_DIST_PATH` 和数据挂载目录正确。
+- 完整系统的 live 数据位于 `runtime/data/announcement_table.csv`、
+  `runtime/app-watch-data/exports/app_releases.csv` 和（可选）`runtime/data/ai-analysis.json`；
+  展示版导入包及源状态位于 `runtime/data/dashboard-data/`。App Watch 的 raw/processed
+  历史只放在 `runtime/app-watch-data/`，不要复制到公开导出包。
+- 导入或升级时只允许校验后的 dashboard-data 六文件 ZIP 与来源状态进入
+  `runtime/data/dashboard-data/`；
+  `users.db`、`audit.db`、自定义情报/邮件数据库、资格名单、`.env`、LLM 配置和其他 secrets
+  必须保留在各自受限路径，不得由导入流程覆盖。
 - FastAPI 保持单 worker，确保 Session、任务锁、SSE 和缓存一致。
 - 网关对 HTML 和 `version.json` 使用 `no-store`，哈希静态资源使用长期缓存。
+- 生产验收不得只看页面“有数据”：以真实数据为准核对 2026-01-01 至验收日的日期范围、
+  招采与 App 的实际记录数量、Manifest 中的 SHA-256/record_count，以及页面汇总和筛选后
+  记录是否一致。验收记录应注明当前来源是 live 还是 imported；演示种子或旧缓存不能替代
+  2026 年 1 月以来的真实数量。
 
 ## 数据包导出
 
@@ -110,7 +154,13 @@ cd D:\broker-system
 python scripts/export_dashboard_data.py --zip
 ```
 
-默认输出 `backend/data/dashboard-data/` 和同级 ZIP，正式前端通过 API 读取该目录内容。
+默认输出 `backend/data/dashboard-data/` 和同级 ZIP；正式前端通过 API 读取源选择逻辑
+返回的当前数据。
+
+这里的“读取”指 API 先解析 live/imported 源选择，再返回当前源的标准化数据；GET 不会
+把 `DASHBOARD_DATA_EXPORT_DIR` 当作静态目录直接读取。该目录同时承担 Export=Import
+六文件包和源状态的持久化位置，生产由 `runtime/data` volume 覆盖。导入成功后来源切换
+为 imported；live 恢复或 live 暂时不可用时，按源选择规则切换/回退，不要手工修改导出文件。
 
 ## 关键验证
 
@@ -129,4 +179,9 @@ NEXT_PUBLIC_API_BASE_URL= pnpm build
 - 409：已有互斥任务或导出操作运行中。
 - 自定义情报 409：同一用户已有 pending/running 执行，等待完成后再提交。
 - 自定义情报 503：后端未配置百度 API Key，或情报数据库暂不可用；504 表示上游超时。
+- 看板显示 imported 或自动回退：先检查 `runtime/data/dashboard-data/` 是否包含校验后的
+  六文件 ZIP、来源状态和有效 Manifest，再检查 live CSV/JSON 的日期范围与权限；不要直接
+  删除导入包或数据库文件。
+- 导入后重启数据消失：检查部署 Compose 是否仍挂载
+  `./runtime/data:/app/backend/data`，以及 `DASHBOARD_DATA_EXPORT_DIR` 是否仍指向该挂载内目录。
 - 修改 `.env` 或前端环境变量后：重启对应服务；修改正式前端后重新生成 `out/`。
