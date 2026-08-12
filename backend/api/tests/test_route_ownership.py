@@ -22,6 +22,8 @@ os.environ["USER_DB_PATH"] = str(Path(_RUNTIME_DIR.name) / "users.db")
 os.environ["AUDIT_DB_PATH"] = str(Path(_RUNTIME_DIR.name) / "audit.db")
 
 from backend.api import main  # noqa: E402
+from backend.api import dashboard_package as dashboard_package_module  # noqa: E402
+from backend.api import dashboard_package_import as dashboard_import_module  # noqa: E402
 from backend.api.routes import accounts  # noqa: E402
 from backend.api.routes import ai  # noqa: E402
 from backend.api.routes import datasets  # noqa: E402
@@ -160,9 +162,11 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(invalid_source.status_code, 422)
 
     def test_fastapi_serves_static_export_page_routes(self) -> None:
+        if os.environ.get("RUN_FRONTEND_STATIC_SMOKE") != "1":
+            self.skipTest("set RUN_FRONTEND_STATIC_SMOKE=1 to run the frontend static smoke")
         if not main._frontend_dist.is_dir():
-            self.skipTest("frontend/out is not built in this test environment")
-        for path in ("/", "/app-updates", "/custom-intelligence"):
+            self.fail(f"frontend static export is required for smoke tests: {main._frontend_dist}")
+        for path in ("/", "/admin", "/app-updates", "/custom-intelligence"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
             self.assertIn("text/html", response.headers.get("content-type", ""), path)
@@ -170,6 +174,86 @@ class RouteOwnershipTests(unittest.TestCase):
         version = self.client.get("/version.json")
         self.assertEqual(version.status_code, 200)
         self.assertIn("version", version.json())
+
+    def test_llm_external_route_requires_admin_and_starts_mocked_manager(self) -> None:
+        self.assertEqual(self.client.post("/api/jobs/llm-external").status_code, 401)
+        headers = self._admin_headers()
+        fake_job = SimpleNamespace(job_id="external-1", job_type="llm-external", status="running")
+        with patch.object(main.job_manager, "start_llm_external", return_value=fake_job) as start:
+            response = self.client.post("/api/jobs/llm-external", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"job_id": "external-1", "job_type": "llm-external", "status": "running"})
+        start.assert_called_once_with()
+
+    def test_dashboard_export_preview_import_source_and_fresh_client_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tender = root / "announcement.csv"
+            app_releases = root / "app-releases.csv"
+            analysis = root / "analysis.json"
+            export_dir = root / "export"
+            tender.write_text(
+                "document_sha1,broker_name,is_broker_project,publish_date,announcement_stage,project_name\n"
+                "route-tender,测试证券,true,2026-08-01,招标公告,测试交易系统建设\n",
+                encoding="utf-8",
+            )
+            app_releases.write_text(
+                "broker_code,broker_name,app_name,source_url,publish_date,update_type,update_summary,feature_tags,highlights\n"
+                "test,测试证券,测试 App,https://example.test/app,2026-08-02,新功能,新增能力,[],[]\n",
+                encoding="utf-8",
+            )
+            analysis.write_text(json.dumps({"content": "测试分析"}), encoding="utf-8")
+            imported_zip = root / "imported.zip"
+            preference = root / "source-preference.json"
+            settings = SimpleNamespace(
+                announcement_csv_path=tender,
+                app_releases_csv_path=app_releases,
+                ai_analysis_cache_path=analysis,
+                dashboard_data_export_dir=export_dir,
+                dashboard_data_imported_zip_path=imported_zip,
+                dashboard_data_source_preference_path=preference,
+                matching_procurement_csv_path=root / "matching" / "announcement_table.csv",
+                matching_result_csv_path=root / "matching" / "result_table.csv",
+                matching_verified_links_path=root / "matching" / "llm_verified_links.csv",
+                matching_state_path=root / "matching" / "matching_state.json",
+                imported_matching_baseline_path=root / "matching" / "imported_matching_baseline.json",
+            )
+            dashboard_import_module.imported_package_store.invalidate()
+            headers = self._admin_headers()
+            with (
+                patch.object(dashboard_package_module, "settings", settings),
+                patch.object(dashboard_import_module, "settings", settings),
+            ):
+                exported = self.client.post("/api/dashboard-data/export", headers=headers)
+                self.assertEqual(exported.status_code, 200)
+                archive = self.client.get("/api/dashboard-data/export.zip", headers=headers)
+                self.assertEqual(archive.status_code, 200)
+                self.assertEqual(archive.headers["content-type"].split(";", 1)[0], "application/zip")
+
+                preview = self.client.post(
+                    "/api/dashboard-data/import/preview",
+                    headers={**headers, "content-type": "application/zip"},
+                    content=archive.content,
+                )
+                self.assertEqual(preview.status_code, 200)
+                self.assertTrue(preview.json()["valid"])
+
+                imported = self.client.post(
+                    "/api/dashboard-data/import",
+                    headers={**headers, "content-type": "application/zip"},
+                    content=archive.content,
+                )
+                self.assertEqual(imported.status_code, 200)
+                self.assertEqual(imported.json()["source"]["active_source"], "imported")
+                source = self.client.get("/api/dashboard-data/source", headers=headers)
+                self.assertEqual(source.status_code, 200)
+                self.assertEqual(source.json()["active_source"], "imported")
+
+                dashboard_import_module.imported_package_store.invalidate()
+                with TestClient(main.app) as fresh_client:
+                    dataset = fresh_client.get("/api/dashboard-data/files/tender_projects", headers=headers)
+                self.assertEqual(dataset.status_code, 200)
+                self.assertEqual(dataset.json()[0]["project_name"], "测试交易系统建设")
 
     def test_custom_intelligence_requires_authentication(self) -> None:
         for method, path in (

@@ -20,6 +20,7 @@ from .routes.dashboard_data import router as dashboard_data_router
 from .routes.datasets import router as datasets_router
 from .routes.jobs import router as jobs_router
 from .routes.custom_intelligence import router as custom_intelligence_router
+from .routes.custom_intelligence_admin import router as custom_intelligence_admin_router
 from .runtime import announcement_response_cache, job_manager, session_tokens
 
 
@@ -51,6 +52,7 @@ for domain_router in (
     ai_router,
     dashboard_data_router,
     custom_intelligence_router,
+    custom_intelligence_admin_router,
 ):
     app.router.routes.extend(domain_router.routes)
 
