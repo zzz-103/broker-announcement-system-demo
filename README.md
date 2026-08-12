@@ -12,34 +12,53 @@
 
 ## 快速开始
 
-需要 Git、Python 3.11、Node.js >=20.9、Corepack 和 pnpm 9（提交的 `frontend/pnpm-lock.yaml` 必须使用 frozen lockfile 安装）。Docker 仅为生产式部署必需。
+正式推荐 Git、Python 3.11、Node.js >=20.9 和 Corepack。项目通过 Corepack 使用 `package.json` 声明的 pnpm 9，并以 `frontend/pnpm-lock.yaml` frozen 安装；Docker 仅为生产式部署必需。
+
+第一次接手不要只复制开发目录。先确认交付提交已经推送到接手人能访问的远端，再从空目录执行：
 
 ```bash
 git clone https://github.com/zzz-103/broker-announcement-system-demo.git
 cd broker-announcement-system-demo
-cp .env.example .env
+git status --short
+git rev-parse --short HEAD
+
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt -c requirements-lock.txt
-corepack prepare pnpm@9.0.0 --activate
-cd frontend && pnpm install --frozen-lockfile && cd ..
-```
+.venv/bin/python -m pip check
 
-编辑 `.env`，至少替换 `ADMIN_PASSWORD` 和 `SCHEDULER_TOKEN`。本地开发分别启动：
-
-```bash
-.venv/bin/python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-```bash
 cd frontend
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev
+corepack pnpm --version
+corepack pnpm install --frozen-lockfile
+cd ..
+
+cp .env.example .env
 ```
 
-访问 `http://localhost:3000`，健康检查为 `http://127.0.0.1:8000/api/health`。新 Clone 不含业务运行数据；管理员登录后在“管理控制台 → 前端数据包”导入可信的导出 ZIP，即可恢复招采、App 更新、AI 摘要以及可选的匹配增量基线，无需重跑历史爬虫。用户、审计、自定义情报、邮件配置和密钥不在数据包内，需在目标环境单独初始化。
+`git status --short` 应没有输出；`corepack pnpm --version` 应显示 `9.0.0`。用文本编辑器打开根 `.env`，至少把 `ADMIN_PASSWORD` 和 `SCHEDULER_TOKEN` 改为两个不同的强随机值，不要把真实凭据提交到 Git。
+
+先做离线验收：
+
+```bash
+.venv/bin/python -m pytest -q
+cd frontend
+corepack pnpm run ts-check
+corepack pnpm run lint:build
+NEXT_PUBLIC_API_BASE_URL= corepack pnpm build
+cd ..
+RUN_FRONTEND_STATIC_SMOKE=1 .venv/bin/python -m pytest -q backend/api/tests/test_route_ownership.py -k static_export
+```
+
+构建完成后可先用单进程 FastAPI 同源托管生产静态页面：
+
+```bash
+.venv/bin/python -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+访问 `http://127.0.0.1:8000`、`http://127.0.0.1:8000/api/health` 和 `http://127.0.0.1:8000/docs`。新 Clone 不含业务运行数据；管理员登录后在“管理控制台 → 数据管理”选择可信 ZIP，先预览再确认导入，即可恢复招采、App 更新、AI 摘要以及可选的匹配增量基线。用户、审计、自定义情报、邮件配置和密钥不在数据包内，需在目标环境单独初始化。
+
+Windows PowerShell、双终端开发启动、逐项成功标志、数据导入后的重启复核和故障处理，请严格按 [docs/OPERATIONS.md](docs/OPERATIONS.md) 的“从零 Clone 手把手流程”执行。
 
 百度检索 API、共享 LLM API 和 SMTP 发件配置均可在“管理控制台 → 情报技术配置”维护。SMTP 支持配置主机、端口、SSL、用户名、发件地址和授权码；密钥仅返回掩码，查看原值需要二次验证管理员密码。
-
-Windows、生产 Compose、首次配置、数据导入/导出和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)。
 
 ## 核心链路
 
@@ -78,14 +97,14 @@ docs/                     架构和操作手册
 ```bash
 .venv/bin/python -m pytest -q
 cd frontend
-pnpm run ts-check
-pnpm run lint:build
-NEXT_PUBLIC_API_BASE_URL= pnpm build
+corepack pnpm run ts-check
+corepack pnpm run lint:build
+NEXT_PUBLIC_API_BASE_URL= corepack pnpm build
 ```
 
 真实爬虫、搜索、LLM、SMTP 和生产发布需要对应网络与凭据；离线测试通过不代表这些外部链路已联调。Python 依赖统一由根 `requirements.txt` 配合 `requirements-lock.txt` constraints 安装，Docker 构建也使用同一 constraints。
 
-最近一次基线验收以提交 `8193c8f`（2026-08-12）为准；后续版本需按本手册重新验证，不把某次测试通过数量当作长期事实。
+最近一次独立临时 Clone 模拟以提交 `ad5dbb0`（2026-08-12）为代码基线；详细执行结果和未验证项见操作手册第 16 节。后续版本需重新验证，不把某次测试通过数量当作长期事实。
 
 ## 文档入口
 
