@@ -25,6 +25,7 @@ export interface LoginResponse {
   token: string;
   username: string;
   name: string;
+  email?: string | null;
   role: "admin" | "user";
   is_admin: boolean;
   is_super_admin: boolean;
@@ -210,6 +211,13 @@ export interface IntelligenceReport {
  */
 export type IntelligenceAssistantAudience =
   | "management"
+  | "wealth_management"
+  | "investment_banking"
+  | "institutional_business"
+  | "asset_management"
+  | "proprietary_investment"
+  | "research_business"
+  | "fintech_operations"
   | "business_product"
   | "technology"
   | "compliance_risk"

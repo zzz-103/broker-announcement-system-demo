@@ -7,17 +7,7 @@ import type {
 
 export const TOPIC_LIMIT = 10;
 export const EXECUTIONS_PAGE_SIZE = 10;
-export const FOCUS_TAG_LIMIT = 3;
-export const FOCUS_TAG_OPTIONS = [
-  "财富管理",
-  "AI 与智能投顾",
-  "数字化转型",
-  "同业竞争",
-  "客户运营",
-  "机构业务",
-  "监管政策",
-  "合规与风险",
-] as const;
+export const FOCUS_TAG_LIMIT = 8;
 
 export const DEFAULT_FORM: IntelligenceAssistantRequest = {
   audience: "management",
@@ -30,84 +20,57 @@ export const DEFAULT_FORM: IntelligenceAssistantRequest = {
 };
 
 export const AUDIENCE_OPTIONS: readonly { value: IntelligenceAssistantAudience; label: string; detail: string }[] = [
-  { value: "management", label: "管理层", detail: "结论先行，突出影响与决策动作" },
-  { value: "business_product", label: "业务 / 产品", detail: "关注市场变化、客户与产品机会" },
-  { value: "technology", label: "技术", detail: "关注技术路线、实施案例与能力建设" },
-  { value: "compliance_risk", label: "合规风控", detail: "关注政策、风险信号与应对事项" },
-  { value: "industry_research", label: "行业研究", detail: "关注行业趋势、机构案例与竞争格局" },
-  { value: "custom", label: "自定义", detail: "在下方补充具体读者背景" },
+  { value: "management", label: "管理层", detail: "行业趋势、竞争格局与战略机会" },
+  { value: "wealth_management", label: "财富管理", detail: "客户、产品、投顾与渠道经营" },
+  { value: "investment_banking", label: "投行业务", detail: "股债融资、并购与监管动态" },
+  { value: "institutional_business", label: "机构业务", detail: "机构客户、交易服务与协同机会" },
+  { value: "asset_management", label: "资产管理", detail: "产品、规模、策略与资管监管" },
+  { value: "proprietary_investment", label: "自营投资", detail: "大类配置、策略表现与风险敞口" },
+  { value: "research_business", label: "研究业务", detail: "研究趋势、客户需求与服务模式" },
+  { value: "fintech_operations", label: "金融科技 / 运营", detail: "数字化能力、流程与运营效率" },
+  { value: "compliance_risk", label: "合规风控", detail: "监管政策、风险信号与内控应对" },
+  { value: "custom", label: "自定义", detail: "补充具体读者背景" },
 ];
 
 export const AUDIENCE_RESEARCH_SUGGESTIONS: Partial<Record<IntelligenceAssistantAudience, readonly string[]>> = {
   management: [
-    "行业增长驱动与未来 12 个月关键变量",
-    "主要券商战略动作与差异化路径",
-    "对收入结构和利润率的潜在影响",
-    "监管变化对经营优先级的影响",
-    "可规模化新业务机会与进入时点",
-    "重点竞争对手资源投入与成效",
-    "高价值客群需求变化与机会",
-    "关键风险、预警信号与应对顺序",
-    "合作、投资或并购机会",
-    "未来 90 天可验证的决策事项",
-    "标杆案例的可复制条件",
-    "技术趋势对组织与能力建设的影响",
+    "行业趋势与增长驱动", "竞争格局与市场份额", "监管政策与经营影响", "战略机会与进入时点",
+    "收入结构与盈利能力", "重点同业战略动作", "组织能力与资源配置", "关键风险与决策事项",
   ],
-  business_product: [
-    "客户痛点与未满足需求",
-    "主流产品功能与服务模式对比",
-    "定价收费与商业模式变化",
-    "用户增长、转化与活跃提升路径",
-    "高价值客群与细分场景机会",
-    "标杆券商产品上线与运营成效",
-    "竞争差异化与价值主张",
-    "渠道生态与合作伙伴机会",
-    "产品合规边界与上线约束",
-    "MVP 范围与迭代优先级",
-    "运营流程与服务体验优化",
-    "未来季度需求验证指标",
+  wealth_management: [
+    "客户分层与需求变化", "财富产品与产品货架", "投顾服务与买方转型", "渠道经营与线上增长",
+    "高净值客户服务", "客户运营与转化提升", "同业财富业务对标", "适当性与销售合规",
   ],
-  technology: [
-    "技术架构演进与关键组件",
-    "自研、采购与联合建设比较",
-    "标杆技术架构与落地案例",
-    "数据治理与知识库质量",
-    "大模型与 Agent 评估指标",
-    "安全权限与审计留痕",
-    "稳定性、性能与推理成本",
-    "遗留系统集成与改造难点",
-    "供应商能力与锁定风险",
-    "私有化部署与国产化适配",
-    "工程团队与运维能力建设",
-    "PoC 到生产规模化条件",
+  investment_banking: [
+    "IPO 审核与发行动态", "再融资与资本市场政策", "债券承销与信用风险", "并购重组与产业整合",
+    "项目储备与行业机会", "监管问询与执业质量", "投行同业竞争格局", "定价承销与项目执行",
+  ],
+  institutional_business: [
+    "机构客户需求变化", "交易服务与主经纪商", "研究销售与客户覆盖", "衍生品与风险管理服务",
+    "托管外包与运营服务", "跨境机构业务机会", "协同获客与综合服务", "机构业务合规动态",
+  ],
+  asset_management: [
+    "产品布局与发行趋势", "管理规模与资金流向", "投资策略与业绩表现", "渠道合作与客户结构",
+    "公募化与主动管理转型", "资管同业竞争格局", "资管监管与产品合规", "投研体系与能力建设",
+  ],
+  proprietary_investment: [
+    "大类资产配置", "权益与固收策略", "衍生品及对冲工具", "市场风险与敞口管理",
+    "收益表现与波动归因", "流动性与信用风险", "量化交易与策略迭代", "资本约束与监管指标",
+  ],
+  research_business: [
+    "宏观与行业趋势", "重点赛道与公司研究", "机构客户研究需求", "研究产品与服务创新",
+    "研究销售与佣金模式", "数据工具与智能研究", "同业研究能力对标", "合规边界与声誉风险",
+  ],
+  fintech_operations: [
+    "AI 与智能化应用", "核心系统与技术架构", "数据治理与数据资产", "客户运营与流程优化",
+    "研发效能与成本管理", "信息安全与业务连续性", "供应商与国产化替代", "运营质量与服务体验",
   ],
   compliance_risk: [
-    "最新监管规则与业务影响",
-    "处罚案例与监管关注点",
-    "数据使用与个人信息保护边界",
-    "AI 模型治理、可解释性与问责",
-    "投资顾问适当性管理要求",
-    "信息披露与营销宣传合规",
-    "第三方合作与供应商风险",
-    "跨境业务与数据出境要求",
-    "审计留痕与责任归属",
-    "操作风险、欺诈与舆情信号",
-    "风险指标与预警机制",
-    "业务上线前合规核查要点",
+    "最新监管政策与解读", "处罚案例与监管关注点", "业务合规与适当性管理", "市场与信用风险",
+    "操作风险与内控机制", "数据安全与隐私保护", "反洗钱与异常交易", "风险预警与整改跟踪",
   ],
-  industry_research: [
-    "市场规模与增长驱动",
-    "竞争格局与市场份额变化",
-    "主要机构战略与资源投入对比",
-    "业务模式与收入结构演进",
-    "客户结构与需求变化",
-    "政策监管演进及行业影响",
-    "技术创新与应用成熟度",
-    "投融资、合作与并购动态",
-    "国内外标杆机构对比",
-    "关键供应商与产业生态",
-    "成功案例与失败教训",
-    "未来 6-12 个月趋势与不确定性",
+  custom: [
+    "行业趋势", "竞争格局", "客户需求", "产品与服务", "经营成效", "监管政策", "技术与运营", "风险与机会",
   ],
 };
 
@@ -127,6 +90,11 @@ export const REPORT_LENGTH_OPTIONS: readonly { value: IntelligenceReportLength; 
 export const AUDIENCE_LABEL: Record<string, string> = Object.fromEntries(
   AUDIENCE_OPTIONS.map((option) => [option.value, option.label]),
 );
+Object.assign(AUDIENCE_LABEL, {
+  business_product: "业务 / 产品",
+  technology: "技术",
+  industry_research: "行业研究",
+});
 export const TIME_RANGE_LABEL: Record<string, string> = Object.fromEntries(
   TIME_RANGE_OPTIONS.map((option) => [option.value, option.label]),
 );

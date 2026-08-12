@@ -26,7 +26,7 @@ class IntelligenceTopicCreateCompat(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     audience: AssistantAudience
     audience_detail: str = Field(default="", max_length=2_000)
-    focus_tags: list[str] = Field(default_factory=list, max_length=3)
+    focus_tags: list[str] = Field(default_factory=list, max_length=8)
     focus: str = Field(min_length=1, max_length=1_000)
     extra_focus: str = Field(default="", max_length=2_000)
     time_range: TimeRange = "month"
@@ -35,7 +35,7 @@ class IntelligenceTopicCreateCompat(BaseModel):
     @field_validator("focus_tags")
     @classmethod
     def normalize_focus_tags(cls, values: list[str]) -> list[str]:
-        return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))[:3]
+        return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))[:8]
 
     @model_validator(mode="after")
     def validate_v2_assistant(self) -> "IntelligenceTopicCreateCompat":

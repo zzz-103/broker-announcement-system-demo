@@ -335,6 +335,7 @@ export function DomainDistributionChart({ data }: ChartsProps) {
 export function StageDistributionChart({ data }: ChartsProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [chartWidth, setChartWidth] = useState(0);
   const reducedMotion = useReducedMotion();
 
   const chartData = useMemo(() => {
@@ -363,13 +364,14 @@ export function StageDistributionChart({ data }: ChartsProps) {
     }
     
     const totalSum = chartData.reduce((acc, curr) => acc + curr.value, 0);
+    const compactChart = (chartWidth || chartRef.current.clientWidth) < 250;
 
     chartInstance.current.setOption({
       animation: !reducedMotion,
       title: {
         text: totalSum.toLocaleString(),
         subtext: "当前筛选记录",
-        left: "29%",
+        left: compactChart ? "25%" : "29%",
         top: "40%",
         textAlign: "center",
         textStyle: { fontSize: 20, fontWeight: "bold", color: "#172033" },
@@ -387,21 +389,20 @@ export function StageDistributionChart({ data }: ChartsProps) {
         type: "scroll",
         orient: "vertical",
         right: 0,
-        top: 8,
-        bottom: 8,
-        width: 108,
+        top: "center",
+        width: compactChart ? 88 : 112,
         icon: "circle",
-        itemWidth: 10,
-        itemHeight: 10,
-        itemGap: 7,
-        textStyle: { fontSize: 11, color: "#667085", fontWeight: 500 },
+        itemWidth: compactChart ? 9 : 11,
+        itemHeight: compactChart ? 9 : 11,
+        itemGap: compactChart ? 6 : 10,
+        textStyle: { fontSize: compactChart ? 10 : 12, color: "#667085", fontWeight: 500 },
         formatter: (name: string) => (name.length > 7 ? `${name.slice(0, 7)}…` : name),
       },
       series: [
         {
           type: "pie",
-          radius: ["46%", "64%"],
-          center: ["29%", "50%"],
+          radius: compactChart ? ["40%", "57%"] : ["46%", "64%"],
+          center: [compactChart ? "25%" : "29%", "50%"],
           avoidLabelOverlap: false,
           label: { show: false },
           emphasis: {
@@ -417,7 +418,14 @@ export function StageDistributionChart({ data }: ChartsProps) {
         },
       ],
     });
-  }, [chartData, reducedMotion]);
+  }, [chartData, chartWidth, reducedMotion]);
+
+  useEffect(() => {
+    if (!chartRef.current || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => setChartWidth(Math.round(entry.contentRect.width)));
+    observer.observe(chartRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const handleResize = () => chartInstance.current?.resize();

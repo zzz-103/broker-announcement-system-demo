@@ -182,7 +182,7 @@ def _normalize_focus_tags(value: object) -> list[str]:
         tag = clean_text(item, MAX_FOCUS_TAG_LENGTH)
         if tag and tag not in result:
             result.append(tag)
-        if len(result) >= 3:
+        if len(result) >= 8:
             break
     return result
 
@@ -291,14 +291,23 @@ def normalize_snapshot(payload: dict[str, object]) -> dict[str, object]:
     if not snapshot.get("focus_tags"):
         legacy_keywords = snapshot.get("keywords")
         if isinstance(legacy_keywords, list):
-            snapshot["focus_tags"] = legacy_keywords[:3]
-    audience_aliases = {"product_business": "business_product"}
+            snapshot["focus_tags"] = legacy_keywords[:8]
+    audience_aliases = {
+        "product_business": "wealth_management",
+        "business_product": "wealth_management",
+        "technology": "fintech_operations",
+        "industry_research": "research_business",
+    }
     audience = audience_aliases.get(
-        clean_text(snapshot.get("audience") or snapshot.get("analysis_perspective") or "industry_research", 120),
-        clean_text(snapshot.get("audience") or snapshot.get("analysis_perspective") or "industry_research", 120),
+        clean_text(snapshot.get("audience") or snapshot.get("analysis_perspective") or "research_business", 120),
+        clean_text(snapshot.get("audience") or snapshot.get("analysis_perspective") or "research_business", 120),
     )
-    if audience not in {"management", "business_product", "technology", "compliance_risk", "industry_research", "custom"}:
-        audience = "industry_research"
+    if audience not in {
+        "management", "wealth_management", "investment_banking", "institutional_business",
+        "asset_management", "proprietary_investment", "research_business", "fintech_operations",
+        "compliance_risk", "custom",
+    }:
+        audience = "research_business"
     report_length = clean_text(snapshot.get("report_length"), 32)
     if report_length not in REPORT_LENGTH_GUIDANCE:
         report_length = "standard"
@@ -340,7 +349,7 @@ def build_analysis_messages(
     audience = clean_text(snapshot.get("audience"), 120)
     audience_detail = clean_text(snapshot.get("audience_detail"), 2_000)
     focus = clean_text(snapshot.get("focus"), 1_000)
-    focus_tags = clean_list(snapshot.get("focus_tags"), 3)
+    focus_tags = clean_list(snapshot.get("focus_tags"), 8)
     extra_focus = clean_text(snapshot.get("extra_focus"), 2_000)
     source_items = [
         {
@@ -395,7 +404,7 @@ def build_planner_messages(snapshot: dict[str, object]) -> list[dict[str, str]]:
     focus = clean_text(snapshot.get("focus"), 1_000)
     audience = clean_text(snapshot.get("audience"), 120)
     audience_detail = clean_text(snapshot.get("audience_detail"), 1_500)
-    focus_tags = clean_list(snapshot.get("focus_tags"), 3)
+    focus_tags = clean_list(snapshot.get("focus_tags"), 8)
     extra_focus = clean_text(snapshot.get("extra_focus"), 1_500)
     system = (
         "你是公司内部证券行业情报检索规划器。只输出严格 JSON，不要 Markdown。"

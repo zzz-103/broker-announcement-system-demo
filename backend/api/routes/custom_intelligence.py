@@ -127,25 +127,32 @@ def _audit_intelligence_event(
 def _public_assistant_fields(value: dict[str, object]) -> dict[str, object]:
     allowed_audiences = {
         "management",
-        "business_product",
-        "technology",
+        "wealth_management",
+        "investment_banking",
+        "institutional_business",
+        "asset_management",
+        "proprietary_investment",
+        "research_business",
+        "fintech_operations",
         "compliance_risk",
-        "industry_research",
         "custom",
     }
     audience_aliases = {
-        "product_business": "business_product",
+        "product_business": "wealth_management",
+        "business_product": "wealth_management",
+        "technology": "fintech_operations",
+        "industry_research": "research_business",
         "管理层": "management",
-        "业务/产品": "business_product",
-        "业务 / 产品": "business_product",
-        "技术": "technology",
+        "业务/产品": "wealth_management",
+        "业务 / 产品": "wealth_management",
+        "技术": "fintech_operations",
         "合规风控": "compliance_risk",
-        "行业研究": "industry_research",
+        "行业研究": "research_business",
     }
-    raw_audience = str(value.get("audience") or value.get("analysis_perspective") or "industry_research").strip()
+    raw_audience = str(value.get("audience") or value.get("analysis_perspective") or "research_business").strip()
     audience = audience_aliases.get(raw_audience, raw_audience)
     if audience not in allowed_audiences:
-        audience = "industry_research"
+        audience = "research_business"
 
     raw_tags = value.get("focus_tags") or value.get("keywords") or []
     focus_tags: list[str] = []
@@ -154,7 +161,7 @@ def _public_assistant_fields(value: dict[str, object]) -> dict[str, object]:
             tag = str(item).strip()[:80]
             if tag and tag not in focus_tags:
                 focus_tags.append(tag)
-            if len(focus_tags) >= 3:
+            if len(focus_tags) >= 8:
                 break
     focus_objects = value.get("focus_objects")
     legacy_focus = "、".join(str(item).strip() for item in focus_objects if str(item).strip()) if isinstance(focus_objects, list) else ""

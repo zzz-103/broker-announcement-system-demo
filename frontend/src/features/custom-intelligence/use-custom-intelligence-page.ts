@@ -41,17 +41,43 @@ function mergeExecution(list: IntelligenceAssistantExecution[], incoming: Intell
   next[index] = incoming;
   return next;
 }
+function canonicalAudience(audience: IntelligenceAssistantRequest["audience"]): IntelligenceAssistantRequest["audience"] {
+  if (audience === "business_product") return "wealth_management";
+  if (audience === "technology") return "fintech_operations";
+  if (audience === "industry_research") return "research_business";
+  return audience;
+}
+function mergeLegacyFocus(focus: string, extraFocus: string): string {
+  const values = [focus.trim(), extraFocus.trim()].filter(Boolean);
+  return Array.from(new Set(values)).join("\n");
+}
+function visibleFocus(focus: string, focusTags: string[], extraFocus: string): string {
+  const normalizedFocus = focus.trim() === focusTags.join("、") ? "" : focus;
+  return mergeLegacyFocus(normalizedFocus, extraFocus);
+}
+function normalizedRequest(request: IntelligenceAssistantRequest): IntelligenceAssistantRequest {
+  const focusTags = request.focus_tags.slice(0, 8);
+  return {
+    ...request,
+    audience: canonicalAudience(request.audience),
+    focus_tags: focusTags,
+    focus: request.focus.trim() || focusTags.join("、"),
+    extra_focus: "",
+  };
+}
 function formFromTopic(topic: IntelligenceAssistantTopic): IntelligenceAssistantRequest {
-  return { audience: topic.audience, audience_detail: topic.audience_detail, focus_tags: [...topic.focus_tags], focus: topic.focus, extra_focus: topic.extra_focus, time_range: topic.time_range, report_length: topic.report_length };
+  const focusTags = [...topic.focus_tags].slice(0, 8);
+  return { audience: canonicalAudience(topic.audience), audience_detail: topic.audience_detail, focus_tags: focusTags, focus: visibleFocus(topic.focus, focusTags, topic.extra_focus), extra_focus: "", time_range: topic.time_range, report_length: topic.report_length };
 }
 function formFromExecution(execution: IntelligenceAssistantExecution): IntelligenceAssistantRequest {
   const snapshot = execution.snapshot;
+  const focusTags = [...(snapshot.focus_tags ?? [])].slice(0, 8);
   return {
-    audience: snapshot.audience ?? DEFAULT_FORM.audience,
+    audience: canonicalAudience(snapshot.audience ?? DEFAULT_FORM.audience),
     audience_detail: snapshot.audience_detail ?? "",
-    focus_tags: [...(snapshot.focus_tags ?? [])],
-    focus: snapshot.focus ?? execution.original_query ?? "",
-    extra_focus: snapshot.extra_focus ?? "",
+    focus_tags: focusTags,
+    focus: visibleFocus(snapshot.focus ?? execution.original_query ?? "", focusTags, snapshot.extra_focus ?? ""),
+    extra_focus: "",
     time_range: snapshot.time_range ?? DEFAULT_FORM.time_range,
     report_length: snapshot.report_length ?? DEFAULT_FORM.report_length,
   };
@@ -73,7 +99,7 @@ type PendingPlanAction =
   | { kind: "rerun"; request: IntelligenceAssistantRequest; execution: IntelligenceAssistantExecution };
 
 export interface CustomIntelligencePageController {
-  isHydrated: boolean; isLoggedIn: boolean; isAdmin: boolean; username: string; logout: () => void;
+  isHydrated: boolean; isLoggedIn: boolean; isAdmin: boolean; username: string; email: string; logout: () => void;
   activeTab: CustomIntelligenceTab; setActiveTab: (tab: CustomIntelligenceTab) => void;
   form: IntelligenceAssistantRequest; setForm: (value: IntelligenceAssistantRequest) => void;
   optionsLoading: boolean; serviceAvailable: boolean;
@@ -90,7 +116,7 @@ export interface CustomIntelligencePageController {
 }
 
 export function useCustomIntelligencePage(): CustomIntelligencePageController {
-  const { isHydrated, isLoggedIn, isAdmin, username, token, logout, clearAuth, restoreSession } = useAuthStore();
+  const { isHydrated, isLoggedIn, isAdmin, username, email, token, logout, clearAuth, restoreSession } = useAuthStore();
   const [activeTab, setActiveTab] = useState<CustomIntelligenceTab>("generate");
   const [form, setForm] = useState(DEFAULT_FORM);
   const [topics, setTopics] = useState<IntelligenceAssistantTopic[]>([]);
@@ -144,7 +170,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     try {
       const response = await fetchAssistantExecutions(token, page, EXECUTIONS_PAGE_SIZE, signal);
       setExecutions(response.executions); setExecutionsTotal(response.meta.total); setExecutionsPage(response.meta.page); setExecutionsTotalPages(response.meta.total_pages);
-      const active = response.executions.find(isActive); if (active) { setActiveExecutionId(active.id); setWorkspaceExecution(active); setWorkspaceMode(true); }
+      const active = response.executions.find(isActive); if (active) { setActiveExecutionId(active.id); setWorkspaceExecution(active); setForm(formFromExecution(active)); setWorkspaceMode(true); }
     } catch (error) { if (!isAbortError(error)) handleError(error, "无法加载历史报告"); }
     finally { if (!signal?.aborted) setLoadingExecutions(false); }
   }, [handleError, token]);
@@ -168,7 +194,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
       if (executionResult.status === "fulfilled") {
         setExecutions(executionResult.value.executions); setExecutionsTotal(executionResult.value.meta.total); setExecutionsPage(executionResult.value.meta.page); setExecutionsTotalPages(executionResult.value.meta.total_pages);
         const active = executionResult.value.executions.find(isActive);
-        if (active) { setActiveExecutionId(active.id); setWorkspaceExecution(active); setWorkspaceMode(true); }
+        if (active) { setActiveExecutionId(active.id); setWorkspaceExecution(active); setForm(formFromExecution(active)); setWorkspaceMode(true); }
       }
       if (results.some((result) => result.status === "rejected" && !isAbortError(result.reason))) setNotice("部分助手数据暂时不可用，可以稍后刷新重试。");
     }).finally(() => { if (!controller.signal.aborted) setOptionsLoading(false); });
@@ -194,7 +220,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
     return () => { disposed = true; if (timer) clearTimeout(timer); };
   }, [activeExecutionId, loadExecutions, token]);
 
-  const startExecution = useCallback((execution: IntelligenceAssistantExecution) => { setExecutions((current) => mergeExecution(current, execution)); setActiveExecutionId(execution.id); setWorkspaceExecution(execution); setSelectedExecution(execution); setWorkspaceMode(true); setPageError(""); }, []);
+  const startExecution = useCallback((execution: IntelligenceAssistantExecution) => { setExecutions((current) => mergeExecution(current, execution)); setActiveExecutionId(execution.id); setWorkspaceExecution(execution); setSelectedExecution(execution); setForm(formFromExecution(execution)); setActiveTab("generate"); setWorkspaceMode(true); setPageError(""); }, []);
 
   const prepareQueryPlan = useCallback(async (action: PendingPlanAction) => {
     if (!token || activeExecutionId !== null) return;
@@ -313,9 +339,9 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const submitInstant = async () => {
     if (!token || activeExecutionId !== null) return;
     if (!serviceAvailable) { setPageError("情报搜索服务暂不可用，请联系管理员。"); return; }
-    if (!form.focus.trim()) { setPageError("请先填写你想了解的业务问题。"); return; }
+    if (!form.focus.trim() && form.focus_tags.length === 0) { setPageError("请选择关注方向，或补充你想了解的业务问题。"); return; }
     if (form.audience === "custom" && !form.audience_detail.trim()) { setPageError("选择自定义受众后，请补充读者背景。"); return; }
-    await prepareQueryPlan({ kind: "instant", request: { ...form, focus: form.focus.trim(), focus_tags: form.focus_tags.slice(0, 3) } });
+    await prepareQueryPlan({ kind: "instant", request: normalizedRequest(form) });
   };
   const resetWorkspace = () => { setWorkspaceMode(false); setWorkspaceExecution(null); setPageError(""); setNotice(""); document.getElementById("custom-intelligence-focus")?.focus(); };
   const exportReportPdf = async (execution: IntelligenceAssistantExecution) => {
@@ -331,7 +357,7 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const openCreateConfig = () => { if (configsLimitReached) { setPageError(`最多保存 ${TOPIC_LIMIT} 个助手，请先编辑或删除已有助手。`); return; } setConfigEditorId(null); setConfigName(form.focus.trim().slice(0, 40) || "我的情报助手"); setConfigDraft({ ...form }); setConfigDialogOpen(true); };
   const openSaveCurrentConfig = () => { if (configsLimitReached && selectedConfigId === null) { setPageError(`最多保存 ${TOPIC_LIMIT} 个助手，请先编辑或删除已有助手。`); return; } setConfigEditorId(selectedConfigId); setConfigName(topics.find((topic) => topic.id === selectedConfigId)?.name || form.focus.trim().slice(0, 40) || "我的情报助手"); setConfigDraft({ ...form }); setConfigDialogOpen(true); };
   const openEditConfig = (topic: IntelligenceAssistantTopic) => { setConfigEditorId(topic.id); setConfigName(topic.name); setConfigDraft(formFromTopic(topic)); setConfigDialogOpen(true); };
-  const saveConfig = async () => { if (!token || !configName.trim() || !configDraft.focus.trim()) { setPageError("请填写助手名称和业务问题。"); return; } if (configDraft.audience === "custom" && !configDraft.audience_detail.trim()) { setPageError("选择自定义受众后，请补充读者背景。"); return; } setConfigSaving(true); try { const payload = { ...configDraft, name: configName.trim(), focus_tags: configDraft.focus_tags.slice(0, 3) }; const response = configEditorId === null ? await createAssistantTopic(token, payload) : await updateAssistantTopic(token, configEditorId, payload); setTopics((current) => configEditorId === null ? [response.topic, ...current] : current.map((topic) => topic.id === response.topic.id ? response.topic : topic)); setSelectedConfigId(response.topic.id); setConfigDialogOpen(false); setNotice(configEditorId === null ? "已保存为我的助手。" : "助手已更新。"); } catch (error) { handleError(error, "无法保存助手"); } finally { setConfigSaving(false); } };
+  const saveConfig = async () => { if (!token || !configName.trim() || (!configDraft.focus.trim() && configDraft.focus_tags.length === 0)) { setPageError("请填写助手名称，并选择关注方向或补充业务问题。"); return; } if (configDraft.audience === "custom" && !configDraft.audience_detail.trim()) { setPageError("选择自定义受众后，请补充读者背景。"); return; } setConfigSaving(true); try { const payload = { ...normalizedRequest(configDraft), name: configName.trim() }; const response = configEditorId === null ? await createAssistantTopic(token, payload) : await updateAssistantTopic(token, configEditorId, payload); setTopics((current) => configEditorId === null ? [response.topic, ...current] : current.map((topic) => topic.id === response.topic.id ? response.topic : topic)); setSelectedConfigId(response.topic.id); setConfigDialogOpen(false); setNotice(configEditorId === null ? "已保存为我的助手。" : "助手已更新。"); } catch (error) { handleError(error, "无法保存助手"); } finally { setConfigSaving(false); } };
   const deleteConfig = async (topic: IntelligenceAssistantTopic) => { if (!token || !window.confirm(`确定删除「${topic.name}」吗？删除后不可恢复。`)) return; try { await deleteAssistantTopic(token, topic.id); setTopics((current) => current.filter((item) => item.id !== topic.id)); if (selectedConfigId === topic.id) setSelectedConfigId(null); setNotice(`已删除「${topic.name}」。`); } catch (error) { handleError(error, "无法删除助手"); } };
   const openReport = async (execution: IntelligenceAssistantExecution) => { setSelectedExecution(execution); setReportDialogOpen(true); if (!token) return; setReportLoading(true); try { const response = await fetchAssistantExecution(token, execution.id); setSelectedExecution(response.execution); setExecutions((current) => mergeExecution(current, response.execution)); } catch (error) { handleError(error, "无法加载报告"); } finally { setReportLoading(false); } };
   const rerun = async (execution: IntelligenceAssistantExecution) => { if (!token || activeExecutionId !== null) return; const request = formFromExecution(execution); setForm(request); setActiveTab("generate"); await prepareQueryPlan({ kind: "rerun", request, execution }); };
@@ -339,5 +365,5 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
   const openEmail = (execution: IntelligenceAssistantExecution | null) => { setEmailExecution(execution); setEmailDialogOpen(execution !== null); };
   const sendEmail = async (payload: IntelligenceAssistantEmailInput) => { if (!token || !emailExecution) return; setEmailSending(true); try { const response = await sendAssistantExecutionEmail(token, emailExecution.id, payload); if (response.status === "partial_failed") throw new Error("部分收件人发送失败，请联系管理员查看投递记录。"); setEmailDialogOpen(false); setNotice("邮件发送成功。"); } catch (error) { handleError(error, "发送邮件失败"); } finally { setEmailSending(false); } };
 
-  return { isHydrated, isLoggedIn, isAdmin, username, logout, activeTab, setActiveTab, form, setForm, optionsLoading, serviceAvailable, topics, executions, executionsTotal, executionsPage, executionsTotalPages, loadingExecutions, activeExecutionId, pageError, notice, workspaceMode, workspaceExecution, selectedConfigId, configDialogOpen, setConfigDialogOpen, configEditorId, configName, setConfigName, configDraft, setConfigDraft, configSaving, configsLimitReached, selectedExecution, reportDialogOpen, setReportDialogOpen, reportLoading, pdfExporting, reportTemplateStyle, setReportTemplateStyle, emailDialogOpen, emailExecution, emailSending, planDialogOpen, planLoading, planSubmitting, planDraft, planError, planSeconds, planPaused, clearMessages: () => { setPageError(""); setNotice(""); }, loadExecutions, submitInstant, resetWorkspace, exportReportPdf, cancelQueryPlan, retryQueryPlan, updatePlanDirection, pauseQueryPlan, confirmQueryPlan, applySavedConfigValue, loadConfigIntoForm, loadAndSearchConfig, openCreateConfig, openSaveCurrentConfig, openEditConfig, saveConfig, deleteConfig, openReport, rerun, reanalyze, openEmail, sendEmail };
+  return { isHydrated, isLoggedIn, isAdmin, username, email, logout, activeTab, setActiveTab, form, setForm, optionsLoading, serviceAvailable, topics, executions, executionsTotal, executionsPage, executionsTotalPages, loadingExecutions, activeExecutionId, pageError, notice, workspaceMode, workspaceExecution, selectedConfigId, configDialogOpen, setConfigDialogOpen, configEditorId, configName, setConfigName, configDraft, setConfigDraft, configSaving, configsLimitReached, selectedExecution, reportDialogOpen, setReportDialogOpen, reportLoading, pdfExporting, reportTemplateStyle, setReportTemplateStyle, emailDialogOpen, emailExecution, emailSending, planDialogOpen, planLoading, planSubmitting, planDraft, planError, planSeconds, planPaused, clearMessages: () => { setPageError(""); setNotice(""); }, loadExecutions, submitInstant, resetWorkspace, exportReportPdf, cancelQueryPlan, retryQueryPlan, updatePlanDirection, pauseQueryPlan, confirmQueryPlan, applySavedConfigValue, loadConfigIntoForm, loadAndSearchConfig, openCreateConfig, openSaveCurrentConfig, openEditConfig, saveConfig, deleteConfig, openReport, rerun, reanalyze, openEmail, sendEmail };
 }

@@ -22,6 +22,13 @@ except Exception:  # pragma: no cover - very old platforms
 
 AUDIENCE_LABELS: Mapping[str, str] = {
     "management": "管理层",
+    "wealth_management": "财富管理",
+    "investment_banking": "投行业务",
+    "institutional_business": "机构业务",
+    "asset_management": "资产管理",
+    "proprietary_investment": "自营投资",
+    "research_business": "研究业务",
+    "fintech_operations": "金融科技 / 运营",
     "business_product": "业务 / 产品",
     "technology": "技术",
     "compliance_risk": "合规风控",

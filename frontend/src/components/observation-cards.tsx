@@ -233,22 +233,22 @@ export function PriceSamplesCard({ data, onSelectProject }: PriceSamplesProps) {
         <h3 className="mb-3 text-[14px] font-bold text-[#172033]">
           金额披露项目
         </h3>
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid auto-rows-fr gap-2 md:grid-cols-2 xl:grid-cols-5">
           {samples.map((s) => (
             <button
               key={s.amountSampleKey}
               type="button"
               onClick={() => onSelectProject(s)}
-              className="group w-full rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors duration-150 hover:border-blue-100 hover:bg-[#FBFCFE] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transition-none"
+              className="group flex h-full min-h-[76px] min-w-0 w-full flex-col rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors duration-150 hover:border-blue-100 hover:bg-[#FBFCFE] focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20 motion-reduce:transition-none"
             >
-              <div className="line-clamp-2 text-[12px] font-semibold leading-relaxed text-[#172033] transition-colors group-hover:text-[#2563EB]" title={s.normalizedProjectName}>
+              <div className="line-clamp-2 min-h-[2.4rem] text-[12px] font-semibold leading-[1.2rem] text-[#172033] transition-colors group-hover:text-[#2563EB]" title={s.normalizedProjectName}>
                 {s.normalizedProjectName}
               </div>
-              <div className="flex items-center justify-between gap-2 mt-1.5">
-                <span className="max-w-[120px] truncate text-[11px] text-[#667085] transition-colors group-hover:text-[#475467]" title={s.validBrokerName}>
+              <div className="mt-auto flex min-w-0 items-center justify-between gap-2 pt-1.5">
+                <span className="min-w-0 flex-1 truncate text-[11px] text-[#667085] transition-colors group-hover:text-[#475467]" title={s.validBrokerName}>
                   {s.validBrokerName}
                 </span>
-                <span className={`text-[11px] font-bold tabular-nums ${s.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}`}>
+                <span className={`shrink-0 whitespace-nowrap text-right text-[11px] font-bold tabular-nums ${s.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}`}>
                   {s.display_amount_yuan !== null
                     ? `${displayAmountLabel(s)} · ${formatAmountInWan(s.display_amount_yuan)}`
                     : ""}

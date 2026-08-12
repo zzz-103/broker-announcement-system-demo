@@ -27,6 +27,7 @@ export function EmailDialog({
   open,
   sending,
   initialTemplateStyle,
+  initialRecipient,
   onOpenChange,
   onSend,
 }: {
@@ -34,6 +35,7 @@ export function EmailDialog({
   open: boolean;
   sending: boolean;
   initialTemplateStyle: IntelligenceReportTemplateStyle;
+  initialRecipient?: string | null;
   onOpenChange: (open: boolean) => void;
   onSend: (payload: IntelligenceAssistantEmailInput) => Promise<void>;
 }) {
@@ -51,16 +53,17 @@ export function EmailDialog({
     setLocalPart("");
     setDomainChoice(COMPANY_DOMAIN);
     setCustomDomain("");
-    setRecipients([]);
+    const recipient = initialRecipient?.trim().toLowerCase() || "";
+    setRecipients(EMAIL_PATTERN.test(recipient) && recipient.endsWith(`@${COMPANY_DOMAIN}`) ? [recipient] : []);
     setNote("");
     setError("");
     setConfirmExternal(false);
     setTemplateStyle(initialTemplateStyle);
     setDeliveryFormat("html_pdf");
-  }, [initialTemplateStyle]);
+  }, [initialRecipient, initialTemplateStyle]);
 
   useEffect(() => {
-    if (!open) reset();
+    if (open) reset();
   }, [open, reset]);
 
   const close = (next: boolean) => {

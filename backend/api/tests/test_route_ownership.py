@@ -245,7 +245,7 @@ class RouteOwnershipTests(unittest.TestCase):
             json={
                 **base,
                 "audience": "management",
-                "focus_tags": ["财富管理", "AI 与智能投顾", "数字化转型", "监管政策"],
+                "focus_tags": ["行业趋势", "竞争格局", "监管政策", "战略机会", "盈利能力", "同业动作", "资源配置", "关键风险", "超出上限"],
             },
         )
         self.assertEqual(too_many_tags.status_code, 422)
@@ -377,7 +377,7 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(main.session_tokens[admin_token]["user_id"], 0)
         self.assertTrue(main.session_tokens[admin_token]["is_super_admin"])
 
-        fake_user = SimpleNamespace(id=7, username="approved.user", name="Approved User")
+        fake_user = SimpleNamespace(id=7, username="approved.user", name="Approved User", email="approved.user@csco.com.cn")
         with (
             patch.object(accounts, "authenticate_user", return_value=fake_user),
             patch.object(accounts, "write_audit_event_safely", return_value=False),
@@ -388,6 +388,7 @@ class RouteOwnershipTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["role"], "user")
+        self.assertEqual(response.json()["email"], "approved.user@csco.com.cn")
 
     def test_super_admin_can_promote_and_promoted_admin_keeps_admin_access(self) -> None:
         admin_headers = self._admin_headers()

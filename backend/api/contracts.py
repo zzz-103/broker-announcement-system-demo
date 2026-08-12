@@ -21,6 +21,7 @@ class LoginResponse(BaseModel):
     token: str
     username: str
     name: str
+    email: str | None = None
     role: str
     is_admin: bool
     is_super_admin: bool = False
@@ -78,6 +79,15 @@ TimeRange = Literal["week", "month", "semiyear", "year"]
 ReportItemType = Literal["fact", "analysis", "recommendation"]
 AssistantAudience = Literal[
     "management",
+    "wealth_management",
+    "investment_banking",
+    "institutional_business",
+    "asset_management",
+    "proprietary_investment",
+    "research_business",
+    "fintech_operations",
+    # Legacy V2 values remain accepted so saved assistants and old clients can
+    # still be rerun while public snapshots are normalized to the new lines.
     "business_product",
     "technology",
     "compliance_risk",
@@ -138,7 +148,7 @@ class InstantSearchRequest(BaseModel):
 
     audience: AssistantAudience
     audience_detail: str = Field(default="", max_length=2_000)
-    focus_tags: list[str] = Field(default_factory=list, max_length=3)
+    focus_tags: list[str] = Field(default_factory=list, max_length=8)
     focus: str = Field(min_length=1, max_length=1_000)
     extra_focus: str = Field(default="", max_length=2_000)
     time_range: TimeRange = "month"

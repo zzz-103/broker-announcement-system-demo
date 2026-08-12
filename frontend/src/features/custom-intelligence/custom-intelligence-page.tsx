@@ -206,6 +206,7 @@ export default function CustomIntelligencePage() {
         open={page.emailDialogOpen}
         sending={page.emailSending}
         initialTemplateStyle={page.reportTemplateStyle}
+        initialRecipient={page.email}
         onOpenChange={(open) => {
           if (!open) page.openEmail(null);
         }}
