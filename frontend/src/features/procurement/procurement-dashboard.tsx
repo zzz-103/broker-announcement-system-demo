@@ -282,7 +282,7 @@ export default function Dashboard() {
     primaryDomain ||
     announcementStage ||
     procurementMethod ||
-    timeRange !== "90d" ||
+    timeRange !== "all" ||
     !finTechOnly
   );
 

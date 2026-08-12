@@ -85,16 +85,16 @@ export function DashboardFilters({
   const advancedFilterCount = [
     announcementStage,
     procurementMethod,
-    !finTechOnly ? "非金融科技" : "",
+    !finTechOnly ? "全部项目" : "",
   ].filter(Boolean).length;
   const activeFilterCount = [
     search.trim(),
-    timeRange !== "90d" ? timeRange : "",
+    timeRange !== "all" ? timeRange : "",
     brokerNames.length ? "券商" : "",
     primaryDomain,
     announcementStage,
     procurementMethod,
-    !finTechOnly ? "非金融科技" : "",
+    !finTechOnly ? "全部项目" : "",
   ].filter(Boolean).length;
 
   const clearBroker = (broker: string) => {
@@ -115,9 +115,9 @@ export function DashboardFilters({
           <X className="size-3 shrink-0" />
         </button>
       )}
-      {timeRange !== "90d" && (
-        <button type="button" onClick={() => setTimeRange("90d")} className="inline-flex items-center gap-1 rounded-md bg-[#F2F6FC] px-2 py-1 text-[#315EA8]">
-          时间：{timeRange === "30d" ? "近30日" : timeRange === "year" ? "本年度" : "全部时间"}<X className="size-3" />
+      {timeRange !== "all" && (
+        <button type="button" onClick={() => setTimeRange("all")} className="inline-flex items-center gap-1 rounded-md bg-[#F2F6FC] px-2 py-1 text-[#315EA8]">
+          时间：{timeRange === "30d" ? "近30日" : timeRange === "90d" ? "近90日" : "本年度"}<X className="size-3" />
         </button>
       )}
       {primaryDomain && (

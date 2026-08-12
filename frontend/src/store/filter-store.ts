@@ -23,7 +23,7 @@ interface FilterStore {
 
 const INITIAL = {
   search: "",
-  timeRange: "90d" as TimeRange,
+  timeRange: "all" as TimeRange,
   brokerNames: [] as string[],
   primaryDomain: "",
   announcementStage: "",
