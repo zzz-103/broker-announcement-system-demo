@@ -1,4 +1,5 @@
-# Python runtime dependencies for the backend API, scraper, and LLM table builder.
+# Python 3.11 runtime dependencies for the backend API, scraper, and LLM table builder.
+# Install with: python -m pip install -r requirements.txt -c requirements-lock.txt
 
 # Backend API
 fastapi>=0.111,<1

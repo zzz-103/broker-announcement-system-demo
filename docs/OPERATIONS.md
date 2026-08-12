@@ -2,7 +2,7 @@
 
 ## 1. 环境准备
 
-本地开发需要 Git、Python 3.10+、Node.js 20+、Corepack、pnpm 9。生产式 Windows 部署另需 Docker Engine / Docker Desktop（支持 Compose v2）。当前系统不需要 Redis、Celery、Kafka 或外部数据库服务。
+本地开发需要 Git、Python 3.11、Node.js >=20.9、Corepack、pnpm 9。生产式 Windows 部署另需 Docker Engine / Docker Desktop（支持 Compose v2）。当前系统不需要 Redis、Celery、Kafka 或外部数据库服务。
 
 外部采集、百度搜索、共享 LLM 和邮件仅在配置真实凭据并开放对应网络后可用；离线启动和数据包导入不依赖它们。
 
@@ -12,8 +12,8 @@
 git clone https://github.com/zzz-103/broker-announcement-system-demo.git
 cd broker-announcement-system-demo
 cp .env.example .env
-python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/api/requirements.txt
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -c requirements-lock.txt
 corepack prepare pnpm@9.0.0 --activate
 cd frontend
 pnpm install --frozen-lockfile
@@ -27,7 +27,7 @@ git clone https://github.com/zzz-103/broker-announcement-system-demo.git
 cd broker-announcement-system-demo
 Copy-Item .env.example .env
 py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r backend\api\requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -c requirements-lock.txt
 corepack prepare pnpm@9.0.0 --activate
 cd frontend
 pnpm install --frozen-lockfile
@@ -116,7 +116,7 @@ App Watch 离线配置检查：
 
 属于业务模块的 CLI 保留在对应包内：`python -m backend.api.scheduler`、`python -m backend.broker_app_watch.cli`、`python -m backend.broker_sources.cli`。金采网、LLM 结构化和 matching 模块是 Pipeline 的内部阶段，由 `JobCommandFactory` 以固定参数调用；日常操作优先使用管理页任务，不复制第二套包装脚本。
 
-前端命令统一由 `frontend/package.json` 管理：`dev`、`build`、`ts-check`、`lint:build`、`validate`。仓库不维护重复的 `.sh`、`.cmd` 或旧平台启动包装。
+前端命令统一由 `frontend/package.json` 管理：`dev`、`build`、`ts-check`、`lint:build`、`validate`。使用 `pnpm install --frozen-lockfile`，以提交的 `frontend/pnpm-lock.yaml` 为准。仓库不维护重复的 `.sh`、`.cmd` 或旧平台启动包装。
 
 ## 6. 日常开发与验证
 
@@ -186,9 +186,9 @@ git pull --ff-only
 
 ## 11. 最近一次从零交接验收
 
-2026-08-12 在全新临时 Clone 中按本手册完成了以下验证：
+基线提交 `8193c8f`（2026-08-12）在全新临时 Clone 中按本手册完成了以下验证：
 
-- 从锁文件重新安装 Python 与 pnpm 依赖，`pytest -q` 为 212 passed；`pnpm run validate` 与空 API Base URL 的生产构建通过。
+- 从 constraints 锁定的 Python 依赖与 pnpm frozen lockfile 安装后，执行了后端测试、前端检查和空 API Base URL 的生产构建；具体通过数量随版本变化，不作为长期承诺。
 - 启动 FastAPI 后，health、管理员登录、无效 Token 401、用户/审计/自定义情报 SQLite 初始化及四个静态页面通过。
 - 导入一份来自另一台机器的标准 ZIP：预览无警告，恢复 1,425 条招采、69 条 App 更新和 AI 分析；该包未声明可选 matching baseline，故未恢复基线是预期行为。
 - 重启 API 后仍以 imported 为活动源；导出的新 ZIP 可再次通过预览校验。前台会按产品口径筛选记录，页面数字不必等于 Manifest 全量数，管理页数据源卡片应与 Manifest 一致。

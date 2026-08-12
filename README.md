@@ -12,14 +12,14 @@
 
 ## 快速开始
 
-需要 Git、Python 3.10+、Node.js 20+、Corepack 和 pnpm 9。Docker 仅为生产式部署必需。
+需要 Git、Python 3.11、Node.js >=20.9、Corepack 和 pnpm 9（提交的 `frontend/pnpm-lock.yaml` 必须使用 frozen lockfile 安装）。Docker 仅为生产式部署必需。
 
 ```bash
 git clone https://github.com/zzz-103/broker-announcement-system-demo.git
 cd broker-announcement-system-demo
 cp .env.example .env
-python3 -m venv .venv
-.venv/bin/python -m pip install -r backend/api/requirements.txt
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt -c requirements-lock.txt
 corepack prepare pnpm@9.0.0 --activate
 cd frontend && pnpm install --frozen-lockfile && cd ..
 ```
@@ -83,7 +83,9 @@ pnpm run lint:build
 NEXT_PUBLIC_API_BASE_URL= pnpm build
 ```
 
-真实爬虫、搜索、LLM、SMTP 和生产发布需要对应网络与凭据；离线测试通过不代表这些外部链路已联调。
+真实爬虫、搜索、LLM、SMTP 和生产发布需要对应网络与凭据；离线测试通过不代表这些外部链路已联调。Python 依赖统一由根 `requirements.txt` 配合 `requirements-lock.txt` constraints 安装，Docker 构建也使用同一 constraints。
+
+最近一次基线验收以提交 `8193c8f`（2026-08-12）为准；后续版本需按本手册重新验证，不把某次测试通过数量当作长期事实。
 
 ## 文档入口
 
