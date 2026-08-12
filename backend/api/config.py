@@ -192,7 +192,7 @@ class Settings:
 
     @property
     def smtp_enabled(self) -> bool:
-        return os.getenv("CUSTOM_INTELLIGENCE_EMAIL_ENABLED", "false").strip().casefold() in {
+        return os.getenv("CUSTOM_INTELLIGENCE_EMAIL_ENABLED", "true").strip().casefold() in {
             "1",
             "true",
             "yes",

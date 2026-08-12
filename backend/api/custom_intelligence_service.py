@@ -67,6 +67,11 @@ MAX_CONFIRMED_DIRECTION_LENGTH = 300
 SEARCH_TOP_K = 10
 MAX_SOURCES = 15
 MAX_SOURCES_PER_DOMAIN = 3
+MIN_SOURCES_BEFORE_SUPPLEMENT = 10
+MAX_SUPPLEMENTAL_QUERIES = 3
+SECURITIES_CONTEXT_TERMS = (
+    "券商", "证券", "财富管理", "投顾", "基金", "资管", "经纪", "投行", "金融", "资本市场", "交易"
+)
 DATE_WINDOW_DAYS = {"week": 7, "month": 30, "semiyear": 180, "year": 365}
 TRACKING_QUERY_PARAMETERS = {
     "bd_vid",
@@ -398,9 +403,12 @@ def build_planner_messages(snapshot: dict[str, object]) -> list[dict[str, str]]:
         "queries 必须是 2 到 5 个对象，每个对象只有 query 和 purpose 字段。"
         "query 是可直接交给百度普通网页搜索的短中文查询，purpose 是简短中文目的。"
         "每条 query 必须保留研究重点中的核心业务实体，避免只有宽泛行业词。"
-        "第一条 query 必须是只由研究重点构成的宽召回基线，不得附加重点标签、受众或补充要求。"
+        "第一条 query 是宽召回基线：研究重点已有证券行业实体时保持原文；缺少行业实体时，"
+        "应补入一个最相关的重点标签或“证券行业”上下文，但不得附加受众或补充要求。"
         "重点标签只是软偏好：不得让所有 query 都强制带标签；除基线外，每条 query 最多选用一个标签，"
-        "并优先通过不同角度补充覆盖。不要生成把多个所选标签拼在一起、名为新增多个所选标签或类似的方向。"
+        "并优先通过不同证据类型补充覆盖，例如具体机构实践、行业调研数据、专业研究或监管信息。"
+        "除基线外，不得只改写同义词或调整词序来生成新查询，每条查询应带来不同的信息增量。"
+        "不要生成把多个所选标签拼在一起、名为新增多个所选标签或类似的方向。"
         "时间范围由后台 search_recency_filter 处理；query 中禁止加入年份、最新、近期、过去若干天等时间词。"
         "不要输出 URL、站点限定、时间参数或任何工具调用，不要把搜索结果当作事实。"
     )
@@ -478,7 +486,7 @@ def _normalize_query_plan(value: object) -> dict[str, object]:
 
 
 def _query_key(value: object) -> str:
-    return re.sub(r"\s+", "", clean_text(value, 300)).casefold()
+    return re.sub(r"[\s、，,与和及]+", "", clean_text(value, 300)).casefold()
 
 
 def _is_multi_tag_direction(item: dict[str, str], focus_tags: list[str]) -> bool:
@@ -493,17 +501,25 @@ def _is_multi_tag_direction(item: dict[str, str], focus_tags: list[str]) -> bool
 
 
 def _compose_query_plan(snapshot: dict[str, object], plan: dict[str, object]) -> dict[str, object]:
-    """Add a focus-only baseline and keep tags as optional query hints."""
+    """Add a context-aware baseline and keep tags as optional query hints."""
     focus = clean_text(snapshot.get("focus"), 300)
     focus_tags = _normalize_focus_tags(snapshot.get("focus_tags"))
+    baseline_query = focus
+    if focus and not any(term in focus for term in SECURITIES_CONTEXT_TERMS):
+        context = next(
+            (tag for tag in focus_tags if any(term in tag for term in SECURITIES_CONTEXT_TERMS)),
+            "证券行业",
+        )
+        baseline_query = clean_text(f"{context} {focus}", 300)
     baseline = {
-        "query": focus,
+        "query": baseline_query,
         "purpose": "研究重点基线检索",
     }
     queries: list[dict[str, str]] = []
     seen: set[str] = set()
-    if focus:
+    if baseline_query:
         queries.append(baseline)
+        seen.add(_query_key(baseline_query))
         seen.add(_query_key(focus))
     raw_queries = plan.get("queries") if isinstance(plan.get("queries"), list) else []
     for raw_item in raw_queries:
@@ -784,12 +800,13 @@ def _merge_search_results(results: list[QianfanSearchResult]) -> QianfanSearchRe
 
 
 def _namespace_search_result(result: QianfanSearchResult, namespace: str) -> QianfanSearchResult:
-    def scoped_provider_id(provider_id: str, is_fallback: bool) -> str:
-        # Parser-generated local ranks are scoped to their query.  Explicit
-        # provider IDs, including numeric IDs, remain stable across rounds and
-        # therefore participate in provider-level deduplication.
+    def scoped_provider_id(provider_id: str) -> str:
+        # Provider reference IDs are only guaranteed to identify an item
+        # within one search response.  In particular, Baidu commonly returns
+        # small numeric IDs/ranks for every query.  Scope every ID to its query
+        # and rely on canonical URL/title matching for cross-query deduplication.
         value = provider_id.strip()
-        return f"{namespace}:{value}" if is_fallback else value
+        return f"{namespace}:{value}"
 
     return QianfanSearchResult(
         answer=result.answer,
@@ -797,7 +814,6 @@ def _namespace_search_result(result: QianfanSearchResult, namespace: str) -> Qia
             QianfanReference(
                 provider_reference_id=scoped_provider_id(
                     reference.provider_reference_id,
-                    reference.provider_reference_id_is_fallback,
                 ),
                 title=reference.title,
                 url=reference.url,
@@ -812,6 +828,36 @@ def _namespace_search_result(result: QianfanSearchResult, namespace: str) -> Qia
         request_id=result.request_id,
         raw=result.raw,
     )
+
+
+def _build_supplemental_queries(
+    snapshot: dict[str, object],
+    planned_queries: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Build a bounded evidence-diversity fallback when normal recall is low."""
+    focus = clean_text(snapshot.get("focus"), 220)
+    if not focus:
+        return []
+    tags = _normalize_focus_tags(snapshot.get("focus_tags"))
+    context = tags[0] if tags else focus
+    focused_subject = focus if context in focus else f"{context} {focus}"
+    candidates = [
+        (f"券商 {focused_subject}", "补充证券公司相关实践"),
+        (f"券商 {context} 行业 调研 数据", "补充行业调研与数据证据"),
+        (f"证券公司 {context} 研究 报告", "补充专业研究与机构观点"),
+    ]
+    seen = {_query_key(item.get("query")) for item in planned_queries if isinstance(item, dict)}
+    supplemental: list[dict[str, str]] = []
+    for raw_query, purpose in candidates:
+        query = clean_text(raw_query, 300)
+        key = _query_key(query)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        supplemental.append({"query": query, "purpose": purpose})
+        if len(supplemental) >= MAX_SUPPLEMENTAL_QUERIES:
+            break
+    return supplemental
 
 
 def _limit_sources(
@@ -949,6 +995,8 @@ def _search_with_queries(
     *,
     time_range: str,
     target_sources: int = MAX_SOURCES,
+    supplemental_queries: list[dict[str, str]] | None = None,
+    minimum_sources: int = 0,
 ) -> tuple[
     QianfanSearchResult,
     list[dict[str, object]],
@@ -965,8 +1013,17 @@ def _search_with_queries(
     previous_selected_count = 0
     previous_domains: set[str] = set()
     first_error: Exception | None = None
+    effective_minimum = max(0, min(int(minimum_sources), int(target_sources), MAX_SOURCES))
+    queued_queries = [
+        (plan, "planned") for plan in planned_queries
+    ] + [
+        (plan, "supplemental") for plan in (supplemental_queries or [])
+    ]
 
-    for attempt, plan in enumerate(planned_queries):
+    for plan, round_type in queued_queries:
+        if round_type == "supplemental" and previous_selected_count >= effective_minimum:
+            break
+        attempt = len(search_rounds)
         query = clean_text(plan.get("query"), 300)
         payload = build_search_payload(
             query,
@@ -1000,6 +1057,7 @@ def _search_with_queries(
             search_rounds.append(
                 {
                     "round": attempt + 1,
+                    "round_type": round_type,
                     "query": query,
                     "purpose": clean_text(plan.get("purpose"), 120),
                     "status": "failed",
@@ -1036,6 +1094,7 @@ def _search_with_queries(
         search_rounds.append(
             {
                 "round": attempt + 1,
+                "round_type": round_type,
                 "query": query,
                 "purpose": clean_text(plan.get("purpose"), 120),
                 "status": "succeeded",
@@ -1078,6 +1137,9 @@ def _search_with_queries(
                     "final_source_ids": [],
                     "final_sources": [],
                     "failed_round_count": len(search_errors),
+                    "supplemental_query_count": sum(
+                        1 for item in search_rounds if item.get("round_type") == "supplemental"
+                    ),
                 },
             )
             raise first_error
@@ -1097,6 +1159,9 @@ def _search_with_queries(
         {
             **metrics,
             "failed_round_count": len(search_errors),
+            "supplemental_query_count": sum(
+                1 for item in search_rounds if item.get("round_type") == "supplemental"
+            ),
             # Keep the old diagnostic alias for readers that have not migrated
             # yet; the V2 names above are the canonical counters.
             "stale_source_count": metrics["stale_removed_count"],
@@ -1515,6 +1580,12 @@ def _run_execution(execution_id: int) -> None:
             planned_queries,
             time_range=str(snapshot.get("time_range") or "month"),
             target_sources=MAX_SOURCES,
+            supplemental_queries=(
+                []
+                if planner_plan.get("degraded")
+                else _build_supplemental_queries(snapshot, planned_queries)
+            ),
+            minimum_sources=MIN_SOURCES_BEFORE_SUPPLEMENT,
         )
         request_payload_record: dict[str, object] = {
             "query_plan": planner_plan,
@@ -1529,7 +1600,8 @@ def _run_execution(execution_id: int) -> None:
             "requested_source_count": MAX_SOURCES,
             "unique_source_count": len(sources),
             "round_count": len(search_rounds),
-            "query_count": len(planned_queries),
+            "query_count": len(search_rounds),
+            "planned_query_count": len(planned_queries),
             "planner_intent": clean_text(planner_plan.get("intent"), 200),
             "successful_query_count": len(search_payloads),
             "failed_query_count": len(search_errors),

@@ -304,6 +304,7 @@ def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, obje
         row: dict[str, object] = {}
         for key in (
             "round",
+            "round_type",
             "query",
             "purpose",
             "status",
@@ -419,6 +420,7 @@ def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, obje
             "limit_removed_count": int(search_summary.get("limit_removed_count") or 0),
             "selected_count": int(search_summary.get("selected_count") or report_sources),
             "round_count": len(safe_rounds),
+            "supplemental_query_count": int(search_summary.get("supplemental_query_count") or 0),
         },
         "final_sources": source_rows[:100],
         "request_ids": request_ids,

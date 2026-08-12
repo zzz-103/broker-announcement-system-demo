@@ -188,7 +188,7 @@ class IntelligenceStore:
                 );
                 CREATE TABLE IF NOT EXISTS intelligence_smtp_config (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
-                    enabled INTEGER NOT NULL DEFAULT 0,
+                    enabled INTEGER NOT NULL DEFAULT 1,
                     host TEXT NOT NULL DEFAULT 'smtp.126.com',
                     port INTEGER NOT NULL DEFAULT 465,
                     username TEXT NOT NULL DEFAULT '',

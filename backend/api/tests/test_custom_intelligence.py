@@ -331,14 +331,14 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             ):
                 service._run_execution(int(execution["id"]))
 
-            self.assertEqual(len(seen_payloads), 2)
+            self.assertEqual(len(seen_payloads), 5)
             self.assertTrue(
                 all(payload["resource_type_filter"][0]["top_k"] == 10 for payload in seen_payloads)
             )
             self.assertTrue(all("source_preference" not in payload for payload in seen_payloads))
             self.assertEqual(
                 len({payload["messages"][0]["content"] for payload in seen_payloads}),
-                2,
+                5,
             )
 
     def test_planned_queries_merge_until_unique_source_limit(self) -> None:
@@ -383,7 +383,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(rounds[-1]["request_id"], "request-secondary")
         self.assertEqual(errors, [])
 
-    def test_explicit_numeric_provider_ids_deduplicate_across_queries(self) -> None:
+    def test_explicit_numeric_provider_ids_are_scoped_across_queries(self) -> None:
         first = QianfanSearchResult(
             answer="第一轮",
             references=[QianfanReference("123", "来源甲", "https://one.example.com/a")],
@@ -401,8 +401,55 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
                 time_range="month",
                 target_sources=15,
             )
+        self.assertEqual(len(sources), 2)
+        self.assertEqual(diagnostics["duplicate_removed_count"], 0)
+
+    def test_cross_query_duplicates_still_deduplicate_by_canonical_url(self) -> None:
+        first = QianfanSearchResult(
+            answer="第一轮",
+            references=[QianfanReference("1", "来源甲", "https://one.example.com/a?utm_source=first")],
+        )
+        second = QianfanSearchResult(
+            answer="第二轮",
+            references=[QianfanReference("1", "来源乙", "https://one.example.com/a?utm_medium=second")],
+        )
+        with patch.object(service.client, "search", side_effect=[first, second]):
+            _merged, sources, _aliases, _payloads, _errors, _rounds, diagnostics = _search_with_queries(
+                [
+                    {"query": "第一轮", "purpose": "一"},
+                    {"query": "第二轮", "purpose": "二"},
+                ],
+                time_range="month",
+                target_sources=15,
+            )
         self.assertEqual(len(sources), 1)
         self.assertEqual(diagnostics["duplicate_removed_count"], 1)
+
+    def test_low_recall_runs_bounded_supplemental_queries_until_minimum(self) -> None:
+        results = [
+            QianfanSearchResult(
+                answer=f"第 {index} 轮",
+                references=[
+                    QianfanReference("1", f"来源 {index}", f"https://domain{index}.example.com/{index}")
+                ],
+            )
+            for index in range(1, 5)
+        ]
+        with patch.object(service.client, "search", side_effect=results) as search:
+            _merged, sources, _aliases, _payloads, _errors, rounds, diagnostics = _search_with_queries(
+                [{"query": "主查询", "purpose": "主查询"}],
+                time_range="month",
+                supplemental_queries=[
+                    {"query": "补充一", "purpose": "补充"},
+                    {"query": "补充二", "purpose": "补充"},
+                    {"query": "不应执行", "purpose": "补充"},
+                ],
+                minimum_sources=3,
+            )
+        self.assertEqual(search.call_count, 3)
+        self.assertEqual(len(sources), 3)
+        self.assertEqual([item["round_type"] for item in rounds], ["planned", "supplemental", "supplemental"])
+        self.assertEqual(diagnostics["supplemental_query_count"], 2)
 
     def test_parser_generated_rank_ids_are_scoped_per_query(self) -> None:
         parsed_first = parse_search_response(
@@ -1118,7 +1165,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
 
         with patch.object(service, "_load_analysis_client", return_value=FakePlannerClient()):
             plan = service._request_query_plan({"focus": "研究重点", "focus_tags": []})
-        self.assertEqual(plan["queries"][0]["query"], "研究重点")
+        self.assertEqual(plan["queries"][0]["query"], "证券行业 研究重点")
         self.assertEqual(requests[0]["model"], "deepseek-chat")
         self.assertEqual(requests[0]["temperature"], 0.1)
         self.assertEqual(requests[0]["max_tokens"], 4_096)
@@ -1216,6 +1263,23 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         )
         self.assertFalse(plan["degraded"])
 
+    def test_composed_planner_plan_adds_industry_context_to_generic_focus(self) -> None:
+        plan = _compose_query_plan(
+            {"focus": "客户痛点与未满足需求", "focus_tags": ["财富管理"]},
+            {
+                "intent": "客户需求",
+                "queries": [
+                    {"query": "客户痛点 未满足需求", "purpose": "同义改写"},
+                    {"query": "财富管理 客户调研", "purpose": "客户调研"},
+                ],
+            },
+        )
+        self.assertEqual(plan["queries"][0]["query"], "财富管理 客户痛点与未满足需求")
+        self.assertEqual(
+            [item["query"] for item in plan["queries"]],
+            ["财富管理 客户痛点与未满足需求", "财富管理 客户调研"],
+        )
+
     def test_legacy_snapshot_focus_tags_are_sanitized_and_confirmed_plan_is_bounded(self) -> None:
         snapshot = normalize_snapshot(
             {
@@ -1270,7 +1334,11 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         ):
             service._run_execution(int(execution["id"]))
         planner.assert_not_called()
-        self.assertEqual(seen_queries, ["监管政策与券商影响", "券商经营与同业动态"])
+        self.assertEqual(
+            seen_queries[:2],
+            ["监管政策与券商影响", "券商经营与同业动态"],
+        )
+        self.assertEqual(len(seen_queries), 5)
 
     def test_submit_rejects_missing_deepseek_before_creating_or_searching(self) -> None:
         with (
@@ -1333,8 +1401,8 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         stored = self.store.get_execution(5, int(execution["id"]))
         self.assertEqual(stored["status"], "failed")
         self.assertEqual(stored["search_status"], "failed")
-        self.assertEqual(len(stored["request_payload"]["search_rounds"]), 2)
-        self.assertEqual(stored["request_payload"]["search_summary"]["failed_query_count"], 2)
+        self.assertEqual(len(stored["request_payload"]["search_rounds"]), 5)
+        self.assertEqual(stored["request_payload"]["search_summary"]["failed_query_count"], 5)
         self.assertEqual(stored["request_payload"]["search_summary"]["selected_count"], 0)
 
     def test_report_drops_uncited_fact_analysis_but_keeps_recommendation(self) -> None:
