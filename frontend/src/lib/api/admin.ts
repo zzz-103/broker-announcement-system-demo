@@ -21,8 +21,8 @@ function listQuery(options: AdminListQuery): URLSearchParams {
   return query;
 }
 
-export function getAdminUsers(token: string, options: AdminListQuery): Promise<AdminUsersResponse> {
-  return requestJson<AdminUsersResponse>(`/api/admin/users?${listQuery(options)}`, {}, token);
+export function getAdminUsers(token: string, options: AdminListQuery, signal?: AbortSignal): Promise<AdminUsersResponse> {
+  return requestJson<AdminUsersResponse>(`/api/admin/users?${listQuery(options)}`, { signal }, token);
 }
 
 export function getAdminAuditSummary(token: string): Promise<AuditSummaryResponse> {
@@ -54,6 +54,14 @@ export function deleteAdminUser(token: string, userId: number): Promise<{ delete
   return requestJson<{ deleted: boolean }>(
     `/api/admin/users/${encodeURIComponent(String(userId))}`,
     { method: "DELETE" },
+    token,
+  );
+}
+
+export function promoteAdminUser(token: string, userId: number): Promise<{ user: AdminUsersResponse["users"][number] }> {
+  return requestJson<{ user: AdminUsersResponse["users"][number] }>(
+    `/api/admin/users/${encodeURIComponent(String(userId))}/promote`,
+    { method: "POST" },
     token,
   );
 }

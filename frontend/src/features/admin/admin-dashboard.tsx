@@ -29,6 +29,7 @@ import { FeedbackManager } from "@/components/feedback-manager";
 import { AuditRecordsManager } from "@/components/audit-records-manager";
 import { Button } from "@/components/ui/button";
 import { SearchServiceSettings } from "./search-service-settings";
+import { IntelligenceReportManager } from "./intelligence-report-manager";
 import {
   Dialog,
   DialogContent,
@@ -455,7 +456,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
   const [fullRefreshPassword, setFullRefreshPassword] = useState("");
   const [fullRefreshVerifying, setFullRefreshVerifying] = useState(false);
   const [fullRefreshError, setFullRefreshError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"tasks" | "users" | "records" | "search">("tasks");
+  const [activeSection, setActiveSection] = useState<"tasks" | "users" | "reports" | "records" | "search">("tasks");
   const {
     activeOperation,
     cardStates,
@@ -609,6 +610,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           {[
             ["tasks", "任务运行"],
             ["users", "用户与审批"],
+            ["reports", "情报报告"],
             ["records", "审计与反馈"],
             ["search", "情报技术配置"],
           ].map(([id, label]) => (
@@ -737,6 +739,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
         </>}
 
         {activeSection === "users" && <UserApprovalManager />}
+        {activeSection === "reports" && <IntelligenceReportManager />}
         {activeSection === "records" && <><AuditRecordsManager /><FeedbackManager /></>}
         {activeSection === "search" && (
           <SearchServiceSettings

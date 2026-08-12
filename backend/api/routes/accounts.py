@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
-from ..auth import get_session, require_admin_token
+from ..auth import get_session, require_admin_token, require_super_admin_token, verify_session_password
 from ..audit_store import (
     AuditStoreError,
     EVENT_TYPES as AUDIT_EVENT_TYPES,
@@ -28,9 +28,11 @@ from ..contracts import (
 )
 from ..runtime import session_tokens
 from ..user_store import (
+    AlreadyAdminError,
     DuplicateUserError,
     FeedbackNotFoundError,
     InvalidUserCredentialsError,
+    ProtectedAdminError,
     QualificationNotFoundError,
     QualificationServiceUnavailableError,
     UserNotFoundError,
@@ -44,6 +46,7 @@ from ..user_store import (
     list_feedback,
     list_users,
     normalize_email,
+    promote_user_to_admin,
     update_feedback_status,
     username_from_email,
 )
@@ -128,6 +131,7 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
             "name": expected_username,
             "role": "admin",
             "is_admin": True,
+            "is_super_admin": True,
             # Reserved stable owner ID for the administrator.  Roles remain
             # authorization metadata; custom intelligence ownership is always
             # keyed by this integer ID.
@@ -150,6 +154,7 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
             name=expected_username,
             role="admin",
             is_admin=True,
+            is_super_admin=True,
         )
 
     try:
@@ -161,12 +166,17 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
 
     token = secrets.token_urlsafe(32)
     user_email = str(getattr(user, "email", "") or "")
+    user_role = str(getattr(user, "role", "user") or "user")
+    if user_role not in {"user", "admin"}:
+        user_role = "user"
+    is_admin = user_role == "admin"
     session_tokens[token] = {
         "username": user.username,
         "name": user.name,
         "email": user_email,
-        "role": "user",
-        "is_admin": False,
+        "role": user_role,
+        "is_admin": is_admin,
+        "is_super_admin": False,
         "user_id": user.id,
         "dashboard_view_recorded": False,
     }
@@ -176,7 +186,7 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
         visitor_id=visitor_id,
         user_id=user.id,
         username=user.name or user_email or user.username,
-        role="user",
+        role=user_role,
         source=source,
         ip_masked=masked_request_ip(request),
         user_agent=request_user_agent(request),
@@ -186,19 +196,22 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
         token=token,
         username=user.username,
         name=user.name,
-        role="user",
-        is_admin=False,
+        role=user_role,
+        is_admin=is_admin,
+        is_super_admin=False,
     )
 
 
 @router.post("/api/admin/verify-password", dependencies=[Depends(require_admin_token)])
-def verify_admin_password(payload: VerifyPasswordRequest) -> dict[str, bool]:
+def verify_admin_password(
+    payload: VerifyPasswordRequest,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, bool]:
     """重新验证管理员密码，不创建会话、不产生登录审计事件。
 
     用于全量重建等影响范围较大的操作前的二次身份确认。
     """
-    expected_password = settings.admin_password
-    if expected_password and secrets.compare_digest(payload.password, expected_password):
+    if verify_session_password(get_session(authorization), payload.password):
         return {"verified": True}
     raise HTTPException(status_code=401, detail="管理员密码不正确")
 
@@ -453,6 +466,36 @@ def delete_admin_user(user_id: int) -> dict[str, bool]:
         delete_user(user_id)
     except UserNotFoundError as exc:
         raise HTTPException(status_code=404, detail="user not found") from exc
+    except ProtectedAdminError as exc:
+        raise HTTPException(status_code=409, detail="promoted administrators cannot be deleted") from exc
     except UserStoreError as exc:
         raise HTTPException(status_code=500, detail="failed to delete approved user") from exc
     return {"deleted": True}
+
+
+@router.post(
+    "/api/admin/users/{user_id}/promote",
+    dependencies=[Depends(require_super_admin_token)],
+)
+def promote_admin_user(
+    user_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    try:
+        user = promote_user_to_admin(user_id)
+    except AlreadyAdminError as exc:
+        raise HTTPException(status_code=409, detail="user is already an administrator") from exc
+    except UserNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="user not found") from exc
+    except UserStoreError as exc:
+        raise HTTPException(status_code=500, detail="failed to promote user") from exc
+    session = get_session(authorization)
+    write_audit_event_safely(
+        event_type="user_role_promoted",
+        user_id=int(session["user_id"]) if isinstance(session.get("user_id"), int) else None,
+        username=str(session.get("username") or "") or None,
+        role=str(session.get("role") or "") or None,
+        source="admin_console",
+        metadata={"target_user_id": user.id, "target_username": user.username, "new_role": "admin"},
+    )
+    return {"user": user.to_dict()}

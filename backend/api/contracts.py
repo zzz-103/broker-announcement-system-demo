@@ -23,6 +23,7 @@ class LoginResponse(BaseModel):
     name: str
     role: str
     is_admin: bool
+    is_super_admin: bool = False
 
 
 class AdminUserCreateRequest(BaseModel):

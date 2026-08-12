@@ -16,6 +16,7 @@ EVENT_TYPES = {
     "qualification_application",
     "login_success",
     "dashboard_view",
+    "user_role_promoted",
     "custom_intelligence_config_updated",
     "custom_intelligence_secret_revealed",
     "custom_intelligence_connection_tested",

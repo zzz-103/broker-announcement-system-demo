@@ -27,6 +27,7 @@ export interface LoginResponse {
   name: string;
   role: "admin" | "user";
   is_admin: boolean;
+  is_super_admin: boolean;
 }
 
 export type AuditEventType =
@@ -34,6 +35,7 @@ export type AuditEventType =
   | "qualification_application"
   | "login_success"
   | "dashboard_view"
+  | "user_role_promoted"
   | "custom_intelligence_config_updated"
   | "custom_intelligence_secret_revealed"
   | "custom_intelligence_connection_tested"
@@ -121,7 +123,7 @@ export interface PublishAnnouncementsResponse {
 }
 
 export interface AdminUser {
-  id: number; name: string; email: string; department: string; username: string; created_at: string;
+  id: number; name: string; email: string; department: string; username: string; role: "user" | "admin"; created_at: string;
 }
 export interface AdminListMeta { page: number; page_size: number; total: number; total_pages: number; q: string; }
 export interface AdminListQuery { page: number; pageSize: number; query: string; }
@@ -379,6 +381,8 @@ export type IntelligenceDefaultRulesInput = Omit<IntelligenceDefaultRulesRespons
 export interface IntelligenceAdminExecutionSummary {
   id: number;
   owner_user_id: number;
+  owner_name: string;
+  owner_username: string;
   topic_name?: string;
   trigger_type?: string;
   status: string;
@@ -389,6 +393,14 @@ export interface IntelligenceAdminExecutionSummary {
   domain_count: number;
   created_at: string;
   completed_at?: string | null;
+}
+export interface IntelligenceAdminExecution extends IntelligenceAssistantExecution {
+  owner_user_id: number;
+  owner_name: string;
+  owner_username: string;
+}
+export interface IntelligenceAdminExecutionResponse {
+  execution: IntelligenceAdminExecution;
 }
 export interface IntelligenceAdminExecutionsResponse {
   executions: IntelligenceAdminExecutionSummary[];

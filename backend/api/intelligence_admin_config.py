@@ -213,6 +213,13 @@ def reveal_deepseek_key(password: str) -> str:
     return config.api_key
 
 
+def read_deepseek_key() -> str:
+    config, _, _ = _load_effective_llm_config()
+    if config is None:
+        raise ValueError("DeepSeek 尚未配置")
+    return config.api_key
+
+
 def test_deepseek_configuration() -> dict[str, object]:
     config, _, _ = _load_effective_llm_config()
     if config is None:

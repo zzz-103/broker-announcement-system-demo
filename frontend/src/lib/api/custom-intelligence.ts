@@ -15,6 +15,7 @@ import type {
   IntelligenceAssistantTopicResponse,
   IntelligenceAssistantTopicsResponse,
   IntelligenceAdminExecutionsResponse,
+  IntelligenceAdminExecutionResponse,
   IntelligenceDefaultRulesInput,
   IntelligenceDefaultRulesResponse,
   IntelligenceExecutionDiagnosticsResponse,
@@ -305,6 +306,13 @@ export function saveAdminDefaultRules(token: string, payload: IntelligenceDefaul
 export function fetchAdminAssistantExecutions(token: string, page = 1, pageSize = 10, signal?: AbortSignal): Promise<IntelligenceAdminExecutionsResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   return requestJson<IntelligenceAdminExecutionsResponse>(`/api/admin/custom-intelligence/executions?${params.toString()}`, { signal }, token);
+}
+export function fetchAdminUserAssistantExecutions(token: string, ownerUserId: number, page = 1, pageSize = 10, signal?: AbortSignal): Promise<IntelligenceAdminExecutionsResponse> {
+  const params = new URLSearchParams({ owner_user_id: String(ownerUserId), page: String(page), page_size: String(pageSize) });
+  return requestJson<IntelligenceAdminExecutionsResponse>(`/api/admin/custom-intelligence/executions?${params.toString()}`, { signal }, token);
+}
+export function fetchAdminAssistantExecution(token: string, executionId: number, signal?: AbortSignal): Promise<IntelligenceAdminExecutionResponse> {
+  return requestJson<IntelligenceAdminExecutionResponse>(`/api/admin/custom-intelligence/executions/${encodeURIComponent(String(executionId))}`, { signal }, token);
 }
 export function fetchAdminExecutionDiagnostics(token: string, executionId: number, signal?: AbortSignal): Promise<IntelligenceExecutionDiagnosticsResponse> {
   return requestJson<IntelligenceExecutionDiagnosticsResponse>(`/api/admin/custom-intelligence/executions/${encodeURIComponent(String(executionId))}/diagnostics`, { signal }, token);

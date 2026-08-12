@@ -5,11 +5,13 @@ import { getAuditContext } from "@/lib/audit-context";
 const TOKEN_KEY = "adminSessionToken";
 const USERNAME_KEY = "adminUsername";
 const ROLE_KEY = "sessionRole";
+const SUPER_ADMIN_KEY = "sessionIsSuperAdmin";
 
 interface AuthState {
   isHydrated: boolean;
   isLoggedIn: boolean;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   username: string;
   token: string | null;
   error: string;
@@ -24,6 +26,7 @@ export const useAuthStore = create<AuthState>((set) => {
     isHydrated: false,
     isLoggedIn: false,
     isAdmin: false,
+    isSuperAdmin: false,
     username: "",
     token: null,
     error: "",
@@ -35,10 +38,12 @@ export const useAuthStore = create<AuthState>((set) => {
         const displayName = data.name || data.username || username;
         window.sessionStorage.setItem(USERNAME_KEY, displayName);
         window.sessionStorage.setItem(ROLE_KEY, data.role);
+        window.sessionStorage.setItem(SUPER_ADMIN_KEY, String(data.is_super_admin));
         set({
           isHydrated: true,
           isLoggedIn: true,
           isAdmin: data.is_admin,
+          isSuperAdmin: data.is_super_admin,
           username: displayName,
           token: data.token,
           error: "",
@@ -60,25 +65,28 @@ export const useAuthStore = create<AuthState>((set) => {
       window.sessionStorage.removeItem(TOKEN_KEY);
       window.sessionStorage.removeItem(USERNAME_KEY);
       window.sessionStorage.removeItem(ROLE_KEY);
-      set({ isHydrated: true, isLoggedIn: false, isAdmin: false, username: "", token: null, error: "" });
+      window.sessionStorage.removeItem(SUPER_ADMIN_KEY);
+      set({ isHydrated: true, isLoggedIn: false, isAdmin: false, isSuperAdmin: false, username: "", token: null, error: "" });
     },
 
     clearAuth: (message = "") => {
       window.sessionStorage.removeItem(TOKEN_KEY);
       window.sessionStorage.removeItem(USERNAME_KEY);
       window.sessionStorage.removeItem(ROLE_KEY);
-      set({ isHydrated: true, isLoggedIn: false, isAdmin: false, username: "", token: null, error: message });
+      window.sessionStorage.removeItem(SUPER_ADMIN_KEY);
+      set({ isHydrated: true, isLoggedIn: false, isAdmin: false, isSuperAdmin: false, username: "", token: null, error: message });
     },
 
     restoreSession: () => {
       const token = window.sessionStorage.getItem(TOKEN_KEY);
       const username = window.sessionStorage.getItem(USERNAME_KEY) || "";
       const role = window.sessionStorage.getItem(ROLE_KEY);
+      const isSuperAdmin = window.sessionStorage.getItem(SUPER_ADMIN_KEY) === "true";
       if (!token) {
         set({ isHydrated: true });
         return;
       }
-      set({ isHydrated: true, isLoggedIn: true, isAdmin: role === "admin", username, token, error: "" });
+      set({ isHydrated: true, isLoggedIn: true, isAdmin: role === "admin", isSuperAdmin, username, token, error: "" });
     },
   };
 });

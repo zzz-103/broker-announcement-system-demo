@@ -11,6 +11,7 @@ interface HoverSelectProps {
   placeholder?: string;
   className?: string;
   maxHeight?: number;
+  disabled?: boolean;
 }
 
 // Global coordination: when one dropdown opens, close all others immediately
@@ -25,6 +26,7 @@ export function HoverSelect({
   placeholder = "请选择",
   className = "",
   maxHeight = 240,
+  disabled = false,
 }: HoverSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [triggerWidth, setTriggerWidth] = useState(0);
@@ -101,6 +103,7 @@ export function HoverSelect({
         type="button"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
+        disabled={disabled}
         onClick={() => (isOpen ? closeDropdown() : openDropdown())}
         className={`
           w-full flex items-center justify-between gap-1.5
@@ -112,6 +115,7 @@ export function HoverSelect({
               : "border-[#E4EAF2] bg-[#F8FAFC]"
           }
           ${value ? "text-[#172033]" : "text-[#667085]"}
+          disabled:cursor-not-allowed disabled:border-[#E4EAF2] disabled:bg-[#F8FAFC] disabled:text-[#98A2B3]
         `}
       >
         <span className="truncate">{displayLabel}</span>

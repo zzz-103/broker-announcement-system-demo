@@ -209,6 +209,32 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             {"page": 5, "page_size": 10, "total": 50, "total_pages": 5},
         )
 
+    def test_admin_execution_history_can_filter_by_owner_before_pagination(self) -> None:
+        filtered = [{"id": 101, "owner_user_id": 7, "sources": []}]
+        meta = {"page": 1, "page_size": 10, "total": 1, "total_pages": 1}
+        with (
+            patch.object(
+                custom_intelligence_routes.store,
+                "list_executions",
+                return_value=(filtered, meta),
+            ) as list_for_owner,
+            patch.object(
+                custom_intelligence_routes,
+                "get_user_identities_by_ids",
+                return_value={7: {"name": "测试用户", "username": "test.user"}},
+            ),
+        ):
+            result = custom_intelligence_routes.get_admin_executions(
+                page=1,
+                page_size=10,
+                owner_user_id=7,
+            )
+
+        list_for_owner.assert_called_once_with(7, 1, 10)
+        self.assertEqual([item["id"] for item in result["executions"]], [101])
+        self.assertEqual(result["executions"][0]["owner_name"], "测试用户")
+        self.assertEqual(result["meta"], meta)
+
     def test_each_query_uses_fixed_top_k(self) -> None:
         for depth, top_k in (("concise", 10), ("standard", 20), ("deep", 30)):
             payload = build_search_payload("test", top_k=top_k)

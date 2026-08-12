@@ -32,6 +32,14 @@ class UserNotFoundError(UserStoreError):
     pass
 
 
+class ProtectedAdminError(UserStoreError):
+    pass
+
+
+class AlreadyAdminError(UserStoreError):
+    pass
+
+
 class FeedbackNotFoundError(UserStoreError):
     pass
 
@@ -55,6 +63,7 @@ class ApprovedUser:
     email: str
     department: str
     username: str
+    role: str
     created_at: str
 
     def to_dict(self) -> dict[str, object]:
@@ -64,6 +73,7 @@ class ApprovedUser:
             "email": self.email,
             "department": self.department,
             "username": self.username,
+            "role": self.role,
             "created_at": self.created_at,
         }
 
@@ -201,10 +211,19 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
             department TEXT NOT NULL,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL
         )
         """
     )
+    user_columns = {
+        str(row["name"])
+        for row in connection.execute("PRAGMA table_info(approved_users)").fetchall()
+    }
+    if "role" not in user_columns:
+        connection.execute(
+            "ALTER TABLE approved_users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"
+        )
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS feedback_entries (
@@ -231,12 +250,14 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
 
 
 def row_to_user(row: sqlite3.Row) -> ApprovedUser:
+    raw_role = str(row["role"] or "user") if "role" in row.keys() else "user"
     return ApprovedUser(
         id=int(row["id"]),
         name=str(row["name"]),
         email=str(row["email"]),
         department=str(row["department"]),
         username=str(row["username"]),
+        role=raw_role if raw_role in {"user", "admin"} else "user",
         created_at=str(row["created_at"]),
     )
 
@@ -345,7 +366,7 @@ def _fetch_user_by_email_or_username(
 ) -> ApprovedUser | None:
     row = connection.execute(
         """
-        SELECT id, name, email, department, username, created_at
+        SELECT id, name, email, department, username, role, created_at
         FROM approved_users
         WHERE email = ? OR username = ?
         ORDER BY id ASC
@@ -384,7 +405,7 @@ def list_users(page: int, page_size: int, query: str | None = None) -> tuple[lis
             offset = (effective_page - 1) * page_size
             rows = connection.execute(
                 f"""
-                SELECT id, name, email, department, username, created_at
+                SELECT id, name, email, department, username, role, created_at
                 FROM approved_users
                 {where_clause}
                 ORDER BY id DESC
@@ -411,6 +432,28 @@ def get_user_names_by_ids(user_ids: set[int]) -> dict[int, str]:
     except sqlite3.Error as exc:
         raise UserStoreError("failed to load user names") from exc
     return {int(row["id"]): str(row["name"]).strip() for row in rows if str(row["name"]).strip()}
+
+
+def get_user_identities_by_ids(user_ids: set[int]) -> dict[int, dict[str, str]]:
+    if not user_ids:
+        return {}
+    placeholders = ",".join("?" for _ in user_ids)
+    try:
+        with _connection() as connection:
+            ensure_schema(connection)
+            rows = connection.execute(
+                f"SELECT id, name, username FROM approved_users WHERE id IN ({placeholders})",
+                sorted(user_ids),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to load user identities") from exc
+    return {
+        int(row["id"]): {
+            "name": str(row["name"]).strip(),
+            "username": str(row["username"]).strip(),
+        }
+        for row in rows
+    }
 
 
 def create_user(name: str, email: str, department: str) -> tuple[ApprovedUser, str]:
@@ -454,7 +497,7 @@ def create_user_with_username(
             connection.commit()
             row = connection.execute(
                 """
-                SELECT id, name, email, department, username, created_at
+                SELECT id, name, email, department, username, role, created_at
                 FROM approved_users
                 WHERE id = ?
                 """,
@@ -522,7 +565,7 @@ def authenticate_user(username: str, password: str) -> ApprovedUser:
             ensure_schema(connection)
             row = connection.execute(
                 """
-                SELECT id, name, email, department, username, password_hash, created_at
+                SELECT id, name, email, department, username, password_hash, role, created_at
                 FROM approved_users
                 WHERE username = ?
                 """,
@@ -540,9 +583,44 @@ def delete_user(user_id: int) -> None:
     try:
         with _connection() as connection:
             ensure_schema(connection)
+            row = connection.execute(
+                "SELECT role FROM approved_users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                raise UserNotFoundError("user not found")
+            if str(row["role"] or "user") == "admin":
+                raise ProtectedAdminError("promoted administrators cannot be deleted")
             cursor = connection.execute("DELETE FROM approved_users WHERE id = ?", (user_id,))
             connection.commit()
+    except (ProtectedAdminError, UserNotFoundError):
+        raise
     except sqlite3.Error as exc:
         raise UserStoreError("failed to delete user") from exc
     if cursor.rowcount == 0:
         raise UserNotFoundError("user not found")
+
+
+def promote_user_to_admin(user_id: int) -> ApprovedUser:
+    try:
+        with _connection() as connection:
+            ensure_schema(connection)
+            cursor = connection.execute(
+                "UPDATE approved_users SET role = 'admin' WHERE id = ? AND role = 'user'",
+                (user_id,),
+            )
+            row = connection.execute(
+                "SELECT id, name, email, department, username, role, created_at FROM approved_users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                raise UserNotFoundError("user not found")
+            if cursor.rowcount == 0:
+                raise AlreadyAdminError("user is already an administrator")
+            if cursor.rowcount:
+                connection.commit()
+    except (AlreadyAdminError, UserNotFoundError):
+        raise
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to promote user") from exc
+    return row_to_user(row)

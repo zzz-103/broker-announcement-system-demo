@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import secrets
 from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Annotated, Literal
@@ -9,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, stat
 from fastapi.responses import Response as RawResponse
 
 from ..audit_store import AuditStoreError, record_event
-from ..auth import get_session, require_admin_token
+from ..auth import get_session, require_admin_token, verify_session_password
 from ..config import settings
 from ..contracts import (
     ConfirmedPlanBody,
@@ -26,11 +25,10 @@ from ..intelligence_admin_config import (
     IntelligenceTopicUpdateCompat,
     SMTPConfigUpdate,
     public_deepseek_config,
-    reveal_deepseek_key,
+    read_deepseek_key,
     resolve_email_delivery_format,
     save_deepseek_config,
     test_deepseek_configuration,
-    verify_admin_password,
 )
 from ..intelligence_email import (
     EmailConfigurationError,
@@ -58,6 +56,7 @@ from ..custom_intelligence_service import (
 from ..custom_intelligence_store import EXECUTIONS_RETENTION, TOPICS_PER_USER_LIMIT, TopicLimitError, TopicNameConflictError
 from ..intelligence_report_pdf import build_report_pdf, report_pdf_filename
 from ..intelligence_report_view import report_research_direction
+from ..user_store import UserStoreError, get_user_identities_by_ids
 from ..qianfan_search import (
     QianfanConfigurationError,
     QianfanDisabledError,
@@ -247,7 +246,23 @@ def _public_execution(execution: dict[str, object]) -> dict[str, object]:
     return public
 
 
-def _admin_execution_summary(execution: dict[str, object]) -> dict[str, object]:
+def _admin_owner_payload(owner_user_id: int, identities: dict[int, dict[str, str]]) -> dict[str, object]:
+    if owner_user_id == 0:
+        return {
+            "owner_name": settings.admin_username,
+            "owner_username": settings.admin_username,
+        }
+    identity = identities.get(owner_user_id, {})
+    return {
+        "owner_name": identity.get("name") or identity.get("username") or "已删除账户",
+        "owner_username": identity.get("username") or "",
+    }
+
+
+def _admin_execution_summary(
+    execution: dict[str, object],
+    identities: dict[int, dict[str, str]] | None = None,
+) -> dict[str, object]:
     sources = execution.get("sources") if isinstance(execution.get("sources"), list) else []
     domains: set[str] = set()
     dates: set[str] = set()
@@ -268,9 +283,11 @@ def _admin_execution_summary(execution: dict[str, object]) -> dict[str, object]:
                 if source.get(key) is not None
             }
         )
+    owner_user_id = int(execution.get("owner_user_id") or 0)
     return {
         "id": execution.get("id"),
-        "owner_user_id": execution.get("owner_user_id"),
+        "owner_user_id": owner_user_id,
+        **_admin_owner_payload(owner_user_id, identities or {}),
         "topic_id": execution.get("topic_id"),
         "topic_name": execution.get("topic_name"),
         "trigger_type": execution.get("trigger_type"),
@@ -615,8 +632,7 @@ def post_admin_search_config_reveal_key(
     payload: VerifyPasswordRequest,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
-    expected_password = settings.admin_password
-    if expected_password and secrets.compare_digest(payload.password, expected_password):
+    if verify_session_password(get_session(authorization), payload.password):
         api_key = effective_search_config().api_key
         if not api_key:
             raise HTTPException(status_code=404, detail="百度搜索 API Key 尚未配置")
@@ -706,7 +722,9 @@ def post_admin_llm_config_reveal_key(
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
     try:
-        api_key = reveal_deepseek_key(payload.password)
+        if not verify_session_password(get_session(authorization), payload.password):
+            raise PermissionError("管理员密码不正确")
+        api_key = read_deepseek_key()
     except PermissionError as exc:
         _audit_intelligence_event(
             authorization,
@@ -811,7 +829,7 @@ def post_admin_smtp_config_reveal_authorization_code(
     payload: AdminPasswordRequest,
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
-    if not verify_admin_password(payload.password):
+    if not verify_session_password(get_session(authorization), payload.password):
         _audit_intelligence_event(
             authorization,
             "custom_intelligence_secret_revealed",
@@ -878,15 +896,36 @@ def post_admin_default_rules(
 def get_admin_executions(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=50),
+    owner_user_id: Annotated[int | None, Query(ge=0)] = None,
 ) -> dict[str, object]:
+    if owner_user_id is not None:
+        try:
+            executions, meta = store.list_executions(owner_user_id, page, page_size)
+        except IntelligenceStoreError as exc:
+            raise _handle_store_error(exc, "无法加载情报报告") from exc
+        try:
+            identities = get_user_identities_by_ids({owner_user_id}) if owner_user_id > 0 else {}
+        except UserStoreError:
+            identities = {}
+        return {
+            "executions": [_admin_execution_summary(execution, identities) for execution in executions],
+            "meta": meta,
+        }
+
     recent = store.list_recent_executions(limit=EXECUTIONS_RETENTION)
     total = len(recent)
     total_pages = max(1, (total + page_size - 1) // page_size)
     effective_page = min(page, total_pages)
     start = (effective_page - 1) * page_size
     executions = recent[start : start + page_size]
+    try:
+        identities = get_user_identities_by_ids(
+            {int(item["owner_user_id"]) for item in executions if int(item.get("owner_user_id") or 0) > 0}
+        )
+    except UserStoreError:
+        identities = {}
     return {
-        "executions": [_admin_execution_summary(execution) for execution in executions],
+        "executions": [_admin_execution_summary(execution, identities) for execution in executions],
         "meta": {
             "page": effective_page,
             "page_size": page_size,
@@ -894,6 +933,25 @@ def get_admin_executions(
             "total_pages": total_pages,
         },
     }
+
+
+@router.get(
+    "/api/admin/custom-intelligence/executions/{execution_id}",
+    dependencies=[Depends(require_admin_token)],
+)
+def get_admin_execution(execution_id: int) -> dict[str, object]:
+    try:
+        execution = store.get_execution_by_id(execution_id)
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法加载情报报告") from exc
+    owner_user_id = int(execution.get("owner_user_id") or 0)
+    try:
+        identities = get_user_identities_by_ids({owner_user_id}) if owner_user_id > 0 else {}
+    except UserStoreError:
+        identities = {}
+    public = _public_execution(execution)
+    public.update({"owner_user_id": owner_user_id, **_admin_owner_payload(owner_user_id, identities)})
+    return {"execution": public}
 
 
 @router.get(

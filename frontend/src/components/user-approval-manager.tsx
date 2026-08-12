@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Loader2,
   RefreshCw,
+  ShieldCheck,
   Search,
   Trash2,
   UserPlus,
@@ -22,6 +23,7 @@ import {
   createAdminUser,
   deleteAdminUser,
   getAdminUsers,
+  promoteAdminUser,
 } from "@/lib/api/backend-client";
 
 interface CreatedCredential {
@@ -47,7 +49,7 @@ function errorMessage(error: unknown) {
 }
 
 export function UserApprovalManager() {
-  const { token, clearAuth } = useAuthStore();
+  const { token, clearAuth, isSuperAdmin } = useAuthStore();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [meta, setMeta] = useState<AdminListMeta>(EMPTY_META);
   const [searchInput, setSearchInput] = useState("");
@@ -59,6 +61,7 @@ export function UserApprovalManager() {
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [promotingId, setPromotingId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [createdCredential, setCreatedCredential] = useState<CreatedCredential | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -153,6 +156,22 @@ export function UserApprovalManager() {
       if (!handleAuthError(error)) setError(errorMessage(error));
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handlePromote = async (user: AdminUser) => {
+    if (!token || !isSuperAdmin || promotingId !== null || user.role === "admin") return;
+    const confirmed = window.confirm(`确认任命「${user.name}」为管理员吗？该操作不可撤销。`);
+    if (!confirmed) return;
+    setPromotingId(user.id);
+    setError("");
+    try {
+      await promoteAdminUser(token, user.id);
+      await loadUsers();
+    } catch (error) {
+      if (!handleAuthError(error)) setError(errorMessage(error));
+    } finally {
+      setPromotingId(null);
     }
   };
 
@@ -345,7 +364,7 @@ export function UserApprovalManager() {
                       <th className="py-2.5 px-3">姓名 / 账号</th>
                       <th className="py-2.5 px-3">邮箱</th>
                       <th className="py-2.5 px-3">部门</th>
-                      <th className="py-2.5 px-3">创建时间</th>
+                      <th className="py-2.5 px-3">角色 / 创建时间</th>
                       <th className="py-2.5 px-3 text-right">操作</th>
                     </tr>
                   </thead>
@@ -367,13 +386,25 @@ export function UserApprovalManager() {
                           {user.department || "-"}
                         </td>
                         <td className="py-3 px-3 text-[#98A2B3] font-medium whitespace-nowrap">
-                          {formatCreatedAt(user.created_at)}
+                          <span className={user.role === "admin" ? "font-semibold text-[#315EA8]" : "text-[#667085]"}>{user.role === "admin" ? "管理员" : "普通用户"}</span>
+                          <span className="ml-2">{formatCreatedAt(user.created_at)}</span>
                         </td>
                         <td className="py-3 px-3 text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                          {isSuperAdmin && user.role === "user" && <button
+                            type="button"
+                            onClick={() => void handlePromote(user)}
+                            disabled={promotingId !== null || deletingId !== null}
+                            title="任命为管理员"
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-blue-100 px-2 text-[11px] font-semibold text-[#315EA8] hover:bg-blue-50 disabled:opacity-50"
+                          >
+                            {promotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                            任命管理员
+                          </button>}
                           <button
                             type="button"
                             onClick={() => void handleDelete(user)}
-                            disabled={deletingId !== null}
+                            disabled={deletingId !== null || promotingId !== null || user.role === "admin"}
                             title="删除用户"
                             className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
                           >
@@ -383,6 +414,7 @@ export function UserApprovalManager() {
                               <Trash2 className="w-3.5 h-3.5" />
                             )}
                           </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -412,12 +444,22 @@ export function UserApprovalManager() {
                       <p>
                         <span className="text-[#98A2B3] font-medium">创建：</span>{formatCreatedAt(user.created_at)}
                       </p>
+                      <p><span className="text-[#98A2B3] font-medium">角色：</span>{user.role === "admin" ? "管理员" : "普通用户"}</p>
                     </div>
-                    <div className="pt-2 border-t border-[#F0F2F5] flex justify-end">
+                    <div className="pt-2 border-t border-[#F0F2F5] flex justify-end gap-2">
+                      {isSuperAdmin && user.role === "user" && <button
+                        type="button"
+                        onClick={() => void handlePromote(user)}
+                        disabled={promotingId !== null || deletingId !== null}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 px-3 text-xs font-semibold text-[#315EA8] hover:bg-blue-50 disabled:opacity-60"
+                      >
+                        {promotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                        任命管理员
+                      </button>}
                       <button
                         type="button"
                         onClick={() => void handleDelete(user)}
-                        disabled={deletingId !== null}
+                        disabled={deletingId !== null || promotingId !== null || user.role === "admin"}
                         className="h-8 px-3 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all"
                       >
                         {deletingId === user.id ? (

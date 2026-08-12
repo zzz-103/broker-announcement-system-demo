@@ -63,6 +63,7 @@ class RouteOwnershipTests(unittest.TestCase):
             ("GET", "/api/admin/users"),
             ("POST", "/api/admin/users"),
             ("DELETE", "/api/admin/users/{user_id}"),
+            ("POST", "/api/admin/users/{user_id}/promote"),
             ("GET", "/api/admin/audit/summary"),
             ("GET", "/api/admin/audit/events"),
             ("GET", "/api/admin/feedback"),
@@ -116,6 +117,7 @@ class RouteOwnershipTests(unittest.TestCase):
             ("GET", "/api/admin/custom-intelligence/default-rules"),
             ("POST", "/api/admin/custom-intelligence/default-rules"),
             ("GET", "/api/admin/custom-intelligence/executions"),
+            ("GET", "/api/admin/custom-intelligence/executions/{execution_id}"),
             ("GET", "/api/admin/custom-intelligence/executions/{execution_id}/diagnostics"),
         }
         self.assertTrue(expected.issubset(registered), expected - registered)
@@ -373,6 +375,7 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertTrue(admin_headers["Authorization"].startswith("Bearer "))
         admin_token = admin_headers["Authorization"].removeprefix("Bearer ")
         self.assertEqual(main.session_tokens[admin_token]["user_id"], 0)
+        self.assertTrue(main.session_tokens[admin_token]["is_super_admin"])
 
         fake_user = SimpleNamespace(id=7, username="approved.user", name="Approved User")
         with (
@@ -385,6 +388,55 @@ class RouteOwnershipTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["role"], "user")
+
+    def test_super_admin_can_promote_and_promoted_admin_keeps_admin_access(self) -> None:
+        admin_headers = self._admin_headers()
+        suffix = uuid.uuid4().hex[:8]
+        created = self.client.post(
+            "/api/admin/users",
+            headers=admin_headers,
+            json={"name": "Promoted Admin", "email": f"promoted-{suffix}@example.com", "department": "Test"},
+        )
+        self.assertEqual(created.status_code, 200)
+        user_id = int(created.json()["user"]["id"])
+        initial_password = str(created.json()["initial_password"])
+
+        main.session_tokens["ordinary-admin"] = {
+            "username": "ordinary-admin",
+            "name": "Ordinary Admin",
+            "role": "admin",
+            "is_admin": True,
+            "is_super_admin": False,
+            "user_id": 9999,
+        }
+        ordinary_headers = {"Authorization": "Bearer ordinary-admin"}
+        self.assertEqual(
+            self.client.post(f"/api/admin/users/{user_id}/promote", headers=ordinary_headers).status_code,
+            403,
+        )
+        promoted = self.client.post(f"/api/admin/users/{user_id}/promote", headers=admin_headers)
+        self.assertEqual(promoted.status_code, 200)
+        self.assertEqual(promoted.json()["user"]["role"], "admin")
+
+        with patch.object(accounts, "write_audit_event_safely", return_value=False):
+            login = self.client.post(
+                "/api/login",
+                json={"username": created.json()["user"]["username"], "password": initial_password},
+            )
+        self.assertEqual(login.status_code, 200)
+        self.assertTrue(login.json()["is_admin"])
+        self.assertFalse(login.json()["is_super_admin"])
+        promoted_headers = {"Authorization": f"Bearer {login.json()['token']}"}
+        self.assertEqual(self.client.get("/api/admin/users", headers=promoted_headers).status_code, 200)
+        self.assertEqual(
+            self.client.post(
+                "/api/admin/verify-password",
+                headers=promoted_headers,
+                json={"password": initial_password},
+            ).status_code,
+            200,
+        )
+        self.assertEqual(self.client.delete(f"/api/admin/users/{user_id}", headers=admin_headers).status_code, 409)
 
     def test_admin_search_config_requires_admin_and_redacts_key(self) -> None:
         admin_headers = self._admin_headers()
@@ -1129,6 +1181,29 @@ class RouteOwnershipTests(unittest.TestCase):
         )
         self.assertEqual(detail.json()["execution"]["sources"][0]["id"], "source-1")
         self.assertNotIn("search_coverage", detail.json()["execution"])
+        admin_detail = self.client.get(
+            f"/api/admin/custom-intelligence/executions/{execution_id}",
+            headers=headers,
+        )
+        self.assertEqual(admin_detail.status_code, 200)
+        self.assertEqual(admin_detail.json()["execution"]["owner_user_id"], owner_id)
+        self.assertEqual(admin_detail.json()["execution"]["report"]["title"], "路由矩阵报告")
+        self.assertNotIn("request_payload", admin_detail.json()["execution"])
+        main.session_tokens["report-user"] = {
+            "username": "report-user",
+            "name": "Report User",
+            "role": "user",
+            "is_admin": False,
+            "is_super_admin": False,
+            "user_id": 88,
+        }
+        self.assertEqual(
+            self.client.get(
+                f"/api/admin/custom-intelligence/executions/{execution_id}",
+                headers={"Authorization": "Bearer report-user"},
+            ).status_code,
+            403,
+        )
         diagnostics = self.client.get(
             f"/api/admin/custom-intelligence/executions/{execution_id}/diagnostics",
             headers=headers,
