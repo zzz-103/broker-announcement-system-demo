@@ -19,6 +19,12 @@ export interface DashboardManifest {
   source: string;
   timezone: string;
   datasets: Record<string, DashboardDatasetManifest>;
+  matching_baseline?: {
+    file: string;
+    bytes: number;
+    sha256: string | null;
+    available: boolean;
+  };
 }
 
 export interface TenderProjectData {

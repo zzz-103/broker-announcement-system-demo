@@ -43,6 +43,14 @@ class DualScraperJobTests(unittest.TestCase):
             .endswith("output/selected/result/notices")
         )
 
+    def test_rule_matcher_receives_incremental_state_inputs(self) -> None:
+        manager = JobManager()
+        command, _working_dir, _env = manager._build_rule_matching_command()
+        verified = command[command.index("--verified-links-csv") + 1]
+        state = command[command.index("--state-path") + 1]
+        self.assertTrue(verified.replace("\\", "/").endswith("llm_matching/llm_verified_links.csv"))
+        self.assertTrue(state.replace("\\", "/").endswith("llm_matching/matching_state.json"))
+
     def test_scraper_runs_jincai_and_direct_sources_in_parallel_then_prepares_input(self) -> None:
         manager = JobManager()
         stages: list[str] = []

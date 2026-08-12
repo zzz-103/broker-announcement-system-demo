@@ -97,6 +97,38 @@ class Settings:
         )
 
     @property
+    def matching_procurement_csv_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("LLM_OUTPUT_DIR"),
+            PROJECT_ROOT / "backend" / "data" / "staging",
+        ) / "announcement_table.csv"
+
+    @property
+    def matching_result_csv_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("LLM_RESULT_OUTPUT_DIR"),
+            PROJECT_ROOT / "backend" / "data" / "staging" / "result",
+        ) / "result_table.csv"
+
+    @property
+    def matching_verified_links_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("LLM_MATCHING_OUTPUT_DIR"),
+            PROJECT_ROOT / "backend" / "data" / "staging" / "llm_matching",
+        ) / "llm_verified_links.csv"
+
+    @property
+    def matching_state_path(self) -> Path:
+        return self.matching_verified_links_path.with_name("matching_state.json")
+
+    @property
+    def imported_matching_baseline_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("IMPORTED_MATCHING_BASELINE_PATH"),
+            PROJECT_ROOT / "backend" / "data" / "staging" / "imported_matching_baseline.json",
+        )
+
+    @property
     def merged_announcement_csv_path(self) -> Path:
         output_dir = resolve_project_path(
             os.getenv("MATCHING_MERGED_OUTPUT_DIR"),

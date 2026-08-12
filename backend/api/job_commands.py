@@ -345,6 +345,9 @@ class JobCommandFactory:
 
     def _build_rule_matching_command(self) -> CommandSpec:
         staging = PROJECT_ROOT / "backend" / "data" / "staging"
+        llm_matching = resolve_project_path(
+            os.getenv("LLM_MATCHING_OUTPUT_DIR"), staging / "llm_matching"
+        )
         return self._build_matching_module_command(
             "backend.matching.project_matcher",
             [
@@ -356,6 +359,10 @@ class JobCommandFactory:
                 str(resolve_project_path(os.getenv("MATCHING_OUTPUT_DIR"), staging / "matching")),
                 "--max-candidates",
                 os.getenv("MATCHING_MAX_CANDIDATES", "5"),
+                "--verified-links-csv",
+                str(llm_matching / "llm_verified_links.csv"),
+                "--state-path",
+                str(llm_matching / "matching_state.json"),
             ],
         )
 

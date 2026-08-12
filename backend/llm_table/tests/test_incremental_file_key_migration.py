@@ -6,6 +6,7 @@ from pathlib import Path
 
 from backend.llm_table.llm_markdown_table_builder import (
     RESULT_TABLE_FIELDS,
+    migrate_file_keys_by_notice_id,
     migrate_legacy_file_keys,
     select_files_for_processing,
 )
@@ -127,6 +128,37 @@ class IncrementalFileKeyMigrationTests(unittest.TestCase):
 
             self.assertEqual(migrated_count, 1)
             self.assertEqual(migrated_rows[0]["broker_folder"], "broker_b")
+
+    def test_stable_notice_id_follows_a_renamed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            markdown_path = root / "selected" / "result" / "notices" / "new_broker" / "renamed.md"
+            markdown_path.parent.mkdir(parents=True)
+            markdown = "---\nnotice_id: stable-result-1\n---\n# Result\n\nunchanged"
+            markdown_path.write_text(markdown, encoding="utf-8")
+            existing_rows = self._write_result_csv(
+                root / "output",
+                filename="old-name.md",
+                document_sha1=_sha1(markdown),
+            )
+            existing_rows[0]["broker_folder"] = "old_broker"
+            existing_rows[0]["notice_id"] = "stable-result-1"
+
+            migrated_rows, migrated_count = migrate_file_keys_by_notice_id(
+                existing_rows, [markdown_path]
+            )
+            selection = select_files_for_processing(
+                [markdown_path],
+                root / "output",
+                incremental=True,
+                overwrite=False,
+                existing_rows=migrated_rows,
+            )
+
+            self.assertEqual(migrated_count, 1)
+            self.assertEqual(migrated_rows[0]["broker_folder"], "new_broker")
+            self.assertEqual(migrated_rows[0]["markdown_file"], "renamed.md")
+            self.assertEqual(selection.plans, [])
 
 
 if __name__ == "__main__":

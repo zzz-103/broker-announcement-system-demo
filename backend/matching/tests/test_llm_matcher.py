@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.llm_table.llm_markdown_table_builder import LLMApiConfig
-from backend.matching import llm_matcher
+from backend.matching import llm_matcher, project_matcher
 
 TEST_TEMP_ROOT = (
     Path(__file__).resolve().parents[2]
@@ -155,6 +155,36 @@ class LLMMatcherTests(unittest.TestCase):
             second_client = FakeClient([])
             second_summary = run_fixture(paths, second_client)
             self.assertEqual(second_summary["cached_count"], 1)
+            self.assertEqual(second_client.calls, 0)
+
+    def test_confirmed_unchanged_match_skips_rule_candidates_and_llm_processing(self) -> None:
+        with fixture() as paths:
+            first_client = FakeClient([matched("p1", 0.99), matched("p1", 0.99)])
+            run_fixture(paths, first_client)
+            incremental_rules = paths["output"].parent / "incremental_rules"
+            rule_summary = project_matcher.run_matcher(
+                paths["procurement"],
+                paths["result"],
+                incremental_rules,
+                5,
+                verified_links_csv=paths["output"] / "llm_verified_links.csv",
+                state_path=paths["output"] / "matching_state.json",
+            )
+            self.assertEqual(rule_summary["reused_count"], 1)
+            self.assertEqual(read_csv(incremental_rules / "candidate_scores.csv"), [])
+            second_client = FakeClient([])
+            second_summary = llm_matcher.run_llm_matching(
+                paths["result"],
+                paths["procurement"],
+                incremental_rules / "project_links.csv",
+                incremental_rules / "candidate_scores.csv",
+                paths["output"],
+                second_client,
+                workers=1,
+                procurement_markdown_dir=paths["procurement_markdown"],
+                result_markdown_dir=paths["result_markdown"],
+            )
+            self.assertEqual(second_summary["reused_count"], 1)
             self.assertEqual(second_client.calls, 0)
 
     def test_full_refresh_rejects_broad_output_dir(self) -> None:

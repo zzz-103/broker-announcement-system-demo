@@ -135,7 +135,12 @@ def preview_dashboard_import(body: bytes = Body(..., media_type="application/zip
         active = None
     warnings = list(validated.warnings)
     warnings.extend(compare_import_warnings(validated.package, active))
-    return {"valid": True, "manifest": validated.package.manifest, "warnings": warnings}
+    return {
+        "valid": True,
+        "manifest": validated.package.manifest,
+        "warnings": warnings,
+        "matching_baseline_available": validated.matching_baseline is not None,
+    }
 
 
 @router.post("/api/dashboard-data/import", dependencies=[Depends(require_admin_token)])
@@ -170,6 +175,7 @@ def import_dashboard_data(body: bytes = Body(..., media_type="application/zip"))
             "manifest": validated.package.manifest,
             "warnings": warnings,
             "source": source,
+            "matching_baseline_restored": validated.matching_baseline is not None,
         }
     finally:
         job_manager.release_operation("dashboard_import")

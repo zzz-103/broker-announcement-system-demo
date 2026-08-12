@@ -23,6 +23,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .config import settings
+from .matching_baseline import BASELINE_FILENAME, build_matching_baseline
 
 
 SCHEMA_VERSION = "1.0.0"
@@ -539,6 +540,7 @@ class DashboardPackage:
     manifest: dict[str, Any]
     artifacts: dict[str, PackageArtifact]
     manifest_body: bytes | None = None
+    matching_baseline_body: bytes | None = None
 
     def body(self, key: str) -> bytes:
         if key == "manifest":
@@ -561,12 +563,30 @@ class DashboardPackageBuilder:
             "ai_analysis": settings.ai_analysis_cache_path,
         }
 
+    def matching_baseline_paths(self) -> dict[str, Path] | None:
+        required = (
+            "matching_procurement_csv_path",
+            "matching_result_csv_path",
+            "matching_verified_links_path",
+        )
+        if not all(hasattr(settings, name) for name in required):
+            return None
+        return {
+            "procurement": settings.matching_procurement_csv_path,
+            "result": settings.matching_result_csv_path,
+            "verified_links": settings.matching_verified_links_path,
+        }
+
     def export_manifest_path(self) -> Path:
         return settings.dashboard_data_export_dir / "manifest.json"
 
     def build(self, force: bool = False, *, paths_override: dict[str, Path] | None = None) -> DashboardPackage:
         paths = paths_override or self.source_paths()
-        fingerprint = tuple(_fingerprint(paths[key]) for key in ("tender_projects", "app_updates", "ai_analysis"))
+        baseline_paths = self.matching_baseline_paths()
+        fingerprint_paths = [paths[key] for key in ("tender_projects", "app_updates", "ai_analysis")]
+        if baseline_paths:
+            fingerprint_paths.extend(baseline_paths.values())
+        fingerprint = tuple(_fingerprint(path) for path in fingerprint_paths)
         with self._lock:
             if not force and self._package is not None and self._fingerprint == fingerprint:
                 return self._package
@@ -618,7 +638,6 @@ class DashboardPackageBuilder:
                 body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
                 artifacts[key] = PackageArtifact(key, PACKAGE_FILES[key], body, count, period, available, reason)
             generated_at = overview["generated_at"]
-            package_hash = _sha256(b"".join(artifacts[key].body for key in REQUIRED_KEYS))[:20]
             datasets = {
                 key: {
                     "file": artifact.filename,
@@ -631,6 +650,15 @@ class DashboardPackageBuilder:
                 }
                 for key, artifact in artifacts.items()
             }
+            baseline = build_matching_baseline(baseline_paths) if baseline_paths else None
+            baseline_body = (
+                json.dumps(baseline, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n"
+                if baseline is not None
+                else None
+            )
+            package_hash = _sha256(
+                b"".join(artifacts[key].body for key in REQUIRED_KEYS) + (baseline_body or b"")
+            )[:20]
             manifest = {
                 "schema_version": SCHEMA_VERSION,
                 "minimum_reader_version": READER_VERSION,
@@ -639,9 +667,19 @@ class DashboardPackageBuilder:
                 "source": "世纪证券业务信息平台标准化导出",
                 "timezone": "UTC",
                 "datasets": datasets,
+                "matching_baseline": (
+                    {
+                        "file": BASELINE_FILENAME,
+                        "bytes": len(baseline_body),
+                        "sha256": _sha256(baseline_body),
+                        "available": True,
+                    }
+                    if baseline_body is not None
+                    else {"file": BASELINE_FILENAME, "bytes": 0, "sha256": None, "available": False}
+                ),
             }
             self._fingerprint = fingerprint
-            self._package = DashboardPackage(manifest, artifacts)
+            self._package = DashboardPackage(manifest, artifacts, matching_baseline_body=baseline_body)
             return self._package
 
     def export(
@@ -656,6 +694,10 @@ class DashboardPackageBuilder:
         for key in ("manifest", *REQUIRED_KEYS):
             filename = "manifest.json" if key == "manifest" else package.artifacts[key].filename
             _atomic_write(target / filename, package.body(key))
+        if package.matching_baseline_body is not None:
+            _atomic_write(target / BASELINE_FILENAME, package.matching_baseline_body)
+        else:
+            (target / BASELINE_FILENAME).unlink(missing_ok=True)
         if write_zip:
             zip_target = target.with_suffix(".zip")
             zip_temp = zip_target.with_name(f".{zip_target.name}.{os.getpid()}.tmp")
@@ -664,6 +706,10 @@ class DashboardPackageBuilder:
                     for key in ("manifest", *REQUIRED_KEYS):
                         filename = "manifest.json" if key == "manifest" else package.artifacts[key].filename
                         archive.writestr(f"dashboard-data/{filename}", package.body(key))
+                    if package.matching_baseline_body is not None:
+                        archive.writestr(
+                            f"dashboard-data/{BASELINE_FILENAME}", package.matching_baseline_body
+                        )
                 os.replace(zip_temp, zip_target)
             finally:
                 try:
@@ -683,4 +729,8 @@ def package_zip_bytes(package: DashboardPackage | None = None) -> bytes:
         for key in ("manifest", *REQUIRED_KEYS):
             filename = "manifest.json" if key == "manifest" else package.artifacts[key].filename
             archive.writestr(f"dashboard-data/{filename}", package.body(key))
+        if package.matching_baseline_body is not None:
+            archive.writestr(
+                f"dashboard-data/{BASELINE_FILENAME}", package.matching_baseline_body
+            )
     return output.getvalue()

@@ -100,6 +100,7 @@ export interface DashboardImportPreviewResponse {
   valid: boolean;
   manifest: DashboardManifest | null;
   warnings: string[];
+  matching_baseline_available?: boolean;
 }
 
 export interface DashboardImportResponse {
@@ -107,6 +108,7 @@ export interface DashboardImportResponse {
   manifest: DashboardManifest;
   warnings: string[];
   source: DashboardDataSourceResponse;
+  matching_baseline_restored?: boolean;
 }
 export interface AiAnalysisResponse {
   content: string | null; updatedAt: string | null;

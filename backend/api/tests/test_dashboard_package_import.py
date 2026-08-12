@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 from backend.api import dashboard_package as package_module
 from backend.api import dashboard_package_import as import_module
+from backend.matching import project_matcher
+from backend.llm_table import llm_markdown_table_builder as table_builder
 
 
 class DashboardPackageImportTests(unittest.TestCase):
@@ -179,6 +181,111 @@ class DashboardPackageImportTests(unittest.TestCase):
                 self.assertTrue(target.exists())
                 import_module.persist_imported(body)
                 self.assertTrue(target.with_name("imported-dashboard-data.zip.bak").exists())
+
+    def test_full_package_restores_incremental_matching_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tender = root / "announcement.csv"
+            app = root / "app.csv"
+            analysis = root / "ai.json"
+            procurement = root / "source" / "announcement_table.csv"
+            result = root / "source" / "result_table.csv"
+            verified = root / "source" / "llm_verified_links.csv"
+            state = root / "source" / "matching_state.json"
+            procurement.parent.mkdir(parents=True)
+            procurement_markdown = "# 交易系统建设项目\n\n采购正文"
+            result_markdown = "# 交易系统建设项目结果公告\n\n结果正文"
+            procurement_sha = table_builder.sha1_text(
+                table_builder.normalized_markdown_body(procurement_markdown)
+            )
+            result_sha = table_builder.sha1_text(
+                table_builder.normalized_markdown_body(result_markdown)
+            )
+            tender.write_text(
+                "document_sha1,broker_name,is_broker_project,publish_date,announcement_stage,project_name\n"
+                "p1,测试证券,true,2026-01-01,采购公告,交易系统建设项目\n",
+                encoding="utf-8",
+            )
+            app.write_text(
+                "broker_code,broker_name,app_name,source_url,publish_date,update_type,update_summary,feature_tags,highlights\n"
+                "test,测试证券,测试App,https://example.com/app,2026-01-02,新功能,更新,[],[]\n",
+                encoding="utf-8",
+            )
+            analysis.write_text('{"content":null,"updated_at":null,"meta":null}', encoding="utf-8")
+            procurement.write_text(
+                "notice_id,document_sha1,broker_folder,markdown_file,project_name,project_number,purchaser,publish_date\n"
+                f"p1,{procurement_sha},test,p1.md,交易系统建设项目,P-1,测试证券,2026-01-01\n",
+                encoding="utf-8",
+            )
+            result.write_text(
+                "notice_id,document_sha1,broker_folder,markdown_file,title,project_name,project_number,purchaser,publish_date\n"
+                f"r1,{result_sha},test,r1.md,交易系统建设项目结果公告,交易系统建设项目,P-1,测试证券,2026-02-01\n",
+                encoding="utf-8",
+            )
+            verified.write_text(
+                "result_notice_id,procurement_notice_id,final_status,result_source_file,procurement_source_file\n"
+                "r1,p1,auto_matched,/srv/private/r1.md,C:\\\\private\\\\p1.md\n",
+                encoding="utf-8",
+            )
+            export_settings = SimpleNamespace(
+                announcement_csv_path=tender,
+                app_releases_csv_path=app,
+                ai_analysis_cache_path=analysis,
+                dashboard_data_export_dir=root / "export",
+                matching_procurement_csv_path=procurement,
+                matching_result_csv_path=result,
+                matching_verified_links_path=verified,
+                matching_state_path=state,
+            )
+            with patch.object(package_module, "settings", export_settings):
+                package = package_module.DashboardPackageBuilder().build(force=True)
+                body = package_module.package_zip_bytes(package)
+            self.assertTrue(package.manifest["matching_baseline"]["available"])
+            baseline_payload = json.loads(package.matching_baseline_body or b"{}")
+            self.assertEqual(baseline_payload["verified_links"][0]["result_source_file"], "r1.md")
+            self.assertEqual(baseline_payload["verified_links"][0]["procurement_source_file"], "p1.md")
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                self.assertIn("dashboard-data/matching_baseline.json", archive.namelist())
+
+            restored = root / "restored"
+            import_settings = SimpleNamespace(
+                dashboard_data_imported_zip_path=restored / "imported.zip",
+                dashboard_data_source_preference_path=restored / "preference.json",
+                matching_procurement_csv_path=restored / "staging" / "announcement_table.csv",
+                matching_result_csv_path=restored / "staging" / "result" / "result_table.csv",
+                matching_verified_links_path=restored / "staging" / "llm_matching" / "llm_verified_links.csv",
+                matching_state_path=restored / "staging" / "llm_matching" / "matching_state.json",
+                imported_matching_baseline_path=restored / "staging" / "imported_matching_baseline.json",
+            )
+            with patch.object(import_module, "settings", import_settings):
+                validated = import_module.persist_imported(body)
+            self.assertIsNotNone(validated.matching_baseline)
+            summary = project_matcher.run_matcher(
+                import_settings.matching_procurement_csv_path,
+                import_settings.matching_result_csv_path,
+                restored / "matching",
+                5,
+                verified_links_csv=import_settings.matching_verified_links_path,
+                state_path=import_settings.matching_state_path,
+            )
+            self.assertEqual(summary["reused_count"], 1)
+            self.assertEqual(summary["processed_count"], 0)
+            selected = restored / "selected" / "test" / "p1.md"
+            selected.parent.mkdir(parents=True)
+            selected.write_text(procurement_markdown, encoding="utf-8")
+            existing_rows = table_builder.load_existing_output_rows(
+                import_settings.matching_procurement_csv_path.parent,
+                output_stem="announcement_table",
+            )
+            selection = table_builder.select_files_for_processing(
+                [selected],
+                import_settings.matching_procurement_csv_path.parent,
+                incremental=True,
+                overwrite=False,
+                existing_rows=existing_rows,
+            )
+            self.assertEqual(selection.plans, [])
+            self.assertEqual(selection.skipped_files, [selected])
 
     def test_invalid_second_import_keeps_package_and_preference(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

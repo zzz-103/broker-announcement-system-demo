@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from backend.llm_table.llm_client import LLMApiConfig, OpenAICompatibleClient
-from backend.matching import project_matcher
+from backend.matching import incremental_state, project_matcher
 from backend.matching.prompts import (
     FIRST_PASS_SYSTEM_PROMPT,
     PROMPT_VERSION,
@@ -53,6 +53,7 @@ GENERATED_OUTPUT_NAMES = {
     "needs_review.csv",
     "unlinked_results.csv",
     "run_summary.json",
+    "matching_state.json",
 }
 
 VERIFIED_LINK_FIELDS = [
@@ -965,6 +966,25 @@ def run_llm_matching(
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "raw_json").mkdir(parents=True, exist_ok=True)
 
+    previous_verified_path = output_dir / "llm_verified_links.csv"
+    previous_unlinked_path = output_dir / "unlinked_results.csv"
+    previous_verified_rows = (
+        read_csv_rows(previous_verified_path) if previous_verified_path.is_file() else []
+    )
+    previous_unlinked_rows = (
+        read_csv_rows(previous_unlinked_path) if previous_unlinked_path.is_file() else []
+    )
+    previous_verified_by_result = {
+        row.get("result_notice_id", ""): row
+        for row in previous_verified_rows
+        if row.get("result_notice_id")
+    }
+    previous_unlinked_by_result = {
+        row.get("result_notice_id", ""): row
+        for row in previous_unlinked_rows
+        if row.get("result_notice_id")
+    }
+
     result_rows = read_csv_rows(result_csv)
     procurement_rows = read_csv_rows(procurement_csv)
     link_rows = read_csv_rows(links_csv)
@@ -993,15 +1013,23 @@ def run_llm_matching(
     links_by_result = {row.get("result_notice_id", ""): row for row in link_rows}
     candidates_by_result = group_rows(candidate_score_rows, "result_notice_id")
     results_by_id = build_indexes(result_rows, result_id)
+    reused_result_ids = {
+        result_id(row)
+        for row in result_rows
+        if links_by_result.get(result_id(row), {}).get("match_status") == "reused"
+        and result_id(row) in previous_verified_by_result
+    }
+    process_rows = [row for row in result_rows if result_id(row) not in reused_result_ids]
 
     worker_count = max(1, workers)
     candidate_result_count = sum(
-        bool(candidates_by_result.get(result_id(row))) for row in result_rows
+        bool(candidates_by_result.get(result_id(row))) for row in process_rows
     )
     print(
         "[llm-matching] "
-        f"待处理 {len(result_rows)} 条；有候选 {candidate_result_count} 条；"
-        f"无候选跳过 {len(result_rows) - candidate_result_count} 条；"
+        f"待处理 {len(process_rows)} 条；复用 {len(reused_result_ids)} 条；"
+        f"有候选 {candidate_result_count} 条；"
+        f"无候选跳过 {len(process_rows) - candidate_result_count} 条；"
         f"工作线程 {worker_count}；预计 LLM 请求不超过 {candidate_result_count * 2} 次",
         flush=True,
     )
@@ -1021,7 +1049,7 @@ def run_llm_matching(
                 procurement_markdown_dir,
                 result_markdown_dir,
             ): row
-            for row in result_rows
+            for row in process_rows
         }
         pending = set(future_map)
         completed = 0
@@ -1040,7 +1068,7 @@ def run_llm_matching(
                 elapsed = time.monotonic() - started_at
                 print(
                     "[llm-matching] "
-                    f"已完成 {completed}/{len(result_rows)} 条，剩余 {len(pending)} 条；"
+                    f"已完成 {completed}/{len(process_rows)} 条，剩余 {len(pending)} 条；"
                     f"已等待 {elapsed:.0f}s",
                     flush=True,
                 )
@@ -1049,13 +1077,13 @@ def run_llm_matching(
                 results.append(future.result())
                 completed += 1
                 if (
-                    completed == len(result_rows)
+                    completed == len(process_rows)
                     or completed % progress_interval == 0
                 ):
                     elapsed = time.monotonic() - started_at
                     print(
                         "[llm-matching] "
-                        f"已完成 {completed}/{len(result_rows)} 条；"
+                        f"已完成 {completed}/{len(process_rows)} 条；"
                         f"已用时 {elapsed:.0f}s",
                         flush=True,
                     )
@@ -1065,6 +1093,41 @@ def run_llm_matching(
     review_rows: list[dict[str, Any]] = []
     unlinked_rows: list[dict[str, Any]] = []
     decision_rows: list[dict[str, Any]] = []
+    for rid in sorted(reused_result_ids):
+        previous = previous_verified_by_result[rid]
+        verified_rows.append({field: previous.get(field, "") for field in VERIFIED_LINK_FIELDS})
+        decision_rows.append(
+            {
+                "result_notice_id": rid,
+                "final_status": previous.get("final_status", ""),
+                "procurement_notice_id": previous.get("procurement_notice_id", ""),
+                "reused": True,
+                "matcher_version": MATCHER_VERSION,
+            }
+        )
+        if previous.get("final_status") == "auto_unmatched":
+            prior_unlinked = previous_unlinked_by_result.get(rid)
+            if prior_unlinked is not None:
+                unlinked_rows.append(
+                    {field: prior_unlinked.get(field, "") for field in UNLINKED_RESULT_FIELDS}
+                )
+            else:
+                result_row = results_by_id.get(rid, {})
+                unlinked_rows.append(
+                    {
+                        "result_notice_id": rid,
+                        "title": result_row.get("title", ""),
+                        "project_name": result_row.get("project_name", ""),
+                        "purchaser": result_row.get("purchaser", ""),
+                        "publish_date": result_row.get("publish_date", ""),
+                        "result_type": result_row.get("result_type", ""),
+                        "final_status": "result_only",
+                        "reason": "公告未变化且无相关新增采购公告，复用未匹配状态",
+                        "retry_count": "0",
+                        "last_match_attempt_at": "",
+                        "matcher_version": MATCHER_VERSION,
+                    }
+                )
     for result in results:
         result_row = results_by_id.get(result.result_notice_id, {})
         link_row = links_by_result.get(result.result_notice_id, {})
@@ -1084,6 +1147,10 @@ def run_llm_matching(
     write_csv_atomic(output_dir / "needs_review.csv", NEEDS_REVIEW_FIELDS, review_rows)
     write_csv_atomic(output_dir / "unlinked_results.csv", UNLINKED_RESULT_FIELDS, unlinked_rows)
     write_jsonl_atomic(output_dir / "llm_decisions.jsonl", decision_rows)
+    incremental_state.write_state_atomic(
+        output_dir / "matching_state.json",
+        incremental_state.build_state(procurement_rows, result_rows, verified_rows),
+    )
 
     counts = {
         "auto_matched_count": sum(row["final_status"] == "auto_matched" for row in verified_rows),
@@ -1092,6 +1159,7 @@ def run_llm_matching(
         "failed_count": sum(row["final_status"] == "failed" for row in verified_rows),
         "cached_count": sum(bool(item.cached) for item in results),
         "skipped_count": sum(bool(item.skipped) for item in results),
+        "reused_count": len(reused_result_ids),
     }
     summary = {
         "input_result_count": input_result_count,

@@ -29,6 +29,7 @@ from .dashboard_package import (
     DashboardPackage,
     PackageArtifact,
 )
+from .matching_baseline import BASELINE_FILENAME, csv_bytes, validate_matching_baseline
 
 
 # The current tender payload is about 12 MB uncompressed.  Leave generous room
@@ -37,7 +38,8 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 MAX_MEMBER_UNCOMPRESSED_BYTES = 48 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 250.0
-EXPECTED_MEMBER_COUNT = 1 + len(REQUIRED_KEYS)
+LEGACY_MEMBER_COUNT = 1 + len(REQUIRED_KEYS)
+BASELINE_MEMBER_COUNT = LEGACY_MEMBER_COUNT + 1
 PREFERENCE_VALUES = frozenset({"live", "imported"})
 
 
@@ -50,6 +52,7 @@ class ValidatedImport:
     package: DashboardPackage
     body: bytes
     warnings: tuple[str, ...] = ()
+    matching_baseline: dict[str, Any] | None = None
 
 
 def imported_package_path() -> Path:
@@ -137,7 +140,7 @@ def _validate_package_payload(
     bodies: dict[str, bytes],
 ) -> tuple[DashboardPackage, tuple[str, ...]]:
     manifest = _json_object(manifest_body, "manifest.json")
-    expected_manifest_keys = {
+    legacy_manifest_keys = {
         "schema_version",
         "minimum_reader_version",
         "package_version",
@@ -146,7 +149,8 @@ def _validate_package_payload(
         "timezone",
         "datasets",
     }
-    if set(manifest) != expected_manifest_keys:
+    current_manifest_keys = {*legacy_manifest_keys, "matching_baseline"}
+    if set(manifest) not in {frozenset(legacy_manifest_keys), frozenset(current_manifest_keys)}:
         raise DashboardPackageImportError("manifest.json 字段结构无效")
     schema_version = _require_text(manifest.get("schema_version"), "manifest.schema_version")
     reader_version = _require_text(manifest.get("minimum_reader_version"), "manifest.minimum_reader_version")
@@ -315,12 +319,15 @@ def validate_zip_bytes(body: bytes) -> ValidatedImport:
         raise DashboardPackageImportError("导入文件不是有效 ZIP") from exc
     with archive:
         infos = archive.infolist()
-        if len(infos) != EXPECTED_MEMBER_COUNT:
-            raise DashboardPackageImportError("ZIP 必须精确包含六个标准文件")
+        if len(infos) not in {LEGACY_MEMBER_COUNT, BASELINE_MEMBER_COUNT}:
+            raise DashboardPackageImportError("ZIP 成员数量不符合标准数据包结构")
         expected_names = {"dashboard-data/manifest.json", *(f"dashboard-data/{name}" for name in PACKAGE_FILES.values())}
+        baseline_name = f"dashboard-data/{BASELINE_FILENAME}"
+        if len(infos) == BASELINE_MEMBER_COUNT:
+            expected_names.add(baseline_name)
         names = [info.filename for info in infos]
         if len(set(names)) != len(names) or set(names) != expected_names:
-            raise DashboardPackageImportError("ZIP 成员必须精确匹配 dashboard-data 六文件结构")
+            raise DashboardPackageImportError("ZIP 成员必须精确匹配 dashboard-data 标准文件结构")
         total_size = 0
         bodies: dict[str, bytes] = {}
         for info in infos:
@@ -349,14 +356,43 @@ def validate_zip_bytes(body: bytes) -> ValidatedImport:
                 raise DashboardPackageImportError("ZIP 成员大小校验失败")
             if name == "dashboard-data/manifest.json":
                 bodies["manifest"] = data
+            elif name == baseline_name:
+                bodies["matching_baseline"] = data
             else:
                 key = next((item for item, filename in PACKAGE_FILES.items() if filename == name.rsplit("/", 1)[-1]), None)
                 if key is None:
                     raise DashboardPackageImportError("ZIP 成员名称无效")
                 bodies[key] = data
     manifest_body = bodies.pop("manifest")
+    baseline_body = bodies.pop("matching_baseline", None)
     package, warnings = _validate_package_payload(manifest_body, bodies)
-    return ValidatedImport(package, body, warnings)
+    metadata = package.manifest.get("matching_baseline")
+    baseline: dict[str, Any] | None = None
+    warning_list = list(warnings)
+    if baseline_body is None:
+        if metadata is not None and metadata.get("available") is True:
+            raise DashboardPackageImportError("数据包缺少 matching_baseline.json")
+        if metadata is None:
+            warning_list.append("旧版数据包不包含增量匹配基线，仅可用于看板展示")
+    else:
+        if not isinstance(metadata, dict) or set(metadata) != {"file", "bytes", "sha256", "available"}:
+            raise DashboardPackageImportError("manifest.matching_baseline 结构无效")
+        if metadata.get("file") != BASELINE_FILENAME or metadata.get("available") is not True:
+            raise DashboardPackageImportError("manifest.matching_baseline 元数据无效")
+        if metadata.get("bytes") != len(baseline_body) or metadata.get("sha256") != hashlib.sha256(baseline_body).hexdigest():
+            raise DashboardPackageImportError("matching_baseline.json 与 manifest 校验值不一致")
+        try:
+            decoded = json.loads(baseline_body.decode("utf-8"))
+            baseline = validate_matching_baseline(decoded)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise DashboardPackageImportError(str(exc)) from exc
+        package = DashboardPackage(
+            package.manifest,
+            package.artifacts,
+            manifest_body=package.manifest_body,
+            matching_baseline_body=baseline_body,
+        )
+    return ValidatedImport(package, body, tuple(warning_list), baseline)
 
 
 def _atomic_write(path: Path, body: bytes) -> None:
@@ -370,6 +406,36 @@ def _atomic_write(path: Path, body: bytes) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _matching_baseline_targets(payload: dict[str, Any]) -> dict[Path, bytes]:
+    return {
+        settings.matching_procurement_csv_path: csv_bytes(payload["procurement_rows"]),
+        settings.matching_result_csv_path: csv_bytes(payload["result_rows"]),
+        settings.matching_verified_links_path: csv_bytes(payload["verified_links"]),
+        settings.matching_state_path: _json_bytes(payload["matching_state"]),
+        settings.imported_matching_baseline_path: _json_bytes(payload),
+    }
+
+
+def _rollback_files(previous: dict[Path, bytes | None]) -> None:
+    for path, content in previous.items():
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            _atomic_write(path, content)
+
+
+def _restore_matching_baseline(payload: dict[str, Any]) -> dict[Path, bytes | None]:
+    targets = _matching_baseline_targets(payload)
+    previous = {path: path.read_bytes() if path.is_file() else None for path in targets}
+    try:
+        for path, content in targets.items():
+            _atomic_write(path, content)
+    except Exception:
+        _rollback_files(previous)
+        raise
+    return previous
 
 
 def read_preference() -> tuple[str, str | None]:
@@ -397,13 +463,18 @@ def persist_imported(body: bytes) -> ValidatedImport:
     target = imported_package_path()
     backup = imported_backup_path()
     old_body: bytes | None = None
+    baseline_previous: dict[Path, bytes | None] | None = None
     if target.exists():
         old_body = target.read_bytes()
         _atomic_write(backup, old_body)
     try:
+        if validated.matching_baseline is not None:
+            baseline_previous = _restore_matching_baseline(validated.matching_baseline)
         _atomic_write(target, body)
         write_preference("imported")
     except Exception:
+        if baseline_previous is not None:
+            _rollback_files(baseline_previous)
         if old_body is not None:
             _atomic_write(target, old_body)
         else:

@@ -607,6 +607,57 @@ def build_existing_sha1_map(rows: list[dict[str, Any]]) -> dict[tuple[str, str],
     return sha1_map
 
 
+def load_imported_baseline_file_keys(notice_type: str) -> set[tuple[str, str]]:
+    configured = os.getenv("IMPORTED_MATCHING_BASELINE_PATH")
+    path = (
+        Path(configured)
+        if configured
+        else PROJECT_ROOT / "backend" / "data" / "staging" / "imported_matching_baseline.json"
+    )
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    if not path.is_file():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw_keys = payload.get("preserved_file_keys", {}).get(notice_type, [])
+    except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+        return set()
+    return {
+        (normalize_scalar(value[0]), normalize_scalar(value[1]))
+        for value in raw_keys
+        if isinstance(value, list) and len(value) == 2 and all(normalize_scalar(item) for item in value)
+    }
+
+
+def load_imported_baseline_notice_ids(notice_type: str) -> set[str]:
+    configured = os.getenv("IMPORTED_MATCHING_BASELINE_PATH")
+    path = (
+        Path(configured)
+        if configured
+        else PROJECT_ROOT / "backend" / "data" / "staging" / "imported_matching_baseline.json"
+    )
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    if not path.is_file():
+        return set()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        values = payload.get("preserved_notice_ids", {}).get(notice_type, [])
+    except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+        return set()
+    return {normalize_scalar(value) for value in values if normalize_scalar(value)}
+
+
+def row_notice_id(row: dict[str, Any]) -> str:
+    return first_non_empty(
+        row.get("notice_id"),
+        row.get("document_sha1"),
+        row.get("source_file"),
+        row.get("markdown_file"),
+    )
+
+
 def migrate_legacy_file_keys(
     existing_rows: list[dict[str, Any]],
     files: list[Path],
@@ -653,6 +704,35 @@ def migrate_legacy_file_keys(
                 migrated_row["broker_folder"] = target[0]
                 migrated_count += 1
         migrated_rows.append(migrated_row)
+    return migrated_rows, migrated_count
+
+
+def migrate_file_keys_by_notice_id(
+    existing_rows: list[dict[str, Any]],
+    files: list[Path],
+) -> tuple[list[dict[str, Any]], int]:
+    """Follow a stable notice ID when the selected file path changes."""
+    paths_by_notice_id: dict[str, list[tuple[str, str]]] = {}
+    for path in files:
+        markdown = read_markdown_text(path)
+        current_notice_id = normalize_scalar(parse_markdown_front_matter(markdown).get("notice_id"))
+        if current_notice_id:
+            paths_by_notice_id.setdefault(current_notice_id, []).append(path_file_key(path))
+
+    unique_paths = {
+        key: values[0]
+        for key, values in paths_by_notice_id.items()
+        if len(set(values)) == 1
+    }
+    migrated_rows: list[dict[str, Any]] = []
+    migrated_count = 0
+    for row in existing_rows:
+        updated = dict(row)
+        target = unique_paths.get(row_notice_id(row))
+        if target is not None and row_file_key(row) != target:
+            updated["broker_folder"], updated["markdown_file"] = target
+            migrated_count += 1
+        migrated_rows.append(updated)
     return migrated_rows, migrated_count
 
 
@@ -1642,11 +1722,22 @@ def main() -> int:
         existing_rows,
         discovered_files,
     )
+    existing_rows, migrated_notice_id_rows = migrate_file_keys_by_notice_id(
+        existing_rows,
+        discovered_files,
+    )
+    migrated_legacy_rows += migrated_notice_id_rows
     pruned_missing_rows = 0
     if args.prune_missing_files:
         current_file_keys = {path_file_key(path) for path in discovered_files}
+        imported_baseline_keys = load_imported_baseline_file_keys(args.notice_type)
+        imported_baseline_notice_ids = load_imported_baseline_notice_ids(args.notice_type)
         retained_existing_rows = [
-            row for row in existing_rows if row_file_key(row) in current_file_keys
+            row
+            for row in existing_rows
+            if row_file_key(row) in current_file_keys
+            or row_file_key(row) in imported_baseline_keys
+            or row_notice_id(row) in imported_baseline_notice_ids
         ]
         pruned_missing_rows = len(existing_rows) - len(retained_existing_rows)
         existing_rows = retained_existing_rows

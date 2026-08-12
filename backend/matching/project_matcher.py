@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import csv
 import json
 import os
@@ -13,13 +14,18 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from backend.matching import incremental_state
+
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 PROJECT_ROOT = ROOT_DIR.parent
 DEFAULT_PROCUREMENT_CSV = ROOT_DIR / "data" / "staging" / "announcement_table.csv"
 DEFAULT_RESULT_CSV = ROOT_DIR / "data" / "staging" / "result" / "result_table.csv"
 DEFAULT_OUTPUT_DIR = ROOT_DIR / "data" / "staging" / "matching"
+DEFAULT_VERIFIED_LINKS_CSV = ROOT_DIR / "data" / "staging" / "llm_matching" / "llm_verified_links.csv"
+DEFAULT_STATE_PATH = ROOT_DIR / "data" / "staging" / "llm_matching" / "matching_state.json"
 DEFAULT_MAX_CANDIDATES = 5
+MAX_CANDIDATE_AGE_DAYS = 180
 
 PROJECT_LINK_FIELDS = [
     "result_notice_id",
@@ -431,6 +437,27 @@ def should_recall(result: NormalizedRecord, procurement: NormalizedRecord) -> bo
     return False
 
 
+def has_strong_undated_evidence(result: NormalizedRecord, procurement: NormalizedRecord) -> bool:
+    if result.project_number and procurement.project_number:
+        return result.project_number == procurement.project_number
+    title_score = title_similarity(result.normalized_title, procurement.normalized_title)
+    purchaser_score = purchaser_similarity(result.purchaser, procurement.purchaser)
+    if title_score >= 0.9 and purchaser_score >= 0.82:
+        return True
+    return bool(
+        result.package_number
+        and result.package_number == procurement.package_number
+        and title_score >= 0.92
+    )
+
+
+def within_candidate_window(result: NormalizedRecord, procurement: NormalizedRecord) -> bool:
+    if result.publish_date is not None and procurement.publish_date is not None:
+        days = (result.publish_date - procurement.publish_date).days
+        return 0 <= days <= MAX_CANDIDATE_AGE_DAYS
+    return has_strong_undated_evidence(result, procurement)
+
+
 def recall_candidates(
     result: NormalizedRecord,
     procurements: list[NormalizedRecord],
@@ -439,7 +466,7 @@ def recall_candidates(
     candidates = [
         score_candidate(result, procurement)
         for procurement in procurements
-        if should_recall(result, procurement)
+        if within_candidate_window(result, procurement) and should_recall(result, procurement)
     ]
     candidates.sort(
         key=lambda candidate: (
@@ -452,6 +479,32 @@ def recall_candidates(
         reverse=True,
     )
     return candidates[:max_candidates]
+
+
+def build_procurement_date_index(
+    procurements: list[NormalizedRecord],
+) -> tuple[list[int], list[NormalizedRecord], list[NormalizedRecord]]:
+    dated = sorted(
+        (procurement for procurement in procurements if procurement.publish_date is not None),
+        key=lambda procurement: procurement.publish_date,
+    )
+    ordinals = [procurement.publish_date.toordinal() for procurement in dated if procurement.publish_date]
+    undated = [procurement for procurement in procurements if procurement.publish_date is None]
+    return ordinals, dated, undated
+
+
+def procurement_candidate_pool(
+    result: NormalizedRecord,
+    date_index: tuple[list[int], list[NormalizedRecord], list[NormalizedRecord]],
+) -> list[NormalizedRecord]:
+    ordinals, dated, undated = date_index
+    if result.publish_date is None:
+        return [*dated, *undated]
+    end = result.publish_date.toordinal()
+    start = end - MAX_CANDIDATE_AGE_DAYS
+    left = bisect.bisect_left(ordinals, start)
+    right = bisect.bisect_right(ordinals, end)
+    return [*dated[left:right], *undated]
 
 
 def classify_match(candidates: list[CandidateScore]) -> tuple[str, float, str]:
@@ -544,17 +597,96 @@ def match_projects(
     procurement_rows: list[dict[str, str]],
     result_rows: list[dict[str, str]],
     max_candidates: int = DEFAULT_MAX_CANDIDATES,
+    previous_state: dict[str, Any] | None = None,
+    previous_verified_rows: list[dict[str, str]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     procurements = [normalize_procurement(row) for row in procurement_rows]
     results = [normalize_result(row) for row in result_rows]
+    procurement_date_index = build_procurement_date_index(procurements)
 
     project_links: list[dict[str, Any]] = []
     candidate_scores: list[dict[str, Any]] = []
     unmatched_results: list[dict[str, Any]] = []
     counts = {"matched": 0, "review": 0, "unmatched": 0, "conflict": 0}
+    state = previous_state or {}
+    state_results = state.get("results") if isinstance(state.get("results"), dict) else {}
+    previous_procurement_hashes = (
+        state.get("procurement_hashes") if isinstance(state.get("procurement_hashes"), dict) else {}
+    )
+    current_procurement_hashes = incremental_state.grouped_content_hashes(procurement_rows)
+    current_result_hashes = incremental_state.grouped_content_hashes(result_rows)
+    changed_procurement_ids = {
+        key
+        for key, value in current_procurement_hashes.items()
+        if previous_procurement_hashes.get(key) != value
+    }
+    changed_procurements = [
+        procurement for procurement in procurements if procurement.notice_id in changed_procurement_ids
+    ]
+    verified_by_result = {
+        row.get("result_notice_id", ""): row
+        for row in (previous_verified_rows or [])
+        if row.get("result_notice_id")
+    }
+    reused_count = 0
+    processed_count = 0
 
     for result in results:
-        candidates = recall_candidates(result, procurements, max_candidates)
+        entry = state_results.get(result.notice_id, {}) if isinstance(state_results, dict) else {}
+        verified = verified_by_result.get(result.notice_id, {})
+        unchanged_result = bool(
+            isinstance(entry, dict)
+            and entry.get("content_hash") == current_result_hashes.get(result.notice_id)
+        )
+        previous_status = entry.get("final_status", "") if isinstance(entry, dict) else ""
+        previous_procurement_id = entry.get("procurement_notice_id", "") if isinstance(entry, dict) else ""
+        stable_matched = bool(
+            unchanged_result
+            and previous_status == "auto_matched"
+            and previous_procurement_id
+            and verified.get("final_status") == "auto_matched"
+            and verified.get("procurement_notice_id") == previous_procurement_id
+            and current_procurement_hashes.get(previous_procurement_id)
+            == entry.get("procurement_content_hash")
+        )
+        relevant_changed_procurement = any(
+            within_candidate_window(result, procurement)
+            and should_recall(result, procurement)
+            for procurement in changed_procurements
+        )
+        stable_unmatched = bool(
+            unchanged_result
+            and previous_status == "auto_unmatched"
+            and verified.get("final_status") == "auto_unmatched"
+            and not relevant_changed_procurement
+        )
+        if stable_matched or stable_unmatched:
+            reused_count += 1
+            reused_status = "matched" if stable_matched else "unmatched"
+            counts[reused_status] += 1
+            project_links.append(
+                {
+                    **{field: "" for field in PROJECT_LINK_FIELDS},
+                    "result_notice_id": result.notice_id,
+                    "procurement_notice_id": previous_procurement_id if stable_matched else "",
+                    "match_status": "reused",
+                    "match_method": "incremental_state_v1",
+                    "match_reason": "公告核心内容及已确认关系未变化，复用历史匹配结果",
+                    "result_source_file": result.source_file,
+                }
+            )
+            if stable_unmatched:
+                unmatched_results.append(
+                    build_unmatched_row(result, "公告未变化且无相关新增采购公告，复用未匹配状态", 0.0)
+                )
+            continue
+
+        processed_count += 1
+        candidates = recall_candidates(
+            result,
+            procurement_candidate_pool(result, procurement_date_index),
+            max_candidates,
+        )
         status, margin, reason = classify_match(candidates)
         counts[status] += 1
         project_links.append(build_project_link_row(result, candidates, status, margin, reason))
@@ -571,18 +703,38 @@ def match_projects(
         "review_count": counts["review"],
         "unmatched_count": counts["unmatched"],
         "conflict_count": counts["conflict"],
+        "processed_count": processed_count,
+        "reused_count": reused_count,
+        "changed_procurement_count": len(changed_procurement_ids),
+        "candidate_window_days": MAX_CANDIDATE_AGE_DAYS,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     return project_links, candidate_scores, unmatched_results, summary
 
 
-def run_matcher(procurement_csv: Path, result_csv: Path, output_dir: Path, max_candidates: int) -> dict[str, Any]:
+def run_matcher(
+    procurement_csv: Path,
+    result_csv: Path,
+    output_dir: Path,
+    max_candidates: int,
+    *,
+    verified_links_csv: Path | None = None,
+    state_path: Path | None = None,
+) -> dict[str, Any]:
     procurement_rows = read_csv_rows(procurement_csv)
     result_rows = read_csv_rows(result_csv)
+    previous_verified_rows = (
+        read_csv_rows(verified_links_csv)
+        if verified_links_csv is not None and verified_links_csv.is_file()
+        else []
+    )
+    previous_state = incremental_state.load_state(state_path)
     project_links, candidate_scores, unmatched_results, summary = match_projects(
         procurement_rows,
         result_rows,
         max_candidates=max_candidates,
+        previous_state=previous_state,
+        previous_verified_rows=previous_verified_rows,
     )
 
     write_csv_atomic(output_dir / "project_links.csv", PROJECT_LINK_FIELDS, project_links)
@@ -600,6 +752,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--result-csv", type=Path, default=DEFAULT_RESULT_CSV)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--max-candidates", type=int, default=DEFAULT_MAX_CANDIDATES)
+    parser.add_argument("--verified-links-csv", type=Path, default=DEFAULT_VERIFIED_LINKS_CSV)
+    parser.add_argument("--state-path", type=Path, default=DEFAULT_STATE_PATH)
     return parser
 
 
@@ -617,7 +771,14 @@ def main() -> int:
     if not result_csv.exists():
         parser.error(f"结果公告 CSV 不存在: {result_csv}")
 
-    summary = run_matcher(procurement_csv, result_csv, output_dir, max_candidates)
+    summary = run_matcher(
+        procurement_csv,
+        result_csv,
+        output_dir,
+        max_candidates,
+        verified_links_csv=args.verified_links_csv.resolve(),
+        state_path=args.state_path.resolve(),
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
