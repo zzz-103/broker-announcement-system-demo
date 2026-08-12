@@ -4,11 +4,11 @@
 
 ## 1. 开始前先拿齐交接物
 
-在运行命令前，向交付人确认以下四项：
+在运行命令前，确认以下四项：
 
 1. 可访问的 Git 仓库地址、交付分支和完整提交号。远端 Clone 只能取得已经推送的提交；“交付人本机工作树干净”不代表本地提交已经在远端。
 2. 一份由本系统导出的可信 `dashboard-data.zip`。新 Clone 不包含招采、App 更新和 AI 摘要等业务运行数据。
-3. 受控的运行配置或凭据清单。至少需要新环境自己的管理员密码和调度 Token；不要沿用示例值。
+3. 受控的运行配置或凭据清单。至少需要新环境自己的管理员密码和调度 Token。
 4. 若需要恢复用户、审计、自定义情报或管理员技术配置，另行取得经过批准的 SQLite 备份及恢复说明。dashboard-data ZIP 不包含这些数据。
 
 交接边界如下：
@@ -159,8 +159,8 @@ Copy-Item .env.example .env
 
 ```dotenv
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=请替换为本环境强密码
-SCHEDULER_TOKEN=请替换为另一个不同的强随机值
+ADMIN_PASSWORD=请替换为本环境密码
+SCHEDULER_TOKEN=请替换为另一个不同的值
 ```
 
 不要把上面的中文占位文本或示例 `change-me` 当作真实值。`ADMIN_PASSWORD` 与 `SCHEDULER_TOKEN` 必须不同。第一次本地验收只启动 API 时，不必启动 scheduler；也可以暂时把 `SCHEDULER_ENABLED=false`，待调度联调时再启用。

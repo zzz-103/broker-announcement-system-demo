@@ -235,22 +235,17 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual(result["executions"][0]["owner_name"], "测试用户")
         self.assertEqual(result["meta"], meta)
 
-    def test_each_query_uses_fixed_top_k(self) -> None:
-        for depth, top_k in (("concise", 10), ("standard", 20), ("deep", 30)):
-            payload = build_search_payload("test", top_k=top_k)
-            self.assertEqual(payload["resource_type_filter"][0]["top_k"], 10)
-            self.assertEqual(payload["search_source"], "baidu_search_v2")
-            self.assertNotIn("model", payload)
-            self.assertNotIn("search_mode", payload)
-            self.assertEqual(payload["search_recency_filter"], "month")
-
-        self.assertEqual(build_search_payload("test")["resource_type_filter"][0]["top_k"], 10)
-        self.assertEqual(build_search_payload("test", top_k=100)["resource_type_filter"][0]["top_k"], 10)
-
-    def test_search_payload_uses_concise_query_without_user_site_filter(self) -> None:
+    def test_search_payload_uses_fixed_minimal_contract(self) -> None:
         payload = build_search_payload("test")
+        overridden = build_search_payload("test", top_k=100)
+        self.assertEqual(payload["resource_type_filter"][0]["top_k"], 10)
+        self.assertEqual(overridden["resource_type_filter"][0]["top_k"], 10)
+        self.assertEqual(payload["search_source"], "baidu_search_v2")
+        self.assertEqual(payload["search_recency_filter"], "month")
         self.assertEqual(payload["messages"], [{"role": "user", "content": "test"}])
         self.assertNotIn("instruction", payload)
+        self.assertNotIn("model", payload)
+        self.assertNotIn("search_mode", payload)
         self.assertNotIn("search_filter", payload)
 
     def test_admin_config_wins_and_disabled_overrides_env(self) -> None:
@@ -292,10 +287,6 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             with patch.object(service, "analysis_service_configured", return_value=True):
                 options = service.options_payload()
             self.assertEqual(options, {"service_status": "enabled"})
-
-    def test_options_payload_hides_search_and_model_parameters(self) -> None:
-        options = service.options_payload()
-        self.assertEqual(set(options), {"service_status"})
 
     def test_report_length_does_not_change_planner_query_count_or_search_top_k(self) -> None:
         fake_result = QianfanSearchResult(

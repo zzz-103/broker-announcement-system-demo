@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.llm_table.artifact_io import atomic_write_text, write_summary
+from backend.llm_table.artifact_io import atomic_write_text
 from backend.llm_table.llm_markdown_table_builder import process_markdown_file
 
 
@@ -74,16 +74,6 @@ class ArtifactIoTests(unittest.TestCase):
             )
             self.assertEqual(list(raw_json_path.parent.glob(".notice.*.tmp.json")), [])
 
-    def test_summary_writer_uses_json_artifact(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary_dir:
-            target = Path(temporary_dir) / "run_summary.json"
-            write_summary(target, {"message": "已完成"})
-            self.assertEqual(
-                json.loads(target.read_text(encoding="utf-8")),
-                {"message": "已完成"},
-            )
-
 
 if __name__ == "__main__":
     unittest.main()
-

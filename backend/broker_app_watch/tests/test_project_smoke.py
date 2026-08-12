@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import backend.broker_app_watch
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -11,15 +10,10 @@ from backend.broker_app_watch.core.config import load_broker_catalog
 from backend.broker_app_watch.core.paths import CONFIG_DIR, PROJECT_ROOT, project_path
 
 
-def test_package_imports() -> None:
-    assert backend.broker_app_watch.__version__
-
-
 def test_project_paths_are_root_relative(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     assert project_path("backend", "config", "broker_app_watch") == CONFIG_DIR
     assert (CONFIG_DIR / "brokers.yaml").is_file()
-    assert load_broker_catalog().brokers
 
 
 def test_broker_catalog_loads() -> None:

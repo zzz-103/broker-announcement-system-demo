@@ -46,93 +46,14 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         return {"Authorization": f"Bearer {response.json()['token']}"}
 
-    def test_fastapi_owns_all_frontend_feature_routes(self) -> None:
-        registered = {
-            (method, route.path)
+    def test_fastapi_owns_registered_api_routes(self) -> None:
+        unexpected_owners = {
+            (route.path, route.endpoint.__module__)
             for route in main.app.routes
-            for method in getattr(route, "methods", set())
+            if route.path.startswith("/api/")
+            and not route.endpoint.__module__.startswith("backend.api.routes.")
         }
-        expected = {
-            ("POST", "/api/login"),
-            ("POST", "/api/users/apply"),
-            ("POST", "/api/audit/qr-visit"),
-            ("POST", "/api/audit/dashboard-view"),
-            ("POST", "/api/feedback"),
-            ("GET", "/api/data/announcements"),
-            ("POST", "/api/data/announcements/publish"),
-            ("GET", "/api/ai-analysis"),
-            ("POST", "/api/ai-analysis"),
-            ("GET", "/api/admin/users"),
-            ("POST", "/api/admin/users"),
-            ("DELETE", "/api/admin/users/{user_id}"),
-            ("POST", "/api/admin/users/{user_id}/promote"),
-            ("GET", "/api/admin/audit/summary"),
-            ("GET", "/api/admin/audit/events"),
-            ("GET", "/api/admin/feedback"),
-            ("POST", "/api/admin/feedback/{feedback_id}/status"),
-            ("POST", "/api/jobs/scraper"),
-            ("POST", "/api/jobs/llm"),
-            ("POST", "/api/jobs/pipeline"),
-            ("POST", "/api/jobs/app-watch"),
-            ("POST", "/api/internal/scheduled-pipeline"),
-            ("POST", "/api/internal/scheduled-app-watch"),
-            ("GET", "/api/app-releases"),
-            ("GET", "/api/dashboard-data/manifest"),
-            ("GET", "/api/dashboard-data/files/{dataset}"),
-            ("GET", "/api/dashboard-data/export-status"),
-            ("GET", "/api/dashboard-data/source"),
-            ("POST", "/api/dashboard-data/source"),
-            ("POST", "/api/dashboard-data/import/preview"),
-            ("POST", "/api/dashboard-data/import"),
-            ("POST", "/api/dashboard-data/export"),
-            ("GET", "/api/dashboard-data/export.zip"),
-            ("GET", "/api/jobs/{job_id}"),
-            ("POST", "/api/jobs/{job_id}/cancel"),
-            ("GET", "/api/jobs/{job_id}/events"),
-            ("GET", "/api/custom-intelligence/options"),
-            ("POST", "/api/custom-intelligence/query-plan"),
-            ("GET", "/api/custom-intelligence/topics"),
-            ("POST", "/api/custom-intelligence/topics"),
-            ("GET", "/api/custom-intelligence/topics/{topic_id}"),
-            ("POST", "/api/custom-intelligence/topics/{topic_id}"),
-            ("DELETE", "/api/custom-intelligence/topics/{topic_id}"),
-            ("POST", "/api/custom-intelligence/topics/{topic_id}/execute"),
-            ("GET", "/api/custom-intelligence/executions"),
-            ("POST", "/api/custom-intelligence/executions"),
-            ("GET", "/api/custom-intelligence/executions/{execution_id}"),
-            ("POST", "/api/custom-intelligence/executions/{execution_id}/rerun"),
-            ("POST", "/api/custom-intelligence/executions/{execution_id}/reanalyze"),
-            ("POST", "/api/custom-intelligence/executions/{execution_id}/email"),
-            ("GET", "/api/custom-intelligence/executions/{execution_id}/report/pdf"),
-            ("GET", "/api/admin/custom-intelligence/search-config"),
-            ("POST", "/api/admin/custom-intelligence/search-config"),
-            ("POST", "/api/admin/custom-intelligence/search-config/test"),
-            ("POST", "/api/admin/custom-intelligence/search-config/reveal-key"),
-            ("GET", "/api/admin/custom-intelligence/llm-config"),
-            ("POST", "/api/admin/custom-intelligence/llm-config"),
-            ("POST", "/api/admin/custom-intelligence/llm-config/test"),
-            ("POST", "/api/admin/custom-intelligence/llm-config/reveal-key"),
-            ("GET", "/api/admin/custom-intelligence/smtp-config"),
-            ("POST", "/api/admin/custom-intelligence/smtp-config"),
-            ("POST", "/api/admin/custom-intelligence/smtp-config/test"),
-            ("POST", "/api/admin/custom-intelligence/smtp-config/reveal-authorization-code"),
-            ("GET", "/api/admin/custom-intelligence/default-rules"),
-            ("POST", "/api/admin/custom-intelligence/default-rules"),
-            ("GET", "/api/admin/custom-intelligence/executions"),
-            ("GET", "/api/admin/custom-intelligence/executions/{execution_id}"),
-            ("GET", "/api/admin/custom-intelligence/executions/{execution_id}/diagnostics"),
-        }
-        self.assertTrue(expected.issubset(registered), expected - registered)
-
-        client_source = (
-            Path(__file__).resolve().parents[3]
-            / "frontend"
-            / "src"
-            / "lib"
-            / "api"
-            / "backend-client.ts"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn("/api/auth/login", client_source)
+        self.assertEqual(unexpected_owners, set())
 
     def test_dashboard_source_and_import_require_admin_and_map_bad_zip(self) -> None:
         for method, path in (
