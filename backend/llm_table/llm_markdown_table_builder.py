@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import os
@@ -30,6 +29,41 @@ except ModuleNotFoundError:  # Direct script execution from backend/llm_table.
         OpenAICompatibleClient as BaseOpenAICompatibleClient,
         llm_config_available,
         parse_json_text,
+    )
+
+try:
+    from backend.llm_table.artifact_io import (
+        atomic_temp_path,
+        atomic_write_json,
+        atomic_write_text,
+        is_valid_json_file,
+        load_existing_output_rows as _load_existing_output_rows,
+        maybe_export_xlsx as _maybe_export_xlsx,
+        read_csv_rows,
+        read_json_file,
+        read_jsonl_rows,
+        write_csv as _write_csv,
+        write_failures_jsonl as _write_failures_jsonl,
+        write_jsonl as _write_jsonl,
+        write_output_bundle as _write_output_bundle,
+        write_summary,
+    )
+except ModuleNotFoundError:  # Direct script execution from backend/llm_table.
+    from artifact_io import (  # type: ignore[no-redef]
+        atomic_temp_path,
+        atomic_write_json,
+        atomic_write_text,
+        is_valid_json_file,
+        load_existing_output_rows as _load_existing_output_rows,
+        maybe_export_xlsx as _maybe_export_xlsx,
+        read_csv_rows,
+        read_json_file,
+        read_jsonl_rows,
+        write_csv as _write_csv,
+        write_failures_jsonl as _write_failures_jsonl,
+        write_jsonl as _write_jsonl,
+        write_output_bundle as _write_output_bundle,
+        write_summary,
     )
 
 
@@ -416,27 +450,6 @@ def emit_progress(
     print(f"::progress::{json.dumps(payload, ensure_ascii=False)}", flush=True)
 
 
-def atomic_temp_path(target_path: Path) -> Path:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    suffix = target_path.suffix
-    return target_path.with_name(
-        f".{target_path.stem}.{os.getpid()}.{time.time_ns()}.tmp{suffix}"
-    )
-
-
-def atomic_write_text(target_path: Path, content: str, encoding: str = "utf-8") -> None:
-    temp_path = atomic_temp_path(target_path)
-    try:
-        temp_path.write_text(content, encoding=encoding)
-        os.replace(temp_path, target_path)
-    finally:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-
-
 def discover_markdown_files(input_dir: Path, broker_folders: set[str] | None) -> list[Path]:
     files = sorted(input_dir.rglob("*.md"))
     if broker_folders:
@@ -475,7 +488,7 @@ def load_processed_sha256_state(state_path: Path | None) -> set[str]:
     if state_path is None or not state_path.exists():
         return set()
     try:
-        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        payload = read_json_file(state_path)
     except (OSError, json.JSONDecodeError):
         return set()
     values = payload.get("processed_sha256") if isinstance(payload, dict) else payload
@@ -491,7 +504,7 @@ def save_processed_sha256_state(state_path: Path | None, values: set[str]) -> No
         "processed_sha256": sorted(values),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    atomic_write_text(state_path, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(state_path, payload, ensure_ascii=False, indent=2)
 
 
 def validate_external_markdown_files(
@@ -544,44 +557,18 @@ def validate_external_markdown_files(
     return valid_files, file_hashes, skipped_count
 
 
-def read_jsonl_rows(jsonl_path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if not jsonl_path.exists():
-        return rows
-    for line in jsonl_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        payload = json.loads(line)
-        if isinstance(payload, dict):
-            rows.append(payload)
-    return rows
-
-
-def read_csv_rows(csv_path: Path, table_fields: list[str]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if not csv_path.exists():
-        return rows
-    with csv_path.open("r", encoding="utf-8-sig", newline="") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            rows.append({field: row.get(field, "") for field in table_fields})
-    return rows
-
-
 def load_existing_output_rows(
     output_dir: Path,
     table_fields: list[str] | None = None,
     output_stem: str = "announcement_table",
 ) -> list[dict[str, Any]]:
     active_fields = table_fields or TABLE_FIELDS
-    jsonl_path = output_dir / f"{output_stem}.jsonl"
-    csv_path = output_dir / f"{output_stem}.csv"
-
-    rows = read_jsonl_rows(jsonl_path)
-    if not rows:
-        rows = read_csv_rows(csv_path, active_fields)
-    return [normalize_row_fields(row, active_fields) for row in rows]
+    return _load_existing_output_rows(
+        output_dir,
+        active_fields,
+        output_stem,
+        normalize=lambda row: normalize_row_fields(row, active_fields),
+    )
 
 
 def row_file_key(row: dict[str, Any]) -> tuple[str, str]:
@@ -621,7 +608,7 @@ def load_imported_baseline_file_keys(notice_type: str) -> set[tuple[str, str]]:
     if not path.is_file():
         return set()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
         raw_keys = payload.get("preserved_file_keys", {}).get(notice_type, [])
     except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
         return set()
@@ -644,7 +631,7 @@ def load_imported_baseline_notice_ids(notice_type: str) -> set[str]:
     if not path.is_file():
         return set()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
         values = payload.get("preserved_notice_ids", {}).get(notice_type, [])
     except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
         return set()
@@ -1350,16 +1337,27 @@ def process_markdown_file(
     processed_at = datetime.now(timezone.utc).isoformat()
 
     if raw_json_path.exists() and not force_refresh:
-        cached_payload = json.loads(raw_json_path.read_text(encoding="utf-8"))
-        rows = flatten_payload(
-            cached_payload,
-            metadata,
-            raw_json_reference,
-            processed_at,
-            notice_type=notice_type,
-            table_fields=table_fields,
-        )
-        return FileExtractionResult(rows=rows, raw_payload=cached_payload)
+        try:
+            cached_payload = read_json_file(raw_json_path)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            # A truncated or otherwise invalid cache is a cache miss.  Leave
+            # the old file in place until a successful request can atomically
+            # replace it, so a failed retry never destroys the last artifact.
+            print(
+                f"[CACHE INVALID] {raw_json_reference}: {type(exc).__name__}; 重新请求 LLM",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            rows = flatten_payload(
+                cached_payload,
+                metadata,
+                raw_json_reference,
+                processed_at,
+                notice_type=notice_type,
+                table_fields=table_fields,
+            )
+            return FileExtractionResult(rows=rows, raw_payload=cached_payload)
 
     with request_semaphore:
         if request_start_lock is not None and min_interval_seconds > 0:
@@ -1413,10 +1411,7 @@ def process_markdown_file(
             f"[REQUEST DONE] {display_path} 用时 {elapsed:.1f}s",
             flush=True,
         )
-    raw_json_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    atomic_write_json(raw_json_path, payload, ensure_ascii=False, indent=2)
     rows = flatten_payload(
         payload,
         metadata,
@@ -1428,37 +1423,29 @@ def process_markdown_file(
     return FileExtractionResult(rows=rows, raw_payload=payload)
 
 
-def write_csv(rows: list[dict[str, Any]], csv_path: Path, table_fields: list[str] | None = None) -> None:
-    active_fields = table_fields or TABLE_FIELDS
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = atomic_temp_path(csv_path)
-    try:
-        with temp_path.open("w", encoding="utf-8-sig", newline="") as file:
-            writer = csv.DictWriter(file, fieldnames=active_fields)
-            writer.writeheader()
-            csv_rows = []
-            for row in rows:
-                csv_rows.append({k: ("" if row.get(k) is None else row.get(k)) for k in active_fields})
-            writer.writerows(csv_rows)
-        os.replace(temp_path, csv_path)
-    finally:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
+def write_csv(
+    rows: list[dict[str, Any]],
+    csv_path: Path,
+    table_fields: list[str] | None = None,
+) -> None:
+    """Compatibility wrapper for callers that historically imported this symbol."""
+
+    _write_csv(rows, csv_path, table_fields or TABLE_FIELDS)
 
 
 def write_jsonl(rows: list[dict[str, Any]], jsonl_path: Path) -> None:
-    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-    content = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
-    atomic_write_text(jsonl_path, content, encoding="utf-8")
+    """Compatibility wrapper for callers that historically imported this symbol."""
+
+    _write_jsonl(rows, jsonl_path)
 
 
-def write_failures_jsonl(failures: list[dict[str, Any]], jsonl_path: Path) -> None:
-    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-    content = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in failures)
-    atomic_write_text(jsonl_path, content, encoding="utf-8")
+def write_failures_jsonl(
+    failures: list[dict[str, Any]],
+    jsonl_path: Path,
+) -> None:
+    """Compatibility wrapper for callers that historically imported this symbol."""
+
+    _write_failures_jsonl(failures, jsonl_path)
 
 
 def maybe_export_xlsx(
@@ -1466,24 +1453,9 @@ def maybe_export_xlsx(
     xlsx_path: Path,
     table_fields: list[str] | None = None,
 ) -> str | None:
-    try:
-        import pandas as pd
-    except ImportError:
-        return None
+    """Compatibility wrapper for callers that historically imported this symbol."""
 
-    dataframe = pd.DataFrame(rows, columns=table_fields or TABLE_FIELDS)
-    xlsx_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = atomic_temp_path(xlsx_path)
-    try:
-        dataframe.to_excel(temp_path, index=False)
-        os.replace(temp_path, xlsx_path)
-    finally:
-        if temp_path.exists():
-            try:
-                temp_path.unlink()
-            except OSError:
-                pass
-    return str(xlsx_path)
+    return _maybe_export_xlsx(rows, xlsx_path, table_fields or TABLE_FIELDS)
 
 
 def sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1533,26 +1505,16 @@ def write_output_bundle(
     output_stem: str = "announcement_table",
 ) -> dict[str, str | None]:
     active_fields = table_fields or TABLE_FIELDS
-    csv_path = output_dir / f"{output_stem}.csv"
-    jsonl_path = output_dir / f"{output_stem}.jsonl"
-    xlsx_path = output_dir / f"{output_stem}.xlsx"
-
-    sorted_rows = sort_rows(rows)
-    write_csv(sorted_rows, csv_path, active_fields)
-    write_jsonl(sorted_rows, jsonl_path)
-    xlsx_exported = maybe_export_xlsx(sorted_rows, xlsx_path, active_fields)
-
-    atomic_write_text(
+    return _write_output_bundle(
+        rows,
+        output_dir,
         summary_path,
-        json.dumps(summary_payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+        summary_payload,
+        active_fields,
+        output_stem,
+        sort_rows=sort_rows,
+        portable_path=portable_path,
     )
-    return {
-        "csv_path": portable_path(csv_path),
-        "jsonl_path": portable_path(jsonl_path),
-        "xlsx_path": portable_path(Path(xlsx_exported)) if xlsx_exported else None,
-        "summary_path": portable_path(summary_path),
-    }
 
 
 def positive_int(value: str) -> int:
@@ -1798,7 +1760,9 @@ def main() -> int:
         1
         for plan in plans
         if not plan.force_refresh
-        and (output_dir / "raw_json" / plan.path.relative_to(input_dir).with_suffix(".json")).exists()
+        and is_valid_json_file(
+            output_dir / "raw_json" / plan.path.relative_to(input_dir).with_suffix(".json")
+        )
     )
     llm_requested_files = len(plans) - cache_reused_files
 
@@ -1991,10 +1955,7 @@ def main() -> int:
                 runtime.output_stem,
             )
             broker_summary.update(broker_paths)
-            (broker_output_dir / "run_summary.json").write_text(
-                json.dumps(broker_summary, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            write_summary(broker_output_dir / "run_summary.json", broker_summary)
             broker_summaries[broker_folder] = broker_summary
 
     summary = {
@@ -2032,10 +1993,7 @@ def main() -> int:
         runtime.output_stem,
     )
     summary.update(master_paths)
-    (output_dir / "run_summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    write_summary(output_dir / "run_summary.json", summary)
 
     print("")
     print("处理完成")
