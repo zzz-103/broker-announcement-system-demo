@@ -89,11 +89,19 @@ class OpenAICompatibleAppReleaseClient:
             "你是券商手机 App 更新公告结构化助手。只输出 JSON，不要 Markdown。"
             "JSON 格式必须是 {\"releases\":[...]}，每项包含 app_name、app_version、platform、"
             "publish_date、update_type、update_summary、feature_tags、highlights。"
-            "source_metadata 中已有的 broker_code、broker_name、source_url、trusted_app_name、"
+            "source_metadata 中已有的 broker_code、broker_name、trusted_app_name、"
             "deterministic_* 字段是权威值，不得改写；仅补充缺失字段。"
             "无法确认的字符串留空；platform 未知时填 未知；不要编造日期、版本或功能。"
             "update_type 只能使用 新功能、体验优化、问题修复、合规安全、其他。"
             "feature_tags 只能使用 行情、交易、开户、理财、资讯、AI智能、安全、其他。"
+            "每个 unit_app_name 对应的处理单元最多输出 1 条 releases。"
+            "update_summary 和 highlights 只能描述本版本明确新增、优化、修复或合规/安全变化。"
+            "严禁把运行环境、系统要求、支持语言、适用客户、文件大小、下载地址、MD5、"
+            "产品/软件介绍、宣传语、联系方式或 OCR 噪声当作更新内容。"
+            "如果没有可靠的版本变化，仍可返回身份记录，但 update_summary 必须为空字符串、"
+            "highlights 必须为空数组；不要用上述低价值信息凑内容。"
+            "以‘官方更新说明候选’标注的文本可含营销修辞；只能提取其中可明确识别的功能或模块，"
+            "改写为简洁事实，不得保留福利、口号、疑问句或效果承诺。"
         )
         user_prompt = json.dumps(
             {"source_metadata": metadata, "markdown": content},

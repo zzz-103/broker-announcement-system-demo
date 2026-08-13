@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from backend.api import dashboard_package as package_module
 from backend.api import dashboard_package_import as import_module
+from backend.broker_app_watch.storage.models import APP_RELEASE_CSV_COLUMNS
 from backend.matching import project_matcher
 from backend.llm_table import llm_markdown_table_builder as table_builder
 
@@ -56,13 +57,13 @@ class DashboardPackageImportTests(unittest.TestCase):
             package = package_module.DashboardPackageBuilder().build(force=True)
             return package_module.package_zip_bytes(package)
 
-    def test_validate_generated_zip_has_exact_six_members(self) -> None:
+    def test_validate_generated_zip_has_complete_app_watch_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             body = self._package_zip(Path(directory))
             validated = import_module.validate_zip_bytes(body)
             self.assertEqual(validated.warnings, ())
             with zipfile.ZipFile(io.BytesIO(body)) as archive:
-                self.assertEqual(len(archive.infolist()), 6)
+                self.assertEqual(len(archive.infolist()), 7)
                 self.assertEqual(
                     set(archive.namelist()),
                     {
@@ -72,6 +73,7 @@ class DashboardPackageImportTests(unittest.TestCase):
                         "dashboard-data/tender_projects.json",
                         "dashboard-data/app_updates.json",
                         "dashboard-data/ai_analysis.json",
+                        "dashboard-data/app_watch_baseline.csv",
                     },
                 )
 
@@ -163,6 +165,58 @@ class DashboardPackageImportTests(unittest.TestCase):
             })
             self.assertTrue(import_module.validate_zip_bytes(duplicate_zip).warnings)
 
+    def test_duplicate_app_events_warn_and_invalid_app_arrays_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            body = self._package_zip(Path(directory))
+            names = {
+                "manifest": "dashboard-data/manifest.json",
+                "overview": "dashboard-data/overview.json",
+                "apps": "dashboard-data/app_updates.json",
+            }
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                manifest = json.loads(archive.read(names["manifest"]))
+                overview = json.loads(archive.read(names["overview"]))
+                apps = json.loads(archive.read(names["apps"]))
+            apps[0]["app_version"] = "9.7.0"
+
+            duplicate_apps_body = (json.dumps(apps + apps, ensure_ascii=False) + "\n").encode("utf-8")
+            duplicate_manifest = copy.deepcopy(manifest)
+            duplicate_manifest["datasets"]["app_updates"].update({
+                "record_count": 2,
+                "bytes": len(duplicate_apps_body),
+                "sha256": hashlib.sha256(duplicate_apps_body).hexdigest(),
+            })
+            duplicate_overview = copy.deepcopy(overview)
+            duplicate_overview["app_updates"]["record_count"] = 2
+            duplicate_overview_body = json.dumps(duplicate_overview).encode("utf-8")
+            duplicate_manifest["datasets"]["overview"].update({
+                "bytes": len(duplicate_overview_body),
+                "sha256": hashlib.sha256(duplicate_overview_body).hexdigest(),
+            })
+            duplicate_zip = self._rewrite_zip(body, {
+                names["manifest"]: json.dumps(duplicate_manifest).encode("utf-8"),
+                names["overview"]: duplicate_overview_body,
+                names["apps"]: duplicate_apps_body,
+            })
+            warnings = import_module.validate_zip_bytes(duplicate_zip).warnings
+            self.assertTrue(any("重复 App id" in warning for warning in warnings))
+            self.assertTrue(any("重复 App 版本事件" in warning for warning in warnings))
+
+            invalid_apps = copy.deepcopy(apps)
+            invalid_apps[0]["highlights"] = "not-an-array"
+            invalid_apps_body = json.dumps(invalid_apps, ensure_ascii=False).encode("utf-8")
+            invalid_manifest = copy.deepcopy(manifest)
+            invalid_manifest["datasets"]["app_updates"].update({
+                "bytes": len(invalid_apps_body),
+                "sha256": hashlib.sha256(invalid_apps_body).hexdigest(),
+            })
+            invalid_zip = self._rewrite_zip(body, {
+                names["manifest"]: json.dumps(invalid_manifest).encode("utf-8"),
+                names["apps"]: invalid_apps_body,
+            })
+            with self.assertRaisesRegex(import_module.DashboardPackageImportError, "字符串数组"):
+                import_module.validate_zip_bytes(invalid_zip)
+
     def test_persist_imported_atomically_sets_preference_and_backup(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -172,6 +226,8 @@ class DashboardPackageImportTests(unittest.TestCase):
             fake_settings = SimpleNamespace(
                 dashboard_data_imported_zip_path=target,
                 dashboard_data_source_preference_path=preference,
+                app_releases_csv_path=root / "app-releases.csv",
+                imported_matching_baseline_path=root / "matching-baseline.json",
             )
             with patch.object(import_module, "settings", fake_settings):
                 import_module.imported_package_store.invalidate()
@@ -179,6 +235,7 @@ class DashboardPackageImportTests(unittest.TestCase):
                 self.assertEqual(first.package.manifest["schema_version"], "1.0.0")
                 self.assertEqual(import_module.read_preference(), ("imported", None))
                 self.assertTrue(target.exists())
+                self.assertTrue((root / "current-dashboard-data.zip").exists())
                 import_module.persist_imported(body)
                 self.assertTrue(target.with_name("imported-dashboard-data.zip.bak").exists())
 
@@ -256,6 +313,7 @@ class DashboardPackageImportTests(unittest.TestCase):
                 matching_verified_links_path=restored / "staging" / "llm_matching" / "llm_verified_links.csv",
                 matching_state_path=restored / "staging" / "llm_matching" / "matching_state.json",
                 imported_matching_baseline_path=restored / "staging" / "imported_matching_baseline.json",
+                app_releases_csv_path=restored / "app-releases.csv",
             )
             with patch.object(import_module, "settings", import_settings):
                 validated = import_module.persist_imported(body)
@@ -296,6 +354,8 @@ class DashboardPackageImportTests(unittest.TestCase):
             fake_settings = SimpleNamespace(
                 dashboard_data_imported_zip_path=target,
                 dashboard_data_source_preference_path=preference,
+                app_releases_csv_path=root / "app-releases.csv",
+                imported_matching_baseline_path=root / "matching-baseline.json",
             )
             with patch.object(import_module, "settings", fake_settings):
                 import_module.persist_imported(body)
@@ -336,6 +396,104 @@ class DashboardPackageImportTests(unittest.TestCase):
                 status = import_module.source_status(validated.package)
                 self.assertEqual(status["active_source"], "live")
                 self.assertIn("回退", status["fallback_reason"] or "")
+
+    def test_import_restores_app_history_and_promotes_only_updated_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def build_package(folder: str, tender_id: str, app_hash: str, version: str) -> tuple[package_module.DashboardPackage, bytes]:
+                source = root / folder
+                source.mkdir()
+                tender = source / "announcement.csv"
+                app = source / "app.csv"
+                analysis = source / "ai.json"
+                tender.write_text(
+                    "document_sha1,broker_name,is_broker_project,publish_date,announcement_stage,project_name\n"
+                    f"{tender_id},测试证券,true,2026-08-01,招标公告,{tender_id}项目\n",
+                    encoding="utf-8",
+                )
+                app.write_text(
+                    ",".join(APP_RELEASE_CSV_COLUMNS) + "\n"
+                    + f"test,测试证券,测试App,https://example.com/app,{app_hash},2026-08-02T00:00:00+08:00,raw/test/app.md,2026-08-02T01:00:00+08:00,{version},Android,2026-08-02,新功能,新增交易能力,[] ,[]\n",
+                    encoding="utf-8",
+                )
+                analysis.write_text('{"content":"分析","updated_at":"2026-08-02","meta":null}', encoding="utf-8")
+                build_settings = SimpleNamespace(
+                    announcement_csv_path=tender,
+                    app_releases_csv_path=app,
+                    ai_analysis_cache_path=analysis,
+                    dashboard_data_export_dir=source / "export",
+                )
+                with patch.object(package_module, "settings", build_settings):
+                    package = package_module.DashboardPackageBuilder().build(force=True)
+                return package, package_module.package_zip_bytes(package)
+
+            base_package, base_body = build_package("base", "base-tender", "a" * 64, "1.0.0")
+            live_package, _ = build_package("live", "live-tender", "b" * 64, "2.0.0")
+            imported = root / "imported.zip"
+            working = root / "current.zip"
+            restored_app = root / "runtime" / "app_releases.csv"
+            settings = SimpleNamespace(
+                dashboard_data_imported_zip_path=imported,
+                dashboard_data_working_zip_path=working,
+                dashboard_data_source_preference_path=root / "preference.json",
+                app_releases_csv_path=restored_app,
+                imported_matching_baseline_path=root / "imported_matching.json",
+            )
+            with patch.object(import_module, "settings", settings):
+                import_module.imported_package_store.invalidate()
+                imported_result = import_module.persist_imported(base_body)
+                self.assertFalse(imported_result.app_watch_baseline_synthesized)
+                restored_text = restored_app.read_text(encoding="utf-8-sig")
+                self.assertIn("a" * 64, restored_text)
+                self.assertIn("https://example.com/app", restored_text)
+                original_body = imported.read_bytes()
+                origin = import_module.immutable_origin_path(base_body)
+                self.assertEqual(origin.read_bytes(), base_body)
+
+                manifest = import_module.promote_active_imported_package(
+                    live_package,
+                    {"app_updates"},
+                )
+                self.assertIsNotNone(manifest)
+                self.assertEqual(imported.read_bytes(), original_body)
+                self.assertEqual(origin.read_bytes(), base_body)
+                self.assertTrue(working.is_file())
+                current, error, _ = import_module.imported_package_store.inspect()
+                self.assertIsNone(error)
+                self.assertIsNotNone(current)
+                assert current is not None
+                self.assertEqual(
+                    json.loads(current.body("tender_projects"))[0]["id"],
+                    json.loads(base_package.body("tender_projects"))[0]["id"],
+                )
+                app_versions = {row["app_version"] for row in json.loads(current.body("app_updates"))}
+                self.assertEqual(app_versions, {"1.0.0", "2.0.0"})
+                app_history = import_module.validate_app_watch_baseline(
+                    current.app_watch_baseline_body or b""
+                )
+                self.assertEqual({row.content_sha256 for row in app_history}, {"a" * 64, "b" * 64})
+
+    def test_corrupt_working_package_falls_back_to_immutable_import(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            body = self._package_zip(root)
+            settings = SimpleNamespace(
+                dashboard_data_imported_zip_path=root / "imported.zip",
+                dashboard_data_working_zip_path=root / "current.zip",
+                dashboard_data_source_preference_path=root / "preference.json",
+                app_releases_csv_path=root / "app-releases.csv",
+                imported_matching_baseline_path=root / "matching.json",
+            )
+            with patch.object(import_module, "settings", settings):
+                import_module.imported_package_store.invalidate()
+                import_module.persist_imported(body)
+                settings.dashboard_data_working_zip_path.write_bytes(b"corrupt")
+                import_module.imported_package_store.invalidate()
+                package, error, warnings = import_module.imported_package_store.inspect()
+                self.assertIsNotNone(package)
+                self.assertIsNone(error)
+                self.assertTrue(any("回退不可变原始导入包" in warning for warning in warnings))
 
     def test_tender_collision_ids_are_stable_when_rows_reverse(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

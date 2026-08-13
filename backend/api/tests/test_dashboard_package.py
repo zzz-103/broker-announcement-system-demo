@@ -13,6 +13,18 @@ from backend.api import dashboard_package as module
 
 
 class DashboardPackageTests(unittest.TestCase):
+    @staticmethod
+    def _write_app_rows(path: Path, rows: list[dict[str, str]]) -> None:
+        fields = [
+            "broker_code", "broker_name", "app_name", "source_url", "content_sha256",
+            "crawl_time", "app_version", "platform", "publish_date", "update_type",
+            "update_summary", "feature_tags", "highlights", "processed_at",
+        ]
+        with path.open("w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerows(rows)
+
     def test_fintech_system_titles_override_noisy_non_fintech_metadata(self) -> None:
         cases = (
             (
@@ -135,6 +147,120 @@ class DashboardPackageTests(unittest.TestCase):
         self.assertEqual(module._public_source_url("https://user:secret@example.com/app"), "")
         self.assertEqual(module._public_source_name("data/raw/markdown/internal.md"), "公开招采数据")
         self.assertEqual(module._public_source_name(""), "公开招采数据")
+
+    def test_app_updates_merge_same_version_across_platforms_and_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "app.csv"
+            self._write_app_rows(
+                path,
+                [
+                    {
+                        "broker_code": "GTZQ", "broker_name": "安信证券", "app_name": "国投证券",
+                        "source_url": "https://example.com/android", "content_sha256": "android-old",
+                        "crawl_time": "2026-08-01T00:00:00Z", "app_version": "v9.7.0", "platform": "安卓",
+                        "publish_date": "2026-07-31", "update_type": "体验优化", "update_summary": "运行环境：需要 Android 6.0 或更高版本",
+                        "feature_tags": '["行情"]', "highlights": '["文件大小：120 MB"]', "processed_at": "2026-08-01T00:00:00Z",
+                    },
+                    {
+                        "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                        "source_url": "https://example.com/ios", "content_sha256": "ios-new",
+                        "crawl_time": "2026-08-04T00:00:00Z", "app_version": "9.7.0", "platform": "苹果",
+                        "publish_date": "2026-08-03", "update_type": "新功能", "update_summary": "新增行情自选分组功能",
+                        "feature_tags": '["行情", "交易"]', "highlights": '["支持自定义行情分组"]', "processed_at": "2026-08-04T00:00:00Z",
+                    },
+                    {
+                        "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                        "source_url": "https://example.com/android", "content_sha256": "android-new",
+                        "crawl_time": "2026-08-04T00:00:00Z", "app_version": "9.7.0", "platform": "Android",
+                        "publish_date": "2026-08-03", "update_type": "新功能", "update_summary": "新增行情自选分组功能",
+                        "feature_tags": '["行情"]', "highlights": '["支持自定义行情分组"]', "processed_at": "2026-08-04T00:00:00Z",
+                    },
+                ],
+            )
+            records = module._build_app_updates(path)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]["app_version"], "9.7.0")
+            self.assertEqual(records[0]["platform"], "全平台")
+            self.assertEqual(records[0]["publish_date"], "2026-08-03")
+            self.assertEqual(records[0]["update_summary"], "新增行情自选分组功能")
+            self.assertEqual(records[0]["highlights"], ["支持自定义行情分组"])
+            self.assertEqual(records[0]["broker_name"], "国投证券")
+
+    def test_low_value_app_text_cannot_win_representative_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "app.csv"
+            self._write_app_rows(
+                path,
+                [
+                    {
+                        "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                        "source_url": "https://example.com/old", "content_sha256": "old",
+                        "crawl_time": "2026-08-01", "app_version": "9.7.0", "platform": "Android",
+                        "publish_date": "2026-08-01", "update_type": "其他", "update_summary": "软件介绍：国投证券APP是一款提供行情和交易服务的平台",
+                        "feature_tags": "[]", "highlights": '["运行环境：需要 Android 6.0 或更高版本", "文件大小：120 MB"]', "processed_at": "2026-08-01",
+                    },
+                    {
+                        "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                        "source_url": "https://example.com/new", "content_sha256": "new",
+                        "crawl_time": "2026-08-02", "app_version": "9.7.0", "platform": "Android",
+                        "publish_date": "2026-08-02", "update_type": "体验优化", "update_summary": "优化登录流程，提升交易稳定性",
+                        "feature_tags": "[]", "highlights": '["修复部分行情刷新失败问题"]', "processed_at": "2026-08-02",
+                    },
+                ],
+            )
+            record = module._build_app_updates(path)[0]
+            self.assertEqual(record["update_summary"], "优化登录流程，提升交易稳定性")
+            self.assertEqual(record["highlights"], ["修复部分行情刷新失败问题"])
+            self.assertNotIn("运行环境", record["search_text"])
+            self.assertNotIn("文件大小", record["search_text"])
+
+    def test_unversioned_records_use_conservative_platform_and_snapshot_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "app.csv"
+            common = {
+                "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                "source_url": "https://example.com/app", "crawl_time": "2026-08-01",
+                "app_version": "", "publish_date": "2026-08-01", "update_type": "体验优化",
+                "feature_tags": "[]", "highlights": "[]", "processed_at": "2026-08-01",
+            }
+            rows = [
+                {**common, "content_sha256": "same", "platform": "Android", "update_summary": "优化行情加载速度"},
+                {**common, "content_sha256": "same", "platform": "Android", "update_summary": "优化行情加载速度"},
+                {**common, "content_sha256": "different", "platform": "Android", "update_summary": "新增行情筛选功能"},
+                {**common, "content_sha256": "same", "platform": "iOS", "update_summary": "优化行情加载速度"},
+            ]
+            self._write_app_rows(path, rows)
+            records = module._build_app_updates(path)
+            self.assertEqual(len(records), 3)
+            self.assertEqual(len({record["id"] for record in records}), 3)
+            self.assertEqual({record["platform"] for record in records}, {"Android", "iOS"})
+            self.assertIn("新增行情筛选功能", {record["update_summary"] for record in records})
+
+    def test_app_update_ids_are_stable_and_unique_after_grouping(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first.csv"
+            second = root / "second.csv"
+            rows = [
+                {
+                    "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                    "source_url": "https://example.com/app", "content_sha256": "a", "crawl_time": "2026-08-01",
+                    "app_version": "1.0.0", "platform": "Android", "publish_date": "2026-08-01",
+                    "update_type": "新功能", "update_summary": "新增交易入口", "feature_tags": "[]", "highlights": "[]", "processed_at": "2026-08-01",
+                },
+                {
+                    "broker_code": "gtzq", "broker_name": "国投证券", "app_name": "国投证券",
+                    "source_url": "https://example.com/app", "content_sha256": "b", "crawl_time": "2026-08-02",
+                    "app_version": "2.0.0", "platform": "Android", "publish_date": "2026-08-02",
+                    "update_type": "升级", "update_summary": "优化交易流程", "feature_tags": "[]", "highlights": "[]", "processed_at": "2026-08-02",
+                },
+            ]
+            self._write_app_rows(first, rows)
+            self._write_app_rows(second, list(reversed(rows)))
+            first_records = module._build_app_updates(first)
+            second_records = module._build_app_updates(second)
+            self.assertEqual({record["id"] for record in first_records}, {record["id"] for record in second_records})
+            self.assertEqual(len({record["id"] for record in first_records}), 2)
 
     def test_builder_normalizes_records_and_exports_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

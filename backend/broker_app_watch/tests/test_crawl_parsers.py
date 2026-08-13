@@ -9,6 +9,7 @@ import pytest
 from backend.broker_app_watch.collectors.base import CollectedContent
 from backend.broker_app_watch.core.config import BrokerSource
 from backend.broker_app_watch.parsers.base import ParsedDocument, ParsedSection
+from backend.broker_app_watch.parsers.broker_specific.apple_lookup_api import AppleLookupApiParser
 from backend.broker_app_watch.parsers.broker_specific.cgws_download_html import CgwsDownloadHtmlParser
 from backend.broker_app_watch.parsers.broker_specific.ciccwm_appdown_api import CiccwmAppDownApiParser
 from backend.broker_app_watch.parsers.broker_specific.dgzq_soft_api import DgzqSoftApiParser
@@ -150,6 +151,26 @@ def test_essence_parser_collects_only_configured_platforms() -> None:
     assert "通达信版" not in combined
     assert "pc.exe" not in combined
     assert document.source_metadata == {"安卓_数量": "2", "苹果_数量": "1"}
+
+
+def test_apple_lookup_parser_extracts_current_release() -> None:
+    body = (FIXTURES / "apple_lookup.json").read_text(encoding="utf-8")
+    source = _source(
+        broker_code="gtht",
+        broker_name="国泰海通证券",
+        app_name="国泰海通君弘",
+        source_type="api",
+        parser="apple_lookup_api",
+        parser_options={"track_id": "952047557"},
+    )
+
+    document = AppleLookupApiParser().parse(body, source, _response(source, body))
+
+    assert document.sections[0].heading == "iOS · 国泰海通君弘"
+    assert "- 版本：9.30.20" in document.sections[0].content
+    assert "- 更新日期：2026-07-26" in document.sections[0].content
+    assert "新增智能订单" in document.sections[0].content
+    assert document.source_metadata["apple_track_id"] == "952047557"
 
 
 def test_essence_parser_requires_present_group() -> None:

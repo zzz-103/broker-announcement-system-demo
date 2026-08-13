@@ -16,6 +16,7 @@ import {
   reanalyzeAssistantExecution,
   rerunAssistantExecution,
   sendAssistantExecutionEmail,
+  streamAssistantExecution,
   updateAssistantTopic,
 } from "@/lib/api/custom-intelligence";
 import type {
@@ -212,15 +213,30 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
 
   useEffect(() => {
     if (!token || activeExecutionId === null) return;
-    let disposed = false; let timer: ReturnType<typeof setTimeout> | undefined;
+    let disposed = false;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let streamWatchdog: ReturnType<typeof setTimeout> | undefined;
+    const streamController = new AbortController();
+    let latestExecutionIsActive = true;
+    const applyExecution = (execution: IntelligenceAssistantExecution) => {
+      if (disposed) return;
+      latestExecutionIsActive = isActive(execution);
+      setExecutions((current) => mergeExecution(current, execution));
+      setSelectedExecution((current) => current?.id === execution.id ? execution : current);
+      setWorkspaceExecution((current) => current?.id === execution.id ? execution : current);
+      if (!latestExecutionIsActive) {
+        setActiveExecutionId(null);
+        setNotice(execution.status === "succeeded" ? "报告已生成。" : execution.error_message || "本次生成已结束。");
+        void loadExecutions(1);
+      }
+    };
     const poll = async () => {
       try {
         const response = await fetchAssistantExecution(token, activeExecutionId);
         if (disposed) return;
         const execution = response.execution;
-        setExecutions((current) => mergeExecution(current, execution)); setSelectedExecution((current) => current?.id === execution.id ? execution : current); setWorkspaceExecution((current) => current?.id === execution.id ? execution : current);
-        if (isActive(execution)) timer = setTimeout(poll, 2000);
-        else { setActiveExecutionId(null); setNotice(execution.status === "succeeded" ? "报告已生成。" : execution.error_message || "本次生成已结束。"); void loadExecutions(1); }
+        applyExecution(execution);
+        if (isActive(execution)) pollTimer = setTimeout(poll, 2000);
       } catch (error) {
         if (!disposed) {
           if (error instanceof BackendApiError && error.status === 401) {
@@ -228,12 +244,36 @@ export function useCustomIntelligencePage(): CustomIntelligencePageController {
             return;
           }
           setPageError(readableError(error, "报告状态暂时无法更新；系统会继续重试。"));
-          timer = setTimeout(poll, 5000);
+          pollTimer = setTimeout(poll, 5000);
         }
       }
     };
-    timer = setTimeout(poll, 1200);
-    return () => { disposed = true; if (timer) clearTimeout(timer); };
+    const resetStreamWatchdog = () => {
+      if (streamWatchdog) clearTimeout(streamWatchdog);
+      streamWatchdog = setTimeout(() => streamController.abort(), 10_000);
+    };
+    const startStream = async () => {
+      resetStreamWatchdog();
+      try {
+        await streamAssistantExecution(token, activeExecutionId, (execution) => {
+          resetStreamWatchdog();
+          applyExecution(execution);
+        }, streamController.signal);
+      } catch {
+        // Older deployments, buffering proxies and browsers without a readable
+        // response body automatically continue through the established poller.
+      } finally {
+        if (streamWatchdog) clearTimeout(streamWatchdog);
+        if (!disposed && latestExecutionIsActive) pollTimer = setTimeout(poll, 0);
+      }
+    };
+    void startStream();
+    return () => {
+      disposed = true;
+      streamController.abort();
+      if (pollTimer) clearTimeout(pollTimer);
+      if (streamWatchdog) clearTimeout(streamWatchdog);
+    };
   }, [activeExecutionId, handleError, loadExecutions, token]);
 
   const startExecution = useCallback((execution: IntelligenceAssistantExecution) => { setExecutions((current) => mergeExecution(current, execution)); setActiveExecutionId(execution.id); setWorkspaceExecution(execution); setSelectedExecution(execution); setForm(formFromExecution(execution)); setActiveTab("generate"); setWorkspaceMode(true); setPageError(""); }, []);

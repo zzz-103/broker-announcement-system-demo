@@ -263,3 +263,91 @@ brokers:
       screenshot_alt: 精彩截图-世纪招财猫2026官方新版
       screenshot_limit: 5
       min_score: 0.5
+
+  - broker_code: gtht
+    broker_name: 国泰海通证券
+    app_name: 国泰海通君弘
+    source_url: https://apps.apple.com/cn/app/id952047557
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=952047557
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "952047557"
+
+  - broker_code: chinastock
+    broker_name: 中国银河证券
+    app_name: 中国银河证券
+    source_url: https://apps.apple.com/cn/app/id441890370
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=441890370
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "441890370"
+
+  - broker_code: swhy
+    broker_name: 申万宏源证券
+    app_name: 申万宏源大赢家
+    source_url: https://apps.apple.com/cn/app/id914460168
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=914460168
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "914460168"
+
+  - broker_code: csc
+    broker_name: 中信建投证券
+    app_name: 蜻蜓点金
+    source_url: https://apps.apple.com/cn/app/id1121579071
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=1121579071
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "1121579071"
+
+  - broker_code: eastmoney
+    broker_name: 东方财富证券
+    app_name: 东方财富证券
+    source_url: https://apps.apple.com/cn/app/id1111074226
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=1111074226
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "1111074226"
+
+  - broker_code: foundersc
+    broker_name: 方正证券
+    app_name: 小方
+    source_url: https://apps.apple.com/cn/app/id1067236066
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=1067236066
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "1067236066"
+
+  - broker_code: xyzq
+    broker_name: 兴业证券
+    app_name: 优理宝
+    source_url: https://apps.apple.com/cn/app/id645811920
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=645811920
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "645811920"
+
+  - broker_code: zts
+    broker_name: 中泰证券
+    app_name: 中泰齐富通
+    source_url: https://apps.apple.com/cn/app/id961528851
+    fetch_url: https://itunes.apple.com/lookup?country=cn&id=961528851
+    source_type: api
+    parser: apple_lookup_api
+    enabled: true
+    parser_options:
+      track_id: "961528851"

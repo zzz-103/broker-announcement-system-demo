@@ -1,4 +1,4 @@
-import { requestBlob, requestJson } from "./core";
+import { BackendApiError, SseParseError, buildApiUrl, readError, requestBlob, requestJson } from "./core";
 import type {
   CustomIntelligenceOptionsResponse,
   IntelligenceSearchConfigInput,
@@ -7,6 +7,7 @@ import type {
   IntelligenceAssistantEmailInput,
   IntelligenceAssistantEmailResponse,
   IntelligenceAssistantExecutionResponse,
+  IntelligenceAssistantExecution,
   IntelligenceAssistantExecutionInput,
   IntelligenceAssistantExecutionsResponse,
   IntelligenceConfirmedPlan,
@@ -160,6 +161,74 @@ export function fetchAssistantExecution(
     { signal },
     token,
   );
+}
+
+export async function streamAssistantExecution(
+  token: string,
+  executionId: number,
+  onExecution: (execution: IntelligenceAssistantExecution) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(
+      buildApiUrl(assistantPath(`/executions/${encodeURIComponent(String(executionId))}/events`)),
+      {
+        cache: "no-store",
+        headers: { Accept: "text/event-stream", Authorization: `Bearer ${token}` },
+        signal,
+      },
+    );
+  } catch (error) {
+    if (signal.aborted) throw error;
+    throw new BackendApiError("无法访问报告响应流", 0);
+  }
+  if (!response.ok) throw new BackendApiError(await readError(response), response.status);
+  if (!response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream")) {
+    throw new BackendApiError("服务端未提供报告响应流", response.status);
+  }
+  if (!response.body) throw new BackendApiError("报告响应流为空", response.status);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const cancelReader = () => { void reader.cancel(); };
+  signal.addEventListener("abort", cancelReader);
+  try {
+    while (!signal.aborted) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      buffer = drainExecutionStream(buffer, onExecution);
+    }
+    if (buffer.trim()) drainExecutionStream(`${buffer}\n\n`, onExecution);
+  } finally {
+    signal.removeEventListener("abort", cancelReader);
+  }
+}
+
+function drainExecutionStream(
+  input: string,
+  onExecution: (execution: IntelligenceAssistantExecution) => void,
+): string {
+  const parts = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n\n");
+  const remainder = parts.pop() ?? "";
+  for (const part of parts) {
+    const rawData = part.split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (!rawData) continue;
+    try {
+      const event = JSON.parse(rawData) as { type?: unknown; execution?: unknown };
+      if (event.type === "execution" && event.execution && typeof event.execution === "object") {
+        onExecution(event.execution as IntelligenceAssistantExecution);
+      }
+    } catch (error) {
+      throw new SseParseError(error instanceof Error ? error.message : "报告响应流解析失败", rawData);
+    }
+  }
+  return remainder;
 }
 
 export function rerunAssistantExecution(

@@ -29,6 +29,8 @@ export interface AppReleaseRecord {
   highlights: string[];
   processedAt: string;
   searchText: string;
+  platforms: string[];
+  mergedRecordCount: number;
 }
 
 export interface LoadedAppReleaseData {
@@ -75,7 +77,90 @@ export function fromDashboardAppUpdate(row: AppUpdateData): AppReleaseRecord {
     highlights: row.highlights,
     processedAt: row.processed_at,
     searchText: row.search_text,
+    platforms: row.platform && row.platform !== "未知" ? [row.platform] : [],
+    mergedRecordCount: 1,
   };
+}
+
+const LOW_VALUE_UPDATE_PATTERNS = [
+  /^(?:[-*]\s*)?(?:运行环境|系统要求|支持语言|适用客户|文件大小|下载地址|下载链接|md5|开发者|官方网站|官方微信|热线电话)\s*[：:]/i,
+  /^(?:需要|支持)\s*(?:iOS|Android|安卓|鸿蒙|HarmonyOS)\s*[\d.]+/i,
+  /(?:手机版智能炒股软件|股票交易平台|一站式服务|专注于提供|欢迎.*联系)/i,
+] as const;
+
+const CHANGE_PATTERN = /(?:新增|增加|上线|推出|支持|优化|提升|改进|升级|修复|解决|调整|完善|改版|安全|合规|风控)/i;
+
+function normalizedVersion(value: string): string {
+  return value.trim().replace(/^[vV]\s*/, "").replace(/\s+/g, "").toLowerCase();
+}
+
+function meaningfulUpdateText(value: string): boolean {
+  const text = value.replace(/\s+/g, " ").trim();
+  return Boolean(text) && !LOW_VALUE_UPDATE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function updateTextScore(value: string): number {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!meaningfulUpdateText(text)) return -100;
+  let score = Math.min(text.length, 120) / 30;
+  if (CHANGE_PATTERN.test(text)) score += 8;
+  if (/\d/.test(text)) score += 1;
+  return score;
+}
+
+function releaseEventKey(record: AppReleaseRecord, index: number): string {
+  const version = normalizedVersion(record.appVersion);
+  if (!version) return `unversioned:${record.id || record.contentSha256 || index}:${index}`;
+  const broker = (record.brokerCode || record.rawBrokerName || record.brokerName).trim().toLowerCase();
+  const app = record.appName.trim().replace(/\s+/g, " ").toLowerCase();
+  return `versioned:${broker}||${app}||${version}`;
+}
+
+/**
+ * Imported 1.x dashboard packages can contain one row per crawl snapshot or
+ * platform. Collapse those rows into the user-facing release event so charts
+ * and recent updates count versions, while retaining the merged provenance.
+ */
+export function canonicalizeAppReleases(records: AppReleaseRecord[]): AppReleaseRecord[] {
+  const groups = new Map<string, AppReleaseRecord[]>();
+  records.forEach((record, index) => {
+    const key = releaseEventKey(record, index);
+    groups.set(key, [...(groups.get(key) ?? []), record]);
+  });
+
+  return [...groups.entries()].map(([key, group]) => {
+    const ordered = sortByPublishDateDesc(group);
+    const representative = [...ordered].sort((a, b) =>
+      updateTextScore(b.updateSummary) - updateTextScore(a.updateSummary)
+      || Math.max(0, ...b.highlights.map(updateTextScore)) - Math.max(0, ...a.highlights.map(updateTextScore))
+      || (b.publishDate?.getTime() ?? 0) - (a.publishDate?.getTime() ?? 0)
+    )[0];
+    const platforms = [...new Set(group.flatMap((record) =>
+      record.platforms.length ? record.platforms : record.platform && record.platform !== "未知" ? [record.platform] : []
+    ))].sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+    const summaries = group.map((record) => record.updateSummary).filter(meaningfulUpdateText);
+    const updateSummary = summaries.sort((a, b) => updateTextScore(b) - updateTextScore(a))[0] ?? "";
+    const highlights = [...new Set(group.flatMap((record) => record.highlights)
+      .map((item) => item.replace(/\s+/g, " ").trim())
+      .filter((item) => meaningfulUpdateText(item) && item !== updateSummary))]
+      .sort((a, b) => updateTextScore(b) - updateTextScore(a))
+      .slice(0, 5);
+    const latest = ordered[0];
+
+    return {
+      ...representative,
+      id: key,
+      platform: platforms.length > 1 ? "全平台" : platforms[0] || representative.platform || "未知",
+      platforms,
+      publishDateRaw: latest.publishDateRaw,
+      publishDate: latest.publishDate,
+      updateSummary,
+      highlights,
+      featureTags: [...new Set(group.flatMap((record) => record.featureTags))],
+      mergedRecordCount: group.reduce((sum, record) => sum + record.mergedRecordCount, 0),
+      searchText: group.map((record) => record.searchText).join("\n"),
+    };
+  });
 }
 
 export async function loadAppReleases(token: string, signal?: AbortSignal): Promise<LoadedAppReleaseData> {
@@ -91,7 +176,7 @@ export async function loadAppReleases(token: string, signal?: AbortSignal): Prom
     }
     const dataset = manifest.datasets.app_updates;
     if (!dataset?.available && !rows.length) throw new AppReleaseNotGeneratedError(dataset?.reason ?? undefined);
-    return { records: rows.map(fromDashboardAppUpdate), updatedAt: manifest.generated_at || null, overview, filters };
+    return { records: canonicalizeAppReleases(rows.map(fromDashboardAppUpdate)), updatedAt: manifest.generated_at || null, overview, filters };
   } catch (error) {
     if (error instanceof AppReleaseNotGeneratedError) throw error;
     const status = (error as { status?: number }).status;

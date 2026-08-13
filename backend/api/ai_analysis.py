@@ -105,6 +105,13 @@ def _run_generate_ai_analysis(days: int | None = None) -> dict[str, Any]:
         },
     }
     atomic_write_json(cache_path(), payload)
+    # Imported mode is an evolving lineage: AI refreshes replace only the AI
+    # artifact while preserving imported tender and App datasets.
+    from .dashboard_package import dashboard_package_builder
+    from .dashboard_package_import import promote_active_imported_package
+
+    live_package = dashboard_package_builder.build(force=True)
+    promote_active_imported_package(live_package, {"ai_analysis"})
     return payload
 
 

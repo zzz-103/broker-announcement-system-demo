@@ -30,7 +30,100 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 KNOWN_UPDATE_TYPES = {"新功能", "体验优化", "问题修复", "合规安全", "其他"}
 KNOWN_FEATURE_TAGS = {"行情", "交易", "开户", "理财", "资讯", "AI智能", "安全", "其他"}
 KNOWN_PLATFORMS = {"iOS", "Android", "HarmonyOS", "全平台", "未知"}
+# These are intentionally conservative.  They define what can be surfaced as
+# a user-facing change; source metadata remains available for audit, but is
+# never allowed to become a fallback summary.
+CHANGE_KEYWORDS = (
+    "新增",
+    "新功能",
+    "增加",
+    "上线",
+    "推出",
+    "发布",
+    "优化",
+    "提升",
+    "改进",
+    "升级",
+    "增强",
+    "调整",
+    "修复",
+    "解决",
+    "修正",
+    "纠正",
+    "已知问题",
+    "安全",
+    "合规",
+    "风控",
+    "加固",
+    "漏洞",
+    "性能",
+)
+LOW_VALUE_PATTERNS = (
+    "运行环境",
+    "系统要求",
+    "系统版本",
+    "发布日期",
+    "发布时间",
+    "更新时间",
+    "更新日期",
+    "支持语言",
+    "适用客户",
+    "适用对象",
+    "文件大小",
+    "下载地址",
+    "下载链接",
+    "安装包",
+    "校验码",
+    "联系方式",
+    "联系电话",
+    "客服电话",
+    "客服热线",
+    "邮箱",
+    "二维码",
+    "截图",
+    "产品介绍",
+    "软件介绍",
+    "本应用",
+    "本软件",
+    "该应用",
+    "该软件",
+    "是一款",
+    "为您提供",
+    "为投资者提供",
+    "为客户提供",
+    "服务平台",
+    "一站式",
+    "集交易",
+    "足不出户",
+    "丰富功能",
+    "始终坚持",
+    "以客户为中心",
+    "让投资更简单",
+    "邀您体验",
+    "全新投资工具",
+    "福利已就位",
+    "财富赢家",
+    "欢迎使用",
+    "致力于",
+)
+GENERIC_CHANGE_PHRASES = {
+    "新增功能",
+    "版本升级",
+    "优化体验",
+    "问题修复",
+    "更新内容",
+    "其他若干优化",
+    "若干优化",
+    "多项细节优化",
+    "优化多项细节体验",
+    "功能使用体验优化",
+    "安全版本",
+    "修复已知问题",
+    "修复线上问题",
+    "技术优化及线上问题修复",
+}
 PROCESSABLE_SECTION_PARSERS = {
+    "apple_lookup_api",
     "essence_softwares_api",
     "ciccwm_appdown_api",
     "cgws_download_html",
@@ -160,6 +253,13 @@ def _read_existing_export(path: Path, *, strict_contract: bool = False) -> list[
         return rows
 
 
+def _source_identity(broker_code: str, source_url: str, content_sha256: str) -> tuple[str, str, str]:
+    """Canonical cross-machine identity for one crawled source body."""
+
+    normalized_url = source_url.strip().rstrip("/")
+    return broker_code.strip().casefold(), normalized_url, content_sha256.strip().casefold()
+
+
 def _row_key(row: AppReleaseRow) -> tuple[str, str, str, str, str, str, str, str]:
     """Identity of one output item; document duplicates are removed before LLM calls."""
 
@@ -237,11 +337,12 @@ def _source_metadata(source: BrokerSource, metadata: dict[str, str]) -> dict[str
 
 def _deterministic_hints(source: BrokerSource, metadata: dict[str, str], content: str) -> dict[str, str]:
     text = f"{metadata.get('page_update_time', '')}\n{content}"
-    version_match = re.search(
+    version_matches = re.findall(
         r"(?:版本(?:号)?|version|V)\s*[：:：]?\s*[vV]?([0-9]+(?:\.[0-9]+){1,3})",
         text,
         flags=re.IGNORECASE,
     )
+    version_candidates = list(dict.fromkeys(version_matches))
     date_match = re.search(r"(?:更新(?:日期|时间)?|发布日期|发布时间)\s*[：:：]?\s*(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?|\d{8})", text)
     platform = ""
     platforms = {item for item in ("iOS", "Android", "HarmonyOS") if item.lower() in text.lower()}
@@ -254,7 +355,7 @@ def _deterministic_hints(source: BrokerSource, metadata: dict[str, str], content
         "deterministic_version": (
             metadata.get("app_version")
             or metadata.get("version")
-            or (version_match.group(1) if version_match else "")
+            or (version_candidates[0] if len(version_candidates) == 1 else "")
         ).strip(),
         "deterministic_publish_date": (
             _normalise_date(metadata.get("publish_date", ""))
@@ -263,7 +364,7 @@ def _deterministic_hints(source: BrokerSource, metadata: dict[str, str], content
         ),
         "deterministic_platform": (
             metadata.get("platform", "").strip()
-            if metadata.get("platform", "").strip() in KNOWN_PLATFORMS
+            if metadata.get("platform", "").strip() in (KNOWN_PLATFORMS - {"未知"})
             else platform
         ),
     }
@@ -284,23 +385,179 @@ def _split_units(parser: str, content: str, default_app_name: str) -> list[tuple
     return units or [(default_app_name, content)]
 
 
-def _deterministic_summary(content: str) -> str:
-    for line in content.splitlines():
-        text = re.sub(r"^\s*(?:[-*]\s*|\d+[.)]\s*)", "", line).strip()
-        if not text or text.startswith("#") or text.startswith("版本") or text.startswith("更新时间"):
+def _strip_list_marker(value: str) -> str:
+    """Normalise one markdown/model line without changing its meaning."""
+
+    text = re.sub(r"^\s*(?:[-*•·]\s*|\d+[.)、]\s*)", "", value).strip()
+    return re.sub(r"\s+", " ", text)
+
+
+def _is_low_value_text(value: str) -> bool:
+    """Return whether a line is metadata, promotion, or likely OCR noise."""
+
+    text = _strip_list_marker(str(value))
+    if not text:
+        return True
+    lowered = text.lower()
+    if any(pattern.lower() in lowered for pattern in LOW_VALUE_PATTERNS):
+        return True
+    if re.search(
+        r"^(?:运行环境|系统要求|需要|支持|兼容)?[^。；;]{0,24}"
+        r"(?:ios|android|harmonyos|安卓|苹果)[^。；;]{0,24}"
+        r"(?:版本|以上|以下|及更高|及以上|[0-9]+(?:\.[0-9]+){0,2})",
+        lowered,
+    ):
+        return True
+    if re.search(r"https?://|www\.|(?:^|[：:]|\s)md5(?:$|[：:]|\s)", lowered):
+        return True
+    if re.search(r"[0-9a-f]{24,}", lowered) and not re.search(r"\b\d+(?:\.\d+){1,3}\b", lowered):
+        return True
+    # OCR fragments often consist almost entirely of punctuation or a repeated
+    # single glyph.  Dropping them is safer than presenting them as a change.
+    meaningful_chars = re.findall(r"[A-Za-z0-9\u3400-\u9fff]", text)
+    if len(meaningful_chars) < 2 or len(set(meaningful_chars)) == 1:
+        return True
+    punctuation = len(re.findall(r"[^A-Za-z0-9\u3400-\u9fff]", text))
+    if punctuation > len(meaningful_chars) * 2 and len(text) > 8:
+        return True
+    return False
+
+
+def _has_change_semantics(value: str) -> bool:
+    """Require an explicit change verb before text can reach the dashboard."""
+
+    text = _strip_list_marker(value)
+    if _is_low_value_text(text):
+        return False
+    if text in GENERIC_CHANGE_PHRASES:
+        return False
+    if any(keyword in text for keyword in CHANGE_KEYWORDS):
+        return True
+    # ``支持`` is ambiguous: it can describe an existing product or a new
+    # capability.  Accept it only for a short, feature-shaped sentence and
+    # never for system/language/customer metadata.
+    if (
+        len(text) <= 120
+        and text.startswith(("支持", "现已支持", "现在支持", "正式支持"))
+        and not any(token in text for token in ("系统", "语言", "客户", "版本"))
+    ):
+        return True
+    return False
+
+
+def _meaningful_lines(content: str) -> list[str]:
+    """Extract only factual version changes from source or model text."""
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw_line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        text = _strip_list_marker(raw_line)
+        if not text or text.startswith("#") or not _has_change_semantics(text):
             continue
-        return text[:240]
-    return ""
+        # A single source sentence can contain a URL or hash after the useful
+        # clause.  Keep the clause only when it is still a real change.
+        text = re.sub(r"https?://\S+|www\.\S+", "", text).strip(" ，,;；")
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text[:240])
+    return result
+
+
+def _version_evidence(content: str, hints: dict[str, str] | None = None) -> str:
+    hints = hints or {}
+    matches = re.findall(
+        r"(?:版本(?:号)?|version|V)\s*[：:：]?\s*[vV]?([0-9]+(?:\.[0-9]+){1,3})",
+        content,
+        flags=re.IGNORECASE,
+    )
+    candidates = list(dict.fromkeys(matches))
+    return (
+        hints.get("deterministic_version")
+        or "、".join(candidates)
+    ).strip()
+
+
+def _date_evidence(content: str, hints: dict[str, str] | None = None) -> str:
+    hints = hints or {}
+    match = re.search(
+        r"(?:更新(?:日期|时间)?|发布日期|发布时间)\s*[：:：]?\s*"
+        r"(\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?|\d{8})",
+        content,
+    )
+    return (
+        hints.get("deterministic_publish_date")
+        or (_normalise_date(match.group(1)) if match else "")
+    ).strip()
+
+
+def _platform_evidence(content: str, hints: dict[str, str] | None = None) -> str:
+    hints = hints or {}
+    if hints.get("deterministic_platform") in (KNOWN_PLATFORMS - {"未知"}):
+        return hints["deterministic_platform"]
+    platforms = [
+        item
+        for item in ("iOS", "Android", "HarmonyOS")
+        if item.lower() in content.lower()
+    ]
+    return "全平台" if len(platforms) > 1 else (platforms[0] if platforms else "")
+
+
+def _prepare_llm_content(content: str, hints: dict[str, str] | None = None) -> str:
+    """Build a small, relevant prompt body while preserving identity evidence."""
+
+    hints = hints or {}
+    evidence: list[str] = []
+    version = _version_evidence(content, hints)
+    platform = _platform_evidence(content, hints)
+    publish_date = _date_evidence(content, hints)
+    if version:
+        evidence.append(f"版本证据：{version}")
+    if platform:
+        evidence.append(f"平台证据：{platform}")
+    if publish_date:
+        evidence.append(f"日期证据：{publish_date}")
+    # Do not forward raw headings, download metadata, product introductions or
+    # OCR remnants.  The deterministic evidence above keeps identity intact.
+    changes = _meaningful_lines(content)
+    # Official stores sometimes describe concrete named capabilities in a
+    # promotional question/answer style without a literal “新增/优化” verb.
+    # Preserve those non-metadata candidates for the LLM to rewrite, while the
+    # deterministic fallback below remains deliberately stricter.
+    candidates: list[str] = []
+    for raw_line in content.splitlines():
+        text = _strip_list_marker(raw_line)
+        if (
+            not text
+            or text.startswith("#")
+            or text in changes
+            or text in GENERIC_CHANGE_PHRASES
+            or _is_low_value_text(text)
+            or text.rstrip("：:") in {"更新说明", "新版特性", "更新内容"}
+            or re.match(r"^(?:版本|平台|更新日期|日期证据|版本证据|平台证据)\s*[：:]", text)
+        ):
+            continue
+        candidates.append(text[:240])
+    labelled_candidates = [f"官方更新说明候选：{item}" for item in dict.fromkeys(candidates)]
+    return "\n".join([*evidence, *changes, *labelled_candidates])
+
+
+def _deterministic_summary(content: str) -> str:
+    lines = _meaningful_lines(content)
+    return lines[0] if lines else ""
 
 
 def _deterministic_update_fields(content: str) -> tuple[str, list[str], list[str]]:
-    text = content.lower()
-    if any(word in text for word in ("修复", "解决", "已知问题")):
+    meaningful = _meaningful_lines(content)
+    text = " ".join(meaningful).lower()
+    if not meaningful:
+        return "其他", ["其他"], []
+    if any(word in text for word in ("修复", "解决", "已知问题", "修正", "纠正")):
         update_type = "问题修复"
-    elif any(word in text for word in ("新增", "增加", "上线", "支持")):
-        update_type = "新功能"
-    elif any(word in text for word in ("安全", "合规", "风控")):
+    elif any(word in text for word in ("安全", "合规", "风控", "加固", "漏洞")):
         update_type = "合规安全"
+    elif any(word in text for word in ("新增", "增加", "上线", "支持", "推出", "发布")):
+        update_type = "新功能"
     elif any(word in text for word in ("优化", "提升", "改进")):
         update_type = "体验优化"
     else:
@@ -316,16 +573,36 @@ def _deterministic_update_fields(content: str) -> tuple[str, list[str], list[str
         "安全": "安全",
     }
     tags = list(dict.fromkeys(tag for keyword, tag in tag_keywords.items() if keyword in text))
-    highlights: list[str] = []
-    for line in content.splitlines():
-        item = re.sub(r"^\s*(?:[-*]\s*|\d+[.)]\s*)", "", line).strip()
-        if item and not item.startswith("#") and not item.startswith(("版本", "更新日期", "更新时间")):
-            highlights.append(item[:240])
-    return update_type, tags or ["其他"], highlights[:8]
+    return update_type, tags or ["其他"], meaningful[:8]
 
 
 def _as_extraction(value: AppReleaseExtraction | list[AppReleaseAnalysis]) -> AppReleaseExtraction:
     return value if isinstance(value, AppReleaseExtraction) else AppReleaseExtraction(analyses=value)
+
+
+def _normalise_version_key(value: str) -> str:
+    text = re.sub(r"^\s*[vV]\s*", "", value.strip())
+    return re.sub(r"\s+", "", text).casefold() or "__unknown__"
+
+
+def _row_quality(row: AppReleaseRow) -> tuple[int, int, int, int, int]:
+    """Rank duplicate model outputs without changing distinct versions."""
+
+    return (
+        int(bool(row.update_summary)),
+        len(row.highlights),
+        int(row.update_type != "其他"),
+        int(bool(row.feature_tags and row.feature_tags != ["其他"])),
+        len(row.update_summary),
+    )
+
+
+def _row_needs_quality_reprocess(row: AppReleaseRow) -> bool:
+    """Allow a refresh to repair legacy low-quality rows once."""
+
+    if row.update_summary and not _has_change_semantics(row.update_summary):
+        return True
+    return any(not _has_change_semantics(item) for item in row.highlights)
 
 
 def _process_document(
@@ -346,12 +623,20 @@ def _process_document(
     for unit_app_name, unit_content in units:
         hints = _deterministic_hints(source, metadata, unit_content)
         request_metadata = {
-            **source_values,
+            # Keep the prompt focused on identity and version evidence.  The
+            # source URL remains in the exported row for audit, but is not an
+            # LLM input or a candidate summary.
+            "broker_code": source_values["broker_code"],
+            "broker_name": source_values["broker_name"],
+            "trusted_app_name": source_values["trusted_app_name"],
             **hints,
             "unit_app_name": unit_app_name,
         }
+        llm_content = _prepare_llm_content(unit_content, hints)
         try:
-            extraction = _as_extraction(client.extract(metadata=request_metadata, content=unit_content))
+            extraction = _as_extraction(
+                client.extract(metadata=request_metadata, content=llm_content)
+            )
         except Exception as exc:  # noqa: BLE001 - isolate one source unit
             failures.append(ProcessingFailure(_relative_path(path), f"LLM 请求失败：{type(exc).__name__}", unit_app_name))
             continue
@@ -362,6 +647,11 @@ def _process_document(
         if not extraction.analyses:
             failures.append(ProcessingFailure(_relative_path(path), "LLM 未返回有效记录", unit_app_name))
             continue
+        deterministic_type, deterministic_tags, deterministic_highlights = _deterministic_update_fields(
+            unit_content
+        )
+        meaningful_source = bool(deterministic_highlights) or "官方更新说明候选：" in llm_content
+        pending_rows: dict[str, tuple[AppReleaseRow, tuple[int, int, int, int, int]]] = {}
         for analysis in extraction.analyses:
             trusted_app_name = unit_app_name or source_values["app_name"]
             app_name = trusted_app_name or analysis.app_name.strip()
@@ -377,35 +667,56 @@ def _process_document(
                 hints["deterministic_platform"]
                 or (model_platform if model_platform in KNOWN_PLATFORMS else "未知")
             )
-            deterministic_type, deterministic_tags, deterministic_highlights = _deterministic_update_fields(unit_content)
-            update_type = analysis.update_type.strip() if analysis.update_type.strip() in KNOWN_UPDATE_TYPES else "其他"
-            if update_type == "其他" and deterministic_type != "其他":
-                update_type = deterministic_type
-            feature_tags = _normalise_tags(analysis.feature_tags)
-            if feature_tags == ["其他"] and deterministic_tags != ["其他"]:
-                feature_tags = deterministic_tags
-            highlights = [item.strip() for item in analysis.highlights if item.strip()]
-            if not highlights:
-                highlights = deterministic_highlights
-            rows.append(
-                AppReleaseRow(
-                    broker_code=source_values["broker_code"],
-                    broker_name=source_values["broker_name"],
-                    app_name=app_name,
-                    source_url=source_values["source_url"],
-                    content_sha256=body_hash,
-                    crawl_time=metadata.get("crawl_time", ""),
-                    markdown_file=_relative_path(path),
-                    processed_at=processed_at,
-                    app_version=version,
-                    platform=platform,
-                    publish_date=publish_date,
-                    update_type=update_type,
-                    update_summary=analysis.update_summary.strip() or _deterministic_summary(unit_content),
-                    feature_tags=feature_tags,
-                    highlights=highlights,
+            if meaningful_source:
+                summary = _strip_list_marker(analysis.update_summary)
+                if not _has_change_semantics(summary):
+                    summary = _deterministic_summary(unit_content)
+                model_highlights = [
+                    _strip_list_marker(item)
+                    for item in analysis.highlights
+                    if _has_change_semantics(item)
+                ]
+                highlights = list(dict.fromkeys(model_highlights)) or deterministic_highlights
+                update_type = (
+                    analysis.update_type.strip()
+                    if analysis.update_type.strip() in KNOWN_UPDATE_TYPES
+                    else "其他"
                 )
+                if update_type == "其他":
+                    update_type = deterministic_type
+                feature_tags = _normalise_tags(analysis.feature_tags)
+                if not feature_tags or feature_tags == ["其他"]:
+                    feature_tags = deterministic_tags
+            else:
+                # A version/platform snapshot with no factual change is kept
+                # for audit, but it must not look like an update on the board.
+                summary = ""
+                highlights = []
+                update_type = "其他"
+                feature_tags = ["其他"]
+            row = AppReleaseRow(
+                broker_code=source_values["broker_code"],
+                broker_name=source_values["broker_name"],
+                app_name=app_name,
+                source_url=source_values["source_url"],
+                content_sha256=body_hash,
+                crawl_time=metadata.get("crawl_time", ""),
+                markdown_file=_relative_path(path),
+                processed_at=processed_at,
+                app_version=version,
+                platform=platform,
+                publish_date=publish_date,
+                update_type=update_type,
+                update_summary=summary[:240],
+                feature_tags=feature_tags,
+                highlights=highlights[:8],
             )
+            version_key = _normalise_version_key(version)
+            quality = _row_quality(row)
+            current = pending_rows.get(version_key)
+            if current is None or quality > current[1]:
+                pending_rows[version_key] = (row, quality)
+        rows.extend(item[0] for item in pending_rows.values())
     failed_units = 0
     for unit_app_name in {failure.unit for failure in failures if failure.unit}:
         if not any(row.app_name == unit_app_name for row in rows):
@@ -478,7 +789,7 @@ def process_existing(
                 body_hash = _content_hash(content)
                 source_url = metadata.get("source_url") or str(source.source_url)
                 broker_code = metadata.get("broker_code") or source.broker_code
-                identity = (broker_code, source_url, body_hash)
+                identity = _source_identity(broker_code, source_url, body_hash)
                 current = documents.get(identity)
                 current_time = metadata.get("crawl_time", "")
                 if current is None or (current_time, path.name) >= (
@@ -490,17 +801,25 @@ def process_existing(
                 failures.append(ProcessingFailure(_relative_path(path), f"处理失败：{type(exc).__name__}"))
 
     documents_to_process = list(documents.values())
+    previous_by_identity: dict[tuple[str, str, str], list[AppReleaseRow]] = {}
+    for row in previous:
+        identity = _source_identity(row.broker_code, row.source_url, row.content_sha256)
+        if all(identity):
+            previous_by_identity.setdefault(identity, []).append(row)
+    # Existing exports may have been produced before the quality gate.  Keep
+    # clean identities cheap to skip, but send a legacy low-value identity
+    # through the new pipeline once so the next export is actually repaired.
     processed_identities = {
-        (row.broker_code, row.source_url, row.content_sha256)
-        for row in previous
-        if row.broker_code and row.source_url and row.content_sha256
+        identity
+        for identity, identity_rows in previous_by_identity.items()
+        if not any(_row_needs_quality_reprocess(row) for row in identity_rows)
     }
     skipped_documents = 0
     skipped_sources: list[str] = []
     pending_documents: list[tuple[BrokerSource, Path]] = []
     for source, path in documents_to_process:
         metadata, raw_content = _parse_front_matter(path)
-        identity = (
+        identity = _source_identity(
             metadata.get("broker_code") or source.broker_code,
             metadata.get("source_url") or str(source.source_url),
             _content_hash(_clean_body(raw_content)),
@@ -539,11 +858,11 @@ def process_existing(
             failed_units += unit_failed
             failures.extend(unit_failures)
             if rows:
-                identity = (rows[0].broker_code, rows[0].source_url, body_hash)
+                identity = _source_identity(rows[0].broker_code, rows[0].source_url, body_hash)
                 all_rows = [
                     row
                     for row in all_rows
-                    if (row.broker_code, row.source_url, row.content_sha256) != identity
+                    if _source_identity(row.broker_code, row.source_url, row.content_sha256) != identity
                 ]
                 all_rows.extend(rows)
                 updated_brokers.add(source.broker_code)

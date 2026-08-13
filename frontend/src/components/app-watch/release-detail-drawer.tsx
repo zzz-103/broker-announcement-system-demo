@@ -37,9 +37,10 @@ export function ReleaseDetailDrawer({ record, onClose }: ReleaseDetailDrawerProp
             </div>
             <div className="space-y-2.5">
               <Field label="版本号" value={record.appVersion || "未识别"} />
-              <Field label="平台" value={record.platform} />
+              <Field label="平台" value={record.platforms.length > 0 ? record.platforms.join("、") : record.platform} />
               <Field label="发布日期" value={formatReleaseDate(record.publishDate)} />
               <Field label="更新内容" value={record.updateSummary || "未提供"} />
+              {record.mergedRecordCount > 1 && <Field label="合并来源" value={`${record.mergedRecordCount} 条平台/采集记录`} />}
               <div className="flex items-start gap-3 text-[13px]">
                 <span className="text-[#667085] w-24 shrink-0">功能标签</span>
                 <div className="flex flex-wrap gap-1">

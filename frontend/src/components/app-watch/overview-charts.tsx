@@ -89,8 +89,8 @@ export function OverviewCharts({ data, onSelect }: OverviewChartsProps) {
                       {record.appVersion || "版本未识别"}
                     </span>
                   </span>
-                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]" title={record.highlights[0] || record.updateSummary || "暂无更新内容"}>
-                    {record.highlights[0] || record.updateSummary || "暂无更新内容"}
+                  <span className="mt-1 block truncate text-xs text-[#667085] transition-colors group-hover:text-[#475467]" title={record.updateSummary || record.highlights[0] || "官方未披露本次更新内容"}>
+                    {record.updateSummary || record.highlights[0] || "官方未披露本次更新内容"}
                   </span>
                 </span>
                 <span className="whitespace-nowrap text-[11px] tabular-nums text-[#98A2B3] transition-colors group-hover:text-[#667085]">

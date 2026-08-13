@@ -90,6 +90,13 @@ class Settings:
         )
 
     @property
+    def dashboard_data_working_zip_path(self) -> Path:
+        return resolve_project_path(
+            os.getenv("DASHBOARD_DATA_WORKING_ZIP_PATH"),
+            self.dashboard_data_export_dir / "current-dashboard-data.zip",
+        )
+
+    @property
     def dashboard_data_source_preference_path(self) -> Path:
         return resolve_project_path(
             os.getenv("DASHBOARD_DATA_SOURCE_PREFERENCE_PATH"),

@@ -282,7 +282,7 @@ corepack pnpm dev
 
 交付前记录 ZIP 文件名、生成时间、包版本和 Manifest 中各数据集数量。通过受控方式传给新环境，不要重新解压、编辑后再压缩。
 
-包内必须包含 Manifest 和 5 个标准数据集；只有 Manifest 声明 matching baseline 可用时才会包含 `matching_baseline.json`。ZIP 不包含用户、审计、自定义情报、邮件配置、资格名单、`.env` 或 LLM 密钥。
+包内必须包含 Manifest 和 5 个标准数据集；Manifest 声明相应基线可用时还会包含 `matching_baseline.json` 与 `app_watch_baseline.csv`。App Watch 基线携带内容哈希、来源身份和结构化历史，可让接收设备跳过未变化来源，避免重复调用 LLM。旧包可从展示记录兼容恢复有限 App 基线，但无法还原此前已合并的多来源快照，预览页会明确提示。ZIP 不包含用户、审计、自定义情报、邮件配置、资格名单、`.env` 或 LLM 密钥。
 
 ### 10.2 新 Clone 用管理页导入
 
@@ -305,7 +305,7 @@ corepack pnpm dev
 5. 再次打开招采/App/AI 页面，确认数据仍可读取；
 6. 点击“导出当前包”，将新导出的 ZIP 再做一次预览，确认它仍有效。
 
-导入包和 source 偏好保存在 `DASHBOARD_DATA_EXPORT_DIR`。生产 Compose 必须把其所在的 `backend/data` 持久化挂载。要恢复 live 来源，只能在管理页选择可用的“实时源”；不要手工修改 `source-preference.json`。
+原始导入包、按完整 SHA-256 归档的 `origins/*.zip`、可演进当前工作包和 source 偏好保存在 `DASHBOARD_DATA_EXPORT_DIR`。选择 imported 后，成功的 App Watch、完整 Pipeline 和 AI 分析会分别提升当前工作包；未更新的数据集继续保留导入基线，内容寻址的原始导入 ZIP 保持不变。生产 Compose 必须把其所在的 `backend/data` 持久化挂载。要恢复 live 来源，只能在管理页选择可用的“实时源”；不要手工修改 `source-preference.json`。
 
 ## 11. 外部服务与调度器按需启用
 
@@ -582,6 +582,8 @@ App Watch 可先离线检查配置和计划，再按需采集或执行带 LLM �
 ```
 
 `dry-run` 不联网。当前 App Watch CLI 没有 worker 或请求间隔参数，不要给它传入不存在的参数。
+
+App Watch 支持券商官网/API、指定页面、OCR 来源和 Apple 公开 Lookup API。新增 Apple 来源时必须固定 `track_id`，并配置对应的 `apps.apple.com` 公开页作为 `source_url`；不要用搜索关键词动态选择 App。正式 CSV 保留原始平台记录，看板按版本事件合并。官方没有披露可靠变更时摘要保持为空，页面显示“官方未披露本次更新内容”，不要以产品介绍或下载元数据补齐。
 
 直接运行结构化或 App Watch 不等于完整招采发布。规则候选、LLM 双重复核、合并和安全发布的路径参数相互依赖；需要正式更新 `backend/data/announcement_table.csv` 时，使用 12.1 的完整 Pipeline，避免手工拼接阶段遗漏发布保护。
 

@@ -1,0 +1,13 @@
+{
+  "resultCount": 1,
+  "results": [
+    {
+      "trackId": 952047557,
+      "trackName": "国泰海通君弘",
+      "bundleId": "com.example.junhong",
+      "version": "9.30.20",
+      "currentVersionReleaseDate": "2026-07-26T01:02:03Z",
+      "releaseNotes": "新增智能订单；优化 ETF 配置体验。"
+    }
+  ]
+}

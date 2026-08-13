@@ -73,7 +73,13 @@ class PublicationServiceTests(unittest.TestCase):
         ), patch.object(manager, "_execute_stage", return_value=0), patch(
             "backend.api.publication_service.publish_merged_announcements",
             return_value=publish_meta,
-        ) as publish:
+        ) as publish, patch(
+            "backend.api.dashboard_package_import.promote_active_imported_package",
+            return_value=None,
+        ), patch(
+            "backend.api.dashboard_package.dashboard_package_builder.build",
+            return_value=object(),
+        ):
             job = manager.start_pipeline()
             deadline = time.monotonic() + 3
             snapshot = manager.get_job(job.job_id)

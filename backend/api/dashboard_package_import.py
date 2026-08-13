@@ -19,7 +19,14 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
+from .app_watch_baseline import (
+    APP_WATCH_BASELINE_FILENAME,
+    app_watch_baseline_skip_ready,
+    synthesize_app_watch_baseline,
+    validate_app_watch_baseline,
+)
 from .config import settings
 from .dashboard_package import (
     PACKAGE_FILES,
@@ -28,6 +35,8 @@ from .dashboard_package import (
     SCHEMA_VERSION,
     DashboardPackage,
     PackageArtifact,
+    compose_dashboard_package,
+    package_zip_bytes,
 )
 from .matching_baseline import BASELINE_FILENAME, csv_bytes, validate_matching_baseline
 
@@ -38,8 +47,8 @@ MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
 MAX_TOTAL_UNCOMPRESSED_BYTES = 64 * 1024 * 1024
 MAX_MEMBER_UNCOMPRESSED_BYTES = 48 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 250.0
-LEGACY_MEMBER_COUNT = 1 + len(REQUIRED_KEYS)
-BASELINE_MEMBER_COUNT = LEGACY_MEMBER_COUNT + 1
+REQUIRED_MEMBER_COUNT = 1 + len(REQUIRED_KEYS)
+MAX_MEMBER_COUNT = REQUIRED_MEMBER_COUNT + 2
 PREFERENCE_VALUES = frozenset({"live", "imported"})
 
 
@@ -53,6 +62,8 @@ class ValidatedImport:
     body: bytes
     warnings: tuple[str, ...] = ()
     matching_baseline: dict[str, Any] | None = None
+    app_watch_baseline_body: bytes | None = None
+    app_watch_baseline_synthesized: bool = False
 
 
 def imported_package_path() -> Path:
@@ -62,6 +73,23 @@ def imported_package_path() -> Path:
 def imported_backup_path() -> Path:
     path = imported_package_path()
     return path.with_name(f"{path.name}.bak")
+
+
+def working_package_path() -> Path:
+    configured = getattr(settings, "dashboard_data_working_zip_path", None)
+    if isinstance(configured, Path):
+        return configured
+    path = imported_package_path()
+    return path.with_name("current-dashboard-data.zip")
+
+
+def working_backup_path() -> Path:
+    path = working_package_path()
+    return path.with_name(f"{path.name}.bak")
+
+
+def immutable_origin_path(body: bytes) -> Path:
+    return imported_package_path().parent / "origins" / f"{hashlib.sha256(body).hexdigest()}.zip"
 
 
 def preference_path() -> Path:
@@ -135,6 +163,63 @@ def _validate_row_list(value: object, label: str, required_keys: set[str]) -> li
     return rows
 
 
+def _validate_app_update_rows(rows: list[dict[str, Any]]) -> tuple[str, ...]:
+    """Validate display-critical App fields and flag legacy duplicate events."""
+
+    text_fields = {
+        "id", "broker_code", "broker_name", "app_name", "source_url", "content_sha256",
+        "crawl_time", "app_version", "platform", "publish_date", "update_type",
+        "update_summary", "processed_at", "search_text",
+    }
+    for index, row in enumerate(rows):
+        for field in text_fields:
+            if not isinstance(row.get(field), str):
+                raise DashboardPackageImportError(f"app_updates[{index}].{field} 必须是字符串")
+        if row["publish_timestamp"] is not None and (
+            isinstance(row["publish_timestamp"], bool)
+            or not isinstance(row["publish_timestamp"], (int, float))
+        ):
+            raise DashboardPackageImportError(
+                f"app_updates[{index}].publish_timestamp 必须是数字或 null"
+            )
+        for field in ("feature_tags", "highlights"):
+            value = row.get(field)
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                raise DashboardPackageImportError(f"app_updates[{index}].{field} 必须是字符串数组")
+        publish_date = row["publish_date"].strip()
+        if publish_date:
+            try:
+                datetime.strptime(publish_date, "%Y-%m-%d")
+            except ValueError as exc:
+                raise DashboardPackageImportError(
+                    f"app_updates[{index}].publish_date 必须是 YYYY-MM-DD"
+                ) from exc
+        source_url = row["source_url"].strip()
+        if source_url:
+            parsed = urlsplit(source_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+                raise DashboardPackageImportError(
+                    f"app_updates[{index}].source_url 必须是 HTTP(S) 地址或空字符串"
+                )
+
+    warnings: list[str] = []
+    ids = [row["id"].strip() for row in rows]
+    if any(item and count > 1 for item, count in Counter(ids).items()):
+        warnings.append("旧版 1.x dashboard-data 包含重复 App id，前端将按版本事件兼容合并")
+    event_keys = [
+        (
+            (row["broker_code"] or row["broker_name"]).strip().lower(),
+            row["app_name"].strip().lower(),
+            row["app_version"].strip().removeprefix("V").removeprefix("v").lower(),
+        )
+        for row in rows
+        if row["app_version"].strip()
+    ]
+    if any(count > 1 for count in Counter(event_keys).values()):
+        warnings.append("旧版 1.x dashboard-data 包含重复 App 版本事件，前端将兼容合并")
+    return tuple(warnings)
+
+
 def _validate_package_payload(
     manifest_body: bytes,
     bodies: dict[str, bytes],
@@ -149,8 +234,9 @@ def _validate_package_payload(
         "timezone",
         "datasets",
     }
-    current_manifest_keys = {*legacy_manifest_keys, "matching_baseline"}
-    if set(manifest) not in {frozenset(legacy_manifest_keys), frozenset(current_manifest_keys)}:
+    optional_manifest_keys = {"matching_baseline", "app_watch_baseline"}
+    manifest_keys = set(manifest)
+    if not legacy_manifest_keys.issubset(manifest_keys) or not manifest_keys <= legacy_manifest_keys | optional_manifest_keys:
         raise DashboardPackageImportError("manifest.json 字段结构无效")
     schema_version = _require_text(manifest.get("schema_version"), "manifest.schema_version")
     reader_version = _require_text(manifest.get("minimum_reader_version"), "manifest.minimum_reader_version")
@@ -269,7 +355,7 @@ def _validate_package_payload(
     if ai_analysis["meta"] is not None and not isinstance(ai_analysis["meta"], dict):
         raise DashboardPackageImportError("ai_analysis.json.meta 必须是对象或 null")
 
-    warnings: list[str] = []
+    warnings: list[str] = list(_validate_app_update_rows(app_updates))
     ids = [str(row.get("id") or "") for row in tenders]
     duplicate_ids = sorted(item for item, count in Counter(ids).items() if item and count > 1)
     if duplicate_ids:
@@ -319,15 +405,19 @@ def validate_zip_bytes(body: bytes) -> ValidatedImport:
         raise DashboardPackageImportError("导入文件不是有效 ZIP") from exc
     with archive:
         infos = archive.infolist()
-        if len(infos) not in {LEGACY_MEMBER_COUNT, BASELINE_MEMBER_COUNT}:
+        if not REQUIRED_MEMBER_COUNT <= len(infos) <= MAX_MEMBER_COUNT:
             raise DashboardPackageImportError("ZIP 成员数量不符合标准数据包结构")
-        expected_names = {"dashboard-data/manifest.json", *(f"dashboard-data/{name}" for name in PACKAGE_FILES.values())}
+        required_names = {"dashboard-data/manifest.json", *(f"dashboard-data/{name}" for name in PACKAGE_FILES.values())}
         baseline_name = f"dashboard-data/{BASELINE_FILENAME}"
-        if len(infos) == BASELINE_MEMBER_COUNT:
-            expected_names.add(baseline_name)
+        app_baseline_name = f"dashboard-data/{APP_WATCH_BASELINE_FILENAME}"
+        allowed_names = {*required_names, baseline_name, app_baseline_name}
         names = [info.filename for info in infos]
-        if len(set(names)) != len(names) or set(names) != expected_names:
-            raise DashboardPackageImportError("ZIP 成员必须精确匹配 dashboard-data 标准文件结构")
+        if (
+            len(set(names)) != len(names)
+            or not required_names.issubset(names)
+            or not set(names) <= allowed_names
+        ):
+            raise DashboardPackageImportError("ZIP 成员必须匹配 dashboard-data 标准文件结构")
         total_size = 0
         bodies: dict[str, bytes] = {}
         for info in infos:
@@ -358,6 +448,8 @@ def validate_zip_bytes(body: bytes) -> ValidatedImport:
                 bodies["manifest"] = data
             elif name == baseline_name:
                 bodies["matching_baseline"] = data
+            elif name == app_baseline_name:
+                bodies["app_watch_baseline"] = data
             else:
                 key = next((item for item, filename in PACKAGE_FILES.items() if filename == name.rsplit("/", 1)[-1]), None)
                 if key is None:
@@ -365,6 +457,7 @@ def validate_zip_bytes(body: bytes) -> ValidatedImport:
                 bodies[key] = data
     manifest_body = bodies.pop("manifest")
     baseline_body = bodies.pop("matching_baseline", None)
+    app_baseline_body = bodies.pop("app_watch_baseline", None)
     package, warnings = _validate_package_payload(manifest_body, bodies)
     metadata = package.manifest.get("matching_baseline")
     baseline: dict[str, Any] | None = None
@@ -386,13 +479,70 @@ def validate_zip_bytes(body: bytes) -> ValidatedImport:
             baseline = validate_matching_baseline(decoded)
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
             raise DashboardPackageImportError(str(exc)) from exc
-        package = DashboardPackage(
-            package.manifest,
-            package.artifacts,
-            manifest_body=package.manifest_body,
-            matching_baseline_body=baseline_body,
-        )
-    return ValidatedImport(package, body, tuple(warning_list), baseline)
+    app_metadata = package.manifest.get("app_watch_baseline")
+    app_baseline_synthesized = False
+    if app_baseline_body is None:
+        if isinstance(app_metadata, dict) and app_metadata.get("available") is True:
+            raise DashboardPackageImportError("数据包缺少 app_watch_baseline.csv")
+        try:
+            app_baseline_body = synthesize_app_watch_baseline(package.body("app_updates"))
+        except ValueError as exc:
+            raise DashboardPackageImportError(str(exc)) from exc
+        app_baseline_synthesized = True
+        warning_list.append("旧版数据包未携带完整 App Watch 基线，已从展示记录恢复可用身份；已合并的历史快照无法还原")
+    else:
+        expected_keys = {"file", "bytes", "sha256", "record_count", "available", "skip_ready"}
+        legacy_expected_keys = expected_keys - {"skip_ready"}
+        if isinstance(app_metadata, dict) and set(app_metadata) == legacy_expected_keys:
+            app_metadata = {**app_metadata, "skip_ready": app_watch_baseline_skip_ready(app_baseline_body)}
+            updated_manifest = dict(package.manifest)
+            updated_manifest["app_watch_baseline"] = app_metadata
+            package = DashboardPackage(updated_manifest, package.artifacts)
+            app_baseline_synthesized = True
+            warning_list.append("旧版 App Watch 基线缺少 skip_ready 标记，已按内容哈希完整性迁移")
+        if not isinstance(app_metadata, dict) or set(app_metadata) != expected_keys:
+            raise DashboardPackageImportError("manifest.app_watch_baseline 结构无效")
+        if app_metadata.get("file") != APP_WATCH_BASELINE_FILENAME or app_metadata.get("available") is not True:
+            raise DashboardPackageImportError("manifest.app_watch_baseline 元数据无效")
+        if (
+            app_metadata.get("bytes") != len(app_baseline_body)
+            or app_metadata.get("sha256") != hashlib.sha256(app_baseline_body).hexdigest()
+        ):
+            raise DashboardPackageImportError("app_watch_baseline.csv 与 manifest 校验值不一致")
+        try:
+            app_rows = validate_app_watch_baseline(app_baseline_body)
+        except ValueError as exc:
+            raise DashboardPackageImportError(str(exc)) from exc
+        if app_metadata.get("record_count") != len(app_rows):
+            raise DashboardPackageImportError("manifest.app_watch_baseline.record_count 不一致")
+        if app_metadata.get("skip_ready") is not app_watch_baseline_skip_ready(app_baseline_body):
+            raise DashboardPackageImportError("manifest.app_watch_baseline.skip_ready 不一致")
+    if app_baseline_synthesized:
+        updated_manifest = dict(package.manifest)
+        updated_manifest["app_watch_baseline"] = {
+            "file": APP_WATCH_BASELINE_FILENAME,
+            "bytes": len(app_baseline_body),
+            "sha256": hashlib.sha256(app_baseline_body).hexdigest(),
+            "record_count": len(validate_app_watch_baseline(app_baseline_body)),
+            "available": True,
+            "skip_ready": app_watch_baseline_skip_ready(app_baseline_body),
+        }
+        package = DashboardPackage(updated_manifest, package.artifacts)
+    package = DashboardPackage(
+        package.manifest,
+        package.artifacts,
+        manifest_body=None if app_baseline_synthesized else package.manifest_body,
+        matching_baseline_body=baseline_body,
+        app_watch_baseline_body=app_baseline_body,
+    )
+    return ValidatedImport(
+        package,
+        body,
+        tuple(warning_list),
+        baseline,
+        app_baseline_body,
+        app_baseline_synthesized,
+    )
 
 
 def _atomic_write(path: Path, body: bytes) -> None:
@@ -438,6 +588,17 @@ def _restore_matching_baseline(payload: dict[str, Any]) -> dict[Path, bytes | No
     return previous
 
 
+def _restore_app_watch_baseline(body: bytes) -> dict[Path, bytes | None]:
+    target = settings.app_releases_csv_path
+    previous = {target: target.read_bytes() if target.is_file() else None}
+    try:
+        _atomic_write(target, body)
+    except Exception:
+        _rollback_files(previous)
+        raise
+    return previous
+
+
 def read_preference() -> tuple[str, str | None]:
     path = preference_path()
     if not path.exists():
@@ -461,26 +622,130 @@ def write_preference(preferred_source: str) -> None:
 def persist_imported(body: bytes) -> ValidatedImport:
     validated = validate_zip_bytes(body)
     target = imported_package_path()
+    origin = immutable_origin_path(body)
+    working = working_package_path()
     backup = imported_backup_path()
-    old_body: bytes | None = None
+    working_backup = working_backup_path()
+    app_release_path = getattr(settings, "app_releases_csv_path", None)
+    imported_baseline_path = getattr(settings, "imported_matching_baseline_path", None)
+    tracked_paths = {
+        target,
+        working,
+        backup,
+        working_backup,
+        preference_path(),
+        origin,
+    }
+    if isinstance(app_release_path, Path):
+        tracked_paths.add(app_release_path)
+    if isinstance(imported_baseline_path, Path):
+        tracked_paths.add(imported_baseline_path)
+    if validated.matching_baseline is not None:
+        tracked_paths.update(_matching_baseline_targets(validated.matching_baseline))
+    else:
+        for name in (
+            "matching_procurement_csv_path",
+            "matching_result_csv_path",
+            "matching_verified_links_path",
+            "matching_state_path",
+        ):
+            path = getattr(settings, name, None)
+            if isinstance(path, Path):
+                tracked_paths.add(path)
+    previous = {path: path.read_bytes() if path.is_file() else None for path in tracked_paths}
     baseline_previous: dict[Path, bytes | None] | None = None
+    app_previous: dict[Path, bytes | None] | None = None
     if target.exists():
-        old_body = target.read_bytes()
-        _atomic_write(backup, old_body)
+        _atomic_write(backup, target.read_bytes())
+    if working.exists():
+        _atomic_write(working_backup, working.read_bytes())
     try:
         if validated.matching_baseline is not None:
             baseline_previous = _restore_matching_baseline(validated.matching_baseline)
+        else:
+            for name in (
+                "matching_procurement_csv_path",
+                "matching_result_csv_path",
+                "matching_verified_links_path",
+                "matching_state_path",
+                "imported_matching_baseline_path",
+            ):
+                path = getattr(settings, name, None)
+                if isinstance(path, Path):
+                    path.unlink(missing_ok=True)
+        if validated.app_watch_baseline_body is None:
+            raise DashboardPackageImportError("数据包没有可恢复的 App Watch 基线")
+        if isinstance(app_release_path, Path):
+            app_previous = _restore_app_watch_baseline(validated.app_watch_baseline_body)
+        if origin.is_file() and origin.read_bytes() != body:
+            raise DashboardPackageImportError("不可变导入包摘要冲突")
+        if not origin.is_file():
+            _atomic_write(origin, body)
         _atomic_write(target, body)
+        # The original upload is immutable. The working copy is canonicalized
+        # so legacy packages gain the synthesized App baseline once, instead of
+        # rebuilding it on every restart.
+        _atomic_write(working, package_zip_bytes(validated.package))
         write_preference("imported")
     except Exception:
         if baseline_previous is not None:
             _rollback_files(baseline_previous)
-        if old_body is not None:
-            _atomic_write(target, old_body)
-        else:
-            target.unlink(missing_ok=True)
+        if app_previous is not None:
+            _rollback_files(app_previous)
+        _rollback_files(previous)
         raise
     return validated
+
+
+def persist_working_package(package: DashboardPackage) -> ValidatedImport:
+    """Validate and atomically advance the mutable package derived from an import."""
+
+    body = package_zip_bytes(package)
+    validated = validate_zip_bytes(body)
+    target = working_package_path()
+    backup = working_backup_path()
+    previous = {
+        target: target.read_bytes() if target.is_file() else None,
+        backup: backup.read_bytes() if backup.is_file() else None,
+    }
+    matching_payload: dict[str, Any] | None = None
+    if validated.matching_baseline is not None:
+        matching_payload = validated.matching_baseline
+        for path in _matching_baseline_targets(matching_payload):
+            previous[path] = path.read_bytes() if path.is_file() else None
+    try:
+        if target.is_file():
+            _atomic_write(backup, target.read_bytes())
+        if matching_payload is not None:
+            _restore_matching_baseline(matching_payload)
+        _atomic_write(target, body)
+    except Exception:
+        _rollback_files(previous)
+        raise
+    imported_package_store.invalidate()
+    return validated
+
+
+def promote_active_imported_package(
+    live_package: DashboardPackage,
+    replace_datasets: set[str],
+) -> dict[str, Any] | None:
+    """Advance an imported lineage after a successful local data task.
+
+    Live-only installations keep their existing behavior. Imported mode keeps
+    every untouched dataset from the current working package and replaces only
+    the domains that the successful task actually produced.
+    """
+
+    preferred, _ = read_preference()
+    if preferred != "imported":
+        return None
+    current, error, _ = imported_package_store.inspect()
+    if current is None or error is not None or not _is_complete(current):
+        raise DashboardPackageImportError(error or "当前导入工作包不可用")
+    composed = compose_dashboard_package(current, live_package, replace_datasets)
+    validated = persist_working_package(composed)
+    return validated.package.manifest
 
 
 class ImportedPackageStore:
@@ -492,7 +757,9 @@ class ImportedPackageStore:
         self._warnings: tuple[str, ...] = ()
 
     def inspect(self) -> tuple[DashboardPackage | None, str | None, tuple[str, ...]]:
-        path = imported_package_path()
+        path = working_package_path()
+        if not path.is_file():
+            path = imported_package_path()
         with self._lock:
             try:
                 stat_result = path.stat()
@@ -508,9 +775,25 @@ class ImportedPackageStore:
             try:
                 validated = validate_zip_bytes(path.read_bytes())
             except (OSError, DashboardPackageImportError) as exc:
-                self._package = None
-                self._error = str(exc)
-                self._warnings = ()
+                origin = imported_package_path()
+                if path != origin and origin.is_file():
+                    try:
+                        validated = validate_zip_bytes(origin.read_bytes())
+                    except (OSError, DashboardPackageImportError):
+                        self._package = None
+                        self._error = str(exc)
+                        self._warnings = ()
+                    else:
+                        self._package = validated.package
+                        self._error = None
+                        self._warnings = (
+                            *validated.warnings,
+                            "当前导入工作包损坏，已回退不可变原始导入包",
+                        )
+                else:
+                    self._package = None
+                    self._error = str(exc)
+                    self._warnings = ()
             else:
                 self._package = validated.package
                 self._error = None
@@ -547,6 +830,11 @@ def source_status(live_package: DashboardPackage | None) -> dict[str, Any]:
     imported, imported_error, imported_warnings = imported_package_store.inspect()
     live_available = _is_complete(live_package)
     imported_available = _is_complete(imported)
+    imported_warning_list = list(imported_warnings)
+    if imported is not None:
+        app_baseline = imported.manifest.get("app_watch_baseline")
+        if isinstance(app_baseline, dict) and app_baseline.get("available") is True and app_baseline.get("skip_ready") is not True:
+            imported_warning_list.append("App 结构化历史缺少部分内容哈希或来源身份；相关来源将在后续采集时重新处理一次")
     live_reason = None if live_available else "live 招采或 App 数据不可用"
     imported_reason = None if imported_available else (imported_error or "imported 招采或 App 数据不可用")
     active = preferred if (preferred == "live" and live_available) or (preferred == "imported" and imported_available) else (
@@ -557,17 +845,26 @@ def source_status(live_package: DashboardPackage | None) -> dict[str, Any]:
         fallback_reason = f"{imported_reason or 'imported 数据不可用'}，已回退 live"
     elif preferred == "live" and not live_available and imported_available:
         fallback_reason = f"{live_reason or 'live 数据不可用'}，已回退 imported"
+    origin_id: str | None = None
+    origin_path = imported_package_path()
+    if origin_path.is_file():
+        try:
+            origin_id = hashlib.sha256(origin_path.read_bytes()).hexdigest()
+        except OSError:
+            origin_id = None
     return {
         "preferred_source": preferred,
         "active_source": active,
         "fallback_reason": fallback_reason,
+        "origin_id": origin_id,
+        "working_package": working_package_path().is_file(),
         "sources": {
             "live": {"available": live_available, "reason": live_reason, "manifest": live_package.manifest if live_package else None},
             "imported": {
                 "available": imported_available,
                 "reason": imported_reason,
                 "manifest": imported.manifest if imported is not None else None,
-                "warnings": list(imported_warnings),
+                "warnings": imported_warning_list,
             },
         },
     }

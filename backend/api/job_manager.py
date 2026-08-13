@@ -330,7 +330,29 @@ class JobManager(JobCommandFactory):
                 self._finish_job(job_id, status="cancelled", exit_code=exit_code, error="管理员手动停止")
             else:
                 status = "succeeded" if exit_code == 0 else "failed"
-                self._finish_job(job_id, status=status, exit_code=exit_code, error=None)
+                error: str | None = None
+                if status == "succeeded" and job_type == "app-watch":
+                    try:
+                        from .dashboard_package import dashboard_package_builder
+                        from .dashboard_package_import import promote_active_imported_package
+
+                        live_package = dashboard_package_builder.build(force=True)
+                        promoted = promote_active_imported_package(live_package, {"app_updates"})
+                        if promoted is not None:
+                            self._append_event(
+                                job_id,
+                                {
+                                    "type": "log",
+                                    "job_id": job_id,
+                                    "stream": "stdout",
+                                    "message": "[dashboard-data] App 更新已合并到当前导入工作包",
+                                    "timestamp": utc_now(),
+                                },
+                            )
+                    except Exception as exc:
+                        status = "failed"
+                        error = f"App 数据已生成，但导入工作包提升失败: {exc}"
+                self._finish_job(job_id, status=status, exit_code=exit_code, error=error)
         except Exception as exc:
             if process and process.poll() is None:
                 try:
@@ -458,11 +480,21 @@ class JobManager(JobCommandFactory):
 
                 publish_meta = publish_merged_announcements()
                 announcement_response_cache.invalidate(settings.announcement_csv_path)
+                from .dashboard_package import dashboard_package_builder
+                from .dashboard_package_import import promote_active_imported_package
+
+                live_package = dashboard_package_builder.build(force=True)
+                promoted_manifest = promote_active_imported_package(
+                    live_package,
+                    {"tender_projects"},
+                )
                 log(
                     "[publish] 完成：发布 "
                     f"{publish_meta['published_count']} 条，留存比例 "
                     f"{float(publish_meta['retain_ratio']):.1%}"
                 )
+                if promoted_manifest is not None:
+                    log("[dashboard-data] 招采数据已合并到当前导入工作包")
             except Exception as exc:
                 log(f"[publish] 失败: {exc}", "stderr")
                 self._finish_job(job_id, status="failed", exit_code=None, error=f"自动发布失败: {exc}")

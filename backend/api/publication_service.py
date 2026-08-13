@@ -58,15 +58,6 @@ def publish_merged_announcements() -> dict[str, object]:
     publish_csv_atomically(publish_plan.fieldnames, publish_plan.records, target_path)
     prune_old_announcement_backups(target_path)
 
-    # A full imported package hydrates the live matching baseline while the
-    # dashboard intentionally keeps showing the imported snapshot.  Once the
-    # first post-import pipeline publishes successfully, follow the live data
-    # again so newly crawled records become visible without a manual switch.
-    if settings.imported_matching_baseline_path.is_file():
-        from .dashboard_package_import import write_preference
-
-        write_preference("live")
-
     published_at = datetime.now(timezone.utc).isoformat()
     updated_at = datetime.fromtimestamp(target_path.stat().st_mtime, timezone.utc).isoformat()
     return {
@@ -76,5 +67,5 @@ def publish_merged_announcements() -> dict[str, object]:
         "published_at": published_at,
         "updated_at": updated_at,
         "backup_file": backup_name,
-        "dashboard_source": "live",
+        "dashboard_source": "selected",
     }

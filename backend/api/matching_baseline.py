@@ -115,7 +115,12 @@ def validate_matching_baseline(payload: object) -> dict[str, Any]:
         raise ValueError("matching_baseline.json.matching_state 结构无效")
     procurements = {incremental_state.notice_id(row) for row in payload["procurement_rows"]}
     results = {incremental_state.notice_id(row) for row in payload["result_rows"]}
-    if "" in procurements or "" in results or len(results) != len(payload["result_rows"]):
+    if (
+        "" in procurements
+        or "" in results
+        or len(procurements) != len(payload["procurement_rows"])
+        or len(results) != len(payload["result_rows"])
+    ):
         raise ValueError("matching_baseline.json 包含缺失或重复公告 ID")
     verified_ids = {str(row.get("result_notice_id") or "").strip() for row in payload["verified_links"]}
     if "" in verified_ids or len(verified_ids) != len(payload["verified_links"]) or verified_ids != results:

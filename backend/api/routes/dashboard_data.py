@@ -140,6 +140,8 @@ def preview_dashboard_import(body: bytes = Body(..., media_type="application/zip
         "manifest": validated.package.manifest,
         "warnings": warnings,
         "matching_baseline_available": validated.matching_baseline is not None,
+        "app_watch_baseline_available": validated.app_watch_baseline_body is not None,
+        "app_watch_baseline_synthesized": validated.app_watch_baseline_synthesized,
     }
 
 
@@ -176,6 +178,8 @@ def import_dashboard_data(body: bytes = Body(..., media_type="application/zip"))
             "warnings": warnings,
             "source": source,
             "matching_baseline_restored": validated.matching_baseline is not None,
+            "app_watch_baseline_restored": validated.app_watch_baseline_body is not None,
+            "app_watch_baseline_synthesized": validated.app_watch_baseline_synthesized,
         }
     finally:
         job_manager.release_operation("dashboard_import")

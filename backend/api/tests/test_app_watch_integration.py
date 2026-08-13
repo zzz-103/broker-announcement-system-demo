@@ -13,10 +13,67 @@ from fastapi.testclient import TestClient
 from backend.api import main, scheduler
 from backend.api.config import PROJECT_ROOT
 from backend.api.job_commands import JobCommandFactory
+from backend.api.job_manager import Job, JobManager, utc_now
 from backend.api.routes import jobs
 
 
 class AppWatchIntegrationTests(unittest.TestCase):
+    def test_successful_app_watch_promotes_imported_working_package(self) -> None:
+        manager = JobManager()
+        job = Job("app-success", "app-watch", "running", utc_now())
+        manager._jobs[job.job_id] = job
+        manager._events[job.job_id] = __import__("collections").deque()
+        manager._event_sequences[job.job_id] = 0
+
+        class Process:
+            pid = 101
+            stdout = iter(())
+            stderr = iter(())
+
+            def wait(self) -> int:
+                return 0
+
+            def poll(self) -> int:
+                return 0
+
+        process = Process()
+        with (
+            patch.object(manager, "_read_stream"),
+            patch("backend.api.job_manager.subprocess.Popen", return_value=process),
+            patch("backend.api.dashboard_package.dashboard_package_builder.build", return_value=object()),
+            patch("backend.api.dashboard_package_import.promote_active_imported_package", return_value={"package_version": "next"}) as promote,
+        ):
+            manager._run_job(job.job_id, lambda: (["python", "app"], PROJECT_ROOT, {}))
+        self.assertEqual(manager.get_job(job.job_id)["status"], "succeeded")
+        promote.assert_called_once()
+
+    def test_failed_app_watch_does_not_promote_working_package(self) -> None:
+        manager = JobManager()
+        job = Job("app-failed", "app-watch", "running", utc_now())
+        manager._jobs[job.job_id] = job
+        manager._events[job.job_id] = __import__("collections").deque()
+        manager._event_sequences[job.job_id] = 0
+
+        class Process:
+            pid = 102
+            stdout = iter(())
+            stderr = iter(())
+
+            def wait(self) -> int:
+                return 1
+
+            def poll(self) -> int:
+                return 1
+
+        with (
+            patch.object(manager, "_read_stream"),
+            patch("backend.api.job_manager.subprocess.Popen", return_value=Process()),
+            patch("backend.api.dashboard_package_import.promote_active_imported_package") as promote,
+        ):
+            manager._run_job(job.job_id, lambda: (["python", "app"], PROJECT_ROOT, {}))
+        self.assertEqual(manager.get_job(job.job_id)["status"], "failed")
+        promote.assert_not_called()
+
     def test_job_command_uses_backend_module_and_shared_runtime(self) -> None:
         factory = JobCommandFactory()
         with tempfile.TemporaryDirectory() as directory:

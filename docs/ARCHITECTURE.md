@@ -67,6 +67,8 @@ backend/config/broker_app_watch/brokers.yaml
 → dashboard-data app_updates
 ```
 
+正式 CSV 保留平台和采集快照作为来源证据；dashboard-data 在展示边界按“券商 + App + 规范版本”合并版本事件，跨平台记录显示为全平台。摘要只接受明确的新增、优化、修复或安全/合规变化，运行环境、文件大小、下载信息、产品介绍和宣传内容不进入看板。Apple App Store 当前版本通过固定 App ID 的公开 Lookup API 采集，来源仍统一配置在 `brokers.yaml`。
+
 ### 自定义情报与邮件
 
 ```text
@@ -84,9 +86,9 @@ backend/config/broker_app_watch/brokers.yaml
 
 ### 数据包导入与导出
 
-标准包固定包含 `manifest.json` 和 5 个数据集：`overview.json`、`filters.json`、`tender_projects.json`、`app_updates.json`、`ai_analysis.json`。当 Manifest 标记 `matching_baseline.available=true` 时，还必须包含 `matching_baseline.json`。
+标准包固定包含 `manifest.json` 和 5 个数据集：`overview.json`、`filters.json`、`tender_projects.json`、`app_updates.json`、`ai_analysis.json`。当 Manifest 标记相应基线可用时，还会包含 `matching_baseline.json` 和 `app_watch_baseline.csv`；后者保存 App 内容哈希、来源身份与结构化历史，供迁移后的设备跳过未变化来源，避免重复调用 LLM。
 
-导出对内容生成字节数、SHA-256、记录数和 Schema 元数据。导入先预览并校验文件名、大小、哈希、结构和记录数，再原子保存 ZIP、恢复可选匹配基线并将源切换为 `imported`。前端始终通过源选择器读取 live/imported 当前源；导入不覆盖用户、审计、情报、邮件、资格名单、`.env` 或 LLM 配置。
+导出对内容生成字节数、SHA-256、记录数和 Schema 元数据。导入先预览并校验文件名、大小、哈希、结构和记录数，再保留原始导入 ZIP、初始化可演进当前工作包、恢复可选招采匹配和 App Watch 基线并将源切换为 `imported`。后续 App Watch、完整 Pipeline 或 AI 分析成功时只合并对应数据集到当前工作包，未更新的数据集继续沿用导入基线；原始导入 ZIP 不被任务覆盖。前端始终通过源选择器读取 live/imported 当前源；导入不覆盖用户、审计、情报、邮件、资格名单、`.env` 或 LLM 配置。
 
 ## 持久化与配置
 

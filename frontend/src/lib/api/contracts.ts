@@ -88,12 +88,15 @@ export interface DashboardDataSourceEntry {
   available: boolean;
   reason: string | null;
   manifest: DashboardManifest | null;
+  warnings?: string[];
 }
 
 export interface DashboardDataSourceResponse {
   preferred_source: DashboardDataSource;
   active_source: DashboardDataSource | null;
   fallback_reason: string | null;
+  origin_id?: string | null;
+  working_package?: boolean;
   sources: Record<DashboardDataSource, DashboardDataSourceEntry>;
 }
 
@@ -102,6 +105,8 @@ export interface DashboardImportPreviewResponse {
   manifest: DashboardManifest | null;
   warnings: string[];
   matching_baseline_available?: boolean;
+  app_watch_baseline_available?: boolean;
+  app_watch_baseline_synthesized?: boolean;
 }
 
 export interface DashboardImportResponse {
@@ -110,6 +115,8 @@ export interface DashboardImportResponse {
   warnings: string[];
   source: DashboardDataSourceResponse;
   matching_baseline_restored?: boolean;
+  app_watch_baseline_restored?: boolean;
+  app_watch_baseline_synthesized?: boolean;
 }
 export interface AiAnalysisResponse {
   content: string | null; updatedAt: string | null;

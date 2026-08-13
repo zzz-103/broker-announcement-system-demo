@@ -116,7 +116,7 @@ export function DashboardDataManager({ token, busy, clearAuth, onDataRefresh }: 
     try {
       const response = await setDashboardSource(token, source);
       setSourceState(response);
-      setMessage(`已切换至${source === "live" ? "实时源" : "导入包"}，看板将在下次加载时使用该来源。`);
+      setMessage(`已切换至${source === "live" ? "实时源" : "导入工作包"}，看板将在下次加载时使用该来源。`);
       onDataRefresh?.();
     } catch (reason) {
       handleError(reason, "切换数据来源失败，请稍后重试。");
@@ -187,7 +187,7 @@ export function DashboardDataManager({ token, busy, clearAuth, onDataRefresh }: 
       setPreviewOpen(false);
       setSelectedFile(null);
       setPreview(null);
-      setMessage(`导入成功：${response.manifest.package_version}，已切换为导入包并刷新来源状态。`);
+      setMessage(`导入成功：${response.manifest.package_version}，已初始化可增量维护的导入工作包。`);
       onDataRefresh?.();
     } catch (reason) {
       handleError(reason, "导入失败，请稍后重试。");
@@ -197,7 +197,7 @@ export function DashboardDataManager({ token, busy, clearAuth, onDataRefresh }: 
   }, [disabled, handleError, onDataRefresh, preview?.valid, selectedFile, token]);
 
   const activeSource = sourceState?.active_source;
-  const sourceLabel = (source: DashboardDataSource) => source === "live" ? "实时源" : "导入包";
+  const sourceLabel = (source: DashboardDataSource) => source === "live" ? "实时源" : "导入工作包";
 
   return (
     <section className="mt-5 rounded-lg border border-[#D9E2EC] bg-white shadow-[var(--workspace-shadow)]">
@@ -209,7 +209,7 @@ export function DashboardDataManager({ token, busy, clearAuth, onDataRefresh }: 
               <h2 className="text-base font-bold text-[#172033]">数据管理</h2>
               {activeSource && <span className="rounded-full bg-[#EAF2FF] px-2 py-0.5 text-[10px] font-semibold text-[#315EA8]">当前：{sourceLabel(activeSource)}</span>}
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-[#667085]">查看当前来源，切换实时源或导入包；导出的是当前活动数据包。</p>
+            <p className="mt-1 text-xs leading-relaxed text-[#667085]">导入包会作为基线持续合并本机采集结果；原始 ZIP 保留不变，导出的是最新工作包。</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <input ref={fileInputRef} type="file" accept=".zip,application/zip" className="hidden" onChange={handleFileChange} />
@@ -236,6 +236,7 @@ export function DashboardDataManager({ token, busy, clearAuth, onDataRefresh }: 
                     <Button type="button" variant={selected ? "secondary" : "outline"} size="sm" disabled={disabled || !entry.available || selected} onClick={() => void handleSourceChange(source)} className="h-7 text-[11px]">{selected ? "已选择" : "切换"}</Button>
                   </div>
                   <p className="mt-1 text-[11px] text-[#98A2B3]">{entry.available ? "来源可用" : entry.reason || "暂无可用数据"}</p>
+                  {entry.warnings && entry.warnings.length > 0 && <p className="mt-1 text-[11px] leading-relaxed text-amber-700">{entry.warnings.join("；")}</p>}
                   <div className="mt-3"><PackageSummary manifest={entry.manifest} compact /></div>
                 </div>
               );
@@ -252,11 +253,12 @@ export function DashboardDataManager({ token, busy, clearAuth, onDataRefresh }: 
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto border-[#D9E2EC]">
           <DialogHeader>
             <DialogTitle className="text-base text-[#172033]">确认导入数据包</DialogTitle>
-            <DialogDescription className="text-[#667085]">请确认以下数据包信息。导入成功后将自动切换为导入包。</DialogDescription>
+            <DialogDescription className="text-[#667085]">请确认数据包和增量基线。导入后会保留原始 ZIP，并初始化可持续更新的工作包。</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {selectedFile && <p className="text-xs text-[#667085]">文件：<span className="font-semibold text-[#344054]">{selectedFile.name}</span>（{Math.ceil(selectedFile.size / 1024)} KB）</p>}
             <PackageSummary manifest={preview?.manifest ?? null} />
+            {preview && <div className="rounded-md border border-[#E4EAF2] bg-[#F8FAFD] px-3 py-2 text-xs text-[#667085]"><p className="font-semibold text-[#344054]">增量维护能力</p><p className="mt-1">招采匹配基线：{preview.matching_baseline_available ? "完整，可继续增量匹配" : "未携带，仅可展示"}</p><p>App 结构化历史：{preview.app_watch_baseline_available ? preview.app_watch_baseline_synthesized ? "已从旧包兼容恢复，可能缺少合并前快照" : "完整，可复用内容哈希并跳过已处理来源" : "未携带"}</p></div>}
             {preview?.warnings && preview.warnings.length > 0 && <div className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800"><p className="font-semibold">降级警告</p><ul className="mt-1 list-disc space-y-0.5 pl-4">{preview.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
             {preview && !preview.valid && <p className="rounded-md border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">该数据包未通过校验，暂不能导入。</p>}
             <div className="flex justify-end gap-2 pt-1">

@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from backend.broker_app_watch.collectors.http_collector import HttpCollector
 from backend.broker_app_watch.core.config import BrokerCatalog, BrokerSource, load_settings
 from backend.broker_app_watch.parsers.base import ParsedDocument, Parser
+from backend.broker_app_watch.parsers.broker_specific.apple_lookup_api import AppleLookupApiParser
 from backend.broker_app_watch.parsers.broker_specific.cgws_download_html import CgwsDownloadHtmlParser
 from backend.broker_app_watch.parsers.broker_specific.ciccwm_appdown_api import CiccwmAppDownApiParser
 from backend.broker_app_watch.parsers.broker_specific.cmschina_config_json import (
@@ -39,6 +40,7 @@ LOGGER = logging.getLogger(__name__)
 QQ_APP_STORE_HOST = "sj.qq.com"
 QQ_APP_DETAIL_OCR_PARSER = "qq_app_detail_ocr"
 PARSERS: dict[str, type[Parser]] = {
+    "apple_lookup_api": AppleLookupApiParser,
     "generic_html": GenericHtmlParser,
     "guosen_software_api": GuosenSoftwareApiParser,
     "cmschina_config_json": CmschinaConfigJsonParser,

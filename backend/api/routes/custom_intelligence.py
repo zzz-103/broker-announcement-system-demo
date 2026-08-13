@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from urllib.parse import quote
 from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
-from fastapi.responses import Response as RawResponse
+from fastapi.responses import Response as RawResponse, StreamingResponse
 
 from ..audit_store import AuditStoreError, record_event
 from ..auth import get_session, require_admin_token, verify_session_password
@@ -704,6 +706,60 @@ def get_execution(
     except Exception as exc:
         raise _handle_store_error(exc, "无法加载情报执行记录") from exc
     return {"execution": _public_execution(execution)}
+
+
+@router.get("/api/custom-intelligence/executions/{execution_id}/events")
+async def get_execution_events(
+    execution_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+) -> StreamingResponse:
+    """Stream public execution snapshots, ending after the execution is terminal."""
+    session = get_session(authorization)
+    owner_id = _owner_user_id(session)
+    try:
+        initial = store.get_execution(owner_id, execution_id)
+    except Exception as exc:
+        raise _handle_store_error(exc, "无法加载情报执行记录") from exc
+
+    def format_event(execution: dict[str, object]) -> tuple[str, str]:
+        payload = {"type": "execution", "execution": _public_execution(execution)}
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        return serialized, f"data: {serialized}\n\n"
+
+    async def event_stream():
+        # Encourage reverse proxies and browsers to deliver the first event
+        # immediately instead of buffering a small streaming response.
+        yield ":" + " " * 2048 + "\n\n"
+        serialized, event = format_event(initial)
+        yield event
+        if str(initial.get("status") or "") not in {"pending", "running"}:
+            return
+
+        last_serialized = serialized
+        while True:
+            await asyncio.sleep(1)
+            try:
+                execution = await asyncio.to_thread(store.get_execution, owner_id, execution_id)
+            except IntelligenceNotFoundError:
+                return
+            serialized, event = format_event(execution)
+            if serialized != last_serialized:
+                last_serialized = serialized
+                yield event
+            else:
+                yield ": ping\n\n"
+            if str(execution.get("status") or "") not in {"pending", "running"}:
+                return
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/api/custom-intelligence/executions/{execution_id}/rerun", status_code=status.HTTP_202_ACCEPTED)

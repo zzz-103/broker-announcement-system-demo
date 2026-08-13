@@ -25,6 +25,14 @@ export interface DashboardManifest {
     sha256: string | null;
     available: boolean;
   };
+  app_watch_baseline?: {
+    file: string;
+    bytes: number;
+    sha256: string | null;
+    record_count: number;
+    available: boolean;
+    skip_ready: boolean;
+  };
 }
 
 export interface TenderProjectData {

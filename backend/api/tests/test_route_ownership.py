@@ -939,6 +939,31 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertGreaterEqual(len(response.content), 2048)
         self.assertIn(b'"type": "done"', response.content)
 
+    def test_custom_intelligence_execution_stream_returns_terminal_snapshot(self) -> None:
+        headers = self._admin_headers()
+        execution = {
+            "id": 42,
+            "owner_user_id": 0,
+            "snapshot": {"focus": "流式响应验证"},
+            "report": None,
+            "sources": [],
+            "status": "succeeded",
+            "search_status": "succeeded",
+            "analysis_status": "succeeded",
+            "error_message": None,
+            "created_at": "now",
+            "completed_at": "now",
+        }
+        path = "/api/custom-intelligence/executions/42/events"
+        self.assertEqual(self.client.get(path).status_code, 401)
+        with patch.object(custom_intelligence_routes.store, "get_execution", return_value=execution):
+            response = self.client.get(path, headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"].split(";", 1)[0], "text/event-stream")
+        self.assertGreaterEqual(len(response.content), 2048)
+        self.assertIn(b'"type":"execution"', response.content)
+        self.assertIn(b'"status":"succeeded"', response.content)
+
     def test_app_watch_routes_work_with_mocked_manager(self) -> None:
         headers = self._admin_headers()
 
