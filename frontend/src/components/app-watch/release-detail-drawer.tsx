@@ -24,14 +24,14 @@ export function ReleaseDetailDrawer({ record, onClose }: ReleaseDetailDrawerProp
         <div className="px-6 py-5 space-y-6">
           {/* Section 1: Overview */}
           <section>
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex min-w-0 items-start gap-2 mb-3">
               <span
-                className="text-[11px] font-medium px-2 py-0.5 rounded-full text-white"
+                className="shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium text-white"
                 style={{ backgroundColor: typeColor }}
               >
                 {record.updateType}
               </span>
-              <span className="text-[13px] font-semibold text-[#172033]">
+              <span className="min-w-0 flex-1 break-words text-[13px] font-semibold leading-relaxed text-[#172033]">
                 {record.brokerName} · {record.appName}
               </span>
             </div>

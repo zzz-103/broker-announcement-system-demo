@@ -120,20 +120,20 @@ export function AuditRecordsManager() {
             <p className="mt-0.5 text-xs text-[#667085]">今日统计按 {summary?.timezone ?? "Asia/Shanghai"} 时区计算</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
           <select
             value={eventType}
             onChange={(event) => {
               setEventType(event.target.value as AuditEventType | "");
               setPage(1);
             }}
-            className="h-8 min-w-0 rounded-lg border border-[#E4E9F0] bg-white px-2 text-xs text-[#475467] outline-none focus:border-[#2563EB]"
+            className="h-11 min-w-0 flex-1 rounded-lg border border-[#E4E9F0] bg-white px-2 text-xs text-[#475467] outline-none focus:border-[#2563EB] sm:h-8 sm:flex-none"
             aria-label="筛选访问记录类型"
           >
             <option value="">全部记录</option>
             {Object.entries(EVENT_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <button type="button" onClick={() => void loadRecords()} disabled={isLoading} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E4E9F0] px-3 text-xs text-[#344054] hover:bg-[#F5F7FA] disabled:opacity-60">
+          <button type="button" onClick={() => void loadRecords()} disabled={isLoading} className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[#E4E9F0] px-3 text-xs text-[#344054] hover:bg-[#F5F7FA] disabled:opacity-60 sm:h-8">
             <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} /> 刷新
           </button>
         </div>
@@ -165,15 +165,15 @@ export function AuditRecordsManager() {
           </tbody></table>
         </div>
         <div className="space-y-2 md:hidden">
-          {events.map((event) => <div key={event.id} className="rounded-lg border border-[#EEF2F6] p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#172033]">{EVENT_LABELS[event.event_type]}</span><span className="shrink-0 text-[10px] text-[#98A2B3]">{formatTime(event.created_at)}</span></div><p className="mt-1 truncate text-xs font-medium text-[#475467]">{eventIdentity(event)}</p><p className="mt-1 text-[11px] text-[#98A2B3]">{eventDetail(event)}</p></div>)}
+          {events.map((event) => <div key={event.id} className="rounded-lg border border-[#EEF2F6] p-3"><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold text-[#172033]">{EVENT_LABELS[event.event_type]}</span><span className="shrink-0 text-[10px] text-[#98A2B3]">{formatTime(event.created_at)}</span></div><p className="mt-1 min-w-0 truncate text-xs font-medium text-[#475467]">{eventIdentity(event)}</p><p className="mt-1 min-w-0 break-words text-[11px] text-[#98A2B3]">{eventDetail(event)}</p></div>)}
         </div>
         {!isLoading && events.length === 0 && <p className="py-6 text-center text-xs text-[#98A2B3]">{searchQuery ? "未找到匹配的访问记录" : "暂无访问记录"}</p>}
         {meta.total > 0 && (
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
             <span>共 {meta.total} 条 · 第 {meta.page} / {meta.total_pages} 页</span>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={isLoading || meta.page <= 1} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50"><ChevronLeft className="size-3.5" />上一页</button>
-              <button type="button" onClick={() => setPage((current) => Math.min(meta.total_pages, current + 1))} disabled={isLoading || meta.page >= meta.total_pages} className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50">下一页<ChevronRight className="size-3.5" /></button>
+              <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={isLoading || meta.page <= 1} className="inline-flex h-11 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50 sm:h-8"><ChevronLeft className="size-3.5" />上一页</button>
+              <button type="button" onClick={() => setPage((current) => Math.min(meta.total_pages, current + 1))} disabled={isLoading || meta.page >= meta.total_pages} className="inline-flex h-11 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50 sm:h-8">下一页<ChevronRight className="size-3.5" /></button>
             </div>
           </div>
         )}

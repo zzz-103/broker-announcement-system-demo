@@ -123,7 +123,7 @@ function TaskMoreMenu({
         aria-label="更多操作"
         aria-expanded={open}
         onClick={() => setOpen((previous) => !previous)}
-        className="size-7 rounded-md text-[#667085] hover:bg-slate-200/60 hover:text-[#344054]"
+        className="size-11 rounded-md text-[#667085] hover:bg-slate-200/60 hover:text-[#344054] sm:size-7"
       >
         <MoreHorizontal className="size-4" />
       </Button>
@@ -144,7 +144,7 @@ function TaskMoreMenu({
                 setOpen(false);
                 onPublish();
               }}
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-[#344054] hover:bg-[#F2F6FC] disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-[#344054] hover:bg-[#F2F6FC] disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-0"
             >
               {publishRunning ? (
                 <>
@@ -167,7 +167,7 @@ function TaskMoreMenu({
                 setOpen(false);
                 onFullRefresh();
               }}
-              className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-0"
             >
               <RefreshCw className="size-3.5" />
               全量重建
@@ -303,10 +303,11 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
     <div className="min-h-screen overflow-x-clip bg-[#F5F7FA]">
       <header className="sticky top-0 z-40 h-[68px] border-b border-white/10 bg-[#162B49]/95 text-white shadow-[0_8px_24px_rgba(16,40,71,0.16)] backdrop-blur-md">
         <div className="mx-auto flex h-[68px] max-w-[1600px] items-center justify-between px-3 sm:px-8">
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <button
+              type="button"
               onClick={onBack}
-              className="flex items-center gap-1.5 text-sm text-white/70 transition-colors hover:text-white"
+              className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-sm text-white/70 transition-colors hover:bg-white/10 hover:text-white sm:h-auto sm:rounded-none sm:px-0"
             >
               <ArrowLeft className="size-4" />
               返回看板
@@ -320,8 +321,9 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <span className="hidden max-w-[180px] truncate text-xs text-white/60 sm:block">{username}</span>
             <button
+              type="button"
               onClick={handleLogout}
-              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+              className="flex h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white sm:h-auto sm:rounded sm:py-1"
             >
               <LogOut className="size-3.5" />
               退出
@@ -338,16 +340,18 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
           </div>
         </div>
 
-        <div role="tablist" aria-label="管理内容" className="mb-6 flex gap-1 border-b border-[#D9E2EC]">
-          {[
-            ["tasks", "任务运行"],
-            ["users", "用户与审批"],
-            ["reports", "情报报告"],
-            ["records", "审计与反馈"],
-            ["search", "情报技术配置"],
-          ].map(([id, label]) => (
-            <button key={id} type="button" role="tab" aria-selected={activeSection === id} onClick={() => setActiveSection(id as typeof activeSection)} className={cn("border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors", activeSection === id ? "border-[#2563EB] text-[#1F5BB5]" : "border-transparent text-[#667085] hover:text-[#344054]")}>{label}</button>
-          ))}
+        <div className="mb-6 min-w-0 overflow-x-auto border-b border-[#D9E2EC]">
+          <div role="tablist" aria-label="管理内容" className="flex w-max min-w-full gap-1">
+            {[
+              ["tasks", "任务运行"],
+              ["users", "用户与审批"],
+              ["reports", "情报报告"],
+              ["records", "审计与反馈"],
+              ["search", "情报技术配置"],
+            ].map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={activeSection === id} onClick={() => setActiveSection(id as typeof activeSection)} className={cn("h-11 shrink-0 whitespace-nowrap border-b-2 px-4 text-sm font-semibold transition-colors", activeSection === id ? "border-[#2563EB] text-[#1F5BB5]" : "border-transparent text-[#667085] hover:text-[#344054]")}>{label}</button>
+            ))}
+          </div>
         </div>
 
         {activeSection === "tasks" && <>
@@ -412,7 +416,7 @@ export function AdminDashboard({ onBack, onDataRefresh }: DashboardProps) {
                         disabled={state.logs.length === 0}
                         title="查看详细日志"
                         aria-label="查看详细日志"
-                        className="flex size-6 shrink-0 items-center justify-center rounded-md text-[#98A2B3] transition-colors hover:bg-slate-100 hover:text-[#667085] disabled:cursor-not-allowed disabled:opacity-30"
+                        className="flex size-11 shrink-0 items-center justify-center rounded-md text-[#98A2B3] transition-colors hover:bg-slate-100 hover:text-[#667085] disabled:cursor-not-allowed disabled:opacity-30 sm:size-6"
                       >
                         <FileText className="size-3.5" />
                       </button>

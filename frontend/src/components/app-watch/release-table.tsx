@@ -9,6 +9,14 @@ import { formatCount } from "@/lib/display";
 type SortKey = "publishDate" | "brokerName" | "appName" | "appVersion" | "updateType";
 type SortConfig = { key: SortKey; direction: "asc" | "desc" } | null;
 
+const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+  { key: "publishDate", label: "更新时间" },
+  { key: "brokerName", label: "券商" },
+  { key: "appName", label: "App 名称" },
+  { key: "appVersion", label: "版本号" },
+  { key: "updateType", label: "更新类型" },
+];
+
 interface ReleaseTableProps {
   releases: AppReleaseRecord[];
   onSelect: (record: AppReleaseRecord) => void;
@@ -60,7 +68,43 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
 
   return (
     <div className="surface-panel overflow-hidden">
-      <div className="overflow-x-auto">
+      <div className="flex items-center gap-2 border-b border-[#E4EAF2] px-3 py-3 md:hidden">
+        <label htmlFor="app-release-mobile-sort" className="shrink-0 text-xs font-semibold text-[#475467]">
+          排序
+        </label>
+        <select
+          id="app-release-mobile-sort"
+          value={sortConfig?.key ?? ""}
+          onChange={(event) => {
+            const key = event.target.value as SortKey | "";
+            setSortConfig(key ? { key, direction: "desc" } : null);
+          }}
+          className="min-h-11 min-w-0 flex-1 rounded-md border border-[#E4EAF2] bg-[#F8FAFC] px-3 text-xs font-medium text-[#344054] outline-none focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10"
+          aria-label="移动端排序字段"
+        >
+          <option value="">默认顺序</option>
+          {SORT_OPTIONS.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={() => sortConfig && handleSort(sortConfig.key)}
+          disabled={!sortConfig}
+          aria-label={sortConfig?.direction === "asc" ? "切换为降序" : "切换为升序"}
+          className="inline-flex min-h-11 min-w-[72px] shrink-0 items-center justify-center gap-1 rounded-md border border-[#E4EAF2] bg-white px-2.5 text-xs font-semibold text-[#475467] transition-colors hover:border-blue-200 hover:bg-blue-50 hover:text-[#2563EB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          <ChevronDown
+            className={`size-3.5 transition-transform duration-150 motion-reduce:transition-none ${sortConfig?.direction === "asc" ? "rotate-180" : ""}`}
+            aria-hidden="true"
+          />
+          {sortConfig?.direction === "asc" ? "升序" : "降序"}
+        </button>
+      </div>
+
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[1040px] table-fixed" aria-label="券商 App 更新明细">
           <colgroup>
             <col className="w-[112px]" />
@@ -92,6 +136,16 @@ export function ReleaseTable({ releases, onSelect }: ReleaseTableProps) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="space-y-3 p-3 md:hidden" aria-label="券商 App 更新卡片列表">
+        {displayedReleases.map((record, index) => (
+          <ReleaseCard
+            key={`${record.contentSha256 || "release"}-${record.brokerCode}-${record.appName}-${index}`}
+            record={record}
+            onClick={() => onSelect(record)}
+          />
+        ))}
       </div>
 
       {sortedReleases.length > displayLimit && (
@@ -190,5 +244,46 @@ function ReleaseRow({ record, onClick }: { record: AppReleaseRecord; onClick: ()
         </button>
       </td>
     </tr>
+  );
+}
+
+function ReleaseCard({ record, onClick }: { record: AppReleaseRecord; onClick: () => void }) {
+  const updateTypeColor = UPDATE_TYPE_COLORS[record.updateType] || "#98A2B3";
+  const date = formatReleaseDate(record.publishDate);
+  const broker = record.brokerName || "未知券商";
+  const app = record.appName || "未知 App";
+  const version = record.appVersion || "版本未识别";
+  const summary = record.updateSummary || "暂无内容";
+  const updateType = record.updateType || "其他";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`查看 ${broker} ${app} 的更新详情`}
+      className="group block min-h-11 w-full rounded-lg border border-[#E4EAF2] bg-white p-4 text-left shadow-sm transition-[border-color,background-color,box-shadow] duration-150 hover:border-blue-200 hover:bg-blue-50/20 hover:shadow-md focus-visible:border-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] tabular-nums text-[#98A2B3]">{date}</p>
+          <h3 className="mt-1 break-words text-sm font-semibold leading-relaxed text-[#172033] group-hover:text-[#2563EB]">
+            {broker} · {app}
+          </h3>
+        </div>
+        <span
+          className="shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold"
+          style={{ backgroundColor: `${updateTypeColor}15`, color: updateTypeColor, borderColor: `${updateTypeColor}30` }}
+        >
+          {updateType}
+        </span>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
+        <dt className="text-[#98A2B3]">版本</dt>
+        <dd className="min-w-0 break-words font-medium text-[#475467]">{version}</dd>
+        <dt className="text-[#98A2B3]">更新摘要</dt>
+        <dd className="min-w-0 break-words text-[#667085]">{summary}</dd>
+      </dl>
+    </button>
   );
 }

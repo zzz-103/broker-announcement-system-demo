@@ -171,8 +171,8 @@ export function AdminTaskLogDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl border-[#D9E2EC] p-0 sm:max-w-4xl">
-        <DialogHeader className="border-b border-[#E4E9F0] px-6 py-5">
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-4xl flex-col gap-0 overflow-hidden border-[#D9E2EC] p-0 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)] sm:max-w-4xl">
+        <DialogHeader className="shrink-0 border-b border-[#E4E9F0] px-4 py-4 sm:px-6 sm:py-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1 text-left">
               <DialogTitle className="text-base text-[#172033]">{title}</DialogTitle>
@@ -186,7 +186,7 @@ export function AdminTaskLogDialog({
               size="sm"
               onClick={handleCopy}
               disabled={!renderedLogs}
-              className="border-[#D0D8E2] text-[#35537A]"
+              className="h-11 border-[#D0D8E2] text-[#35537A] sm:h-9"
             >
               {copyState === "copied"
                 ? "已复制"
@@ -200,7 +200,7 @@ export function AdminTaskLogDialog({
         <div
           ref={containerRef}
           onScroll={handleScroll}
-          className="max-h-[65vh] overflow-y-auto px-6 py-5 font-mono text-xs leading-6"
+          className="min-h-0 flex-1 max-h-[calc(100dvh-9rem)] overflow-y-auto px-4 py-4 font-mono text-xs leading-6 sm:max-h-[65vh] sm:px-6 sm:py-5"
         >
           {logs.length === 0 ? (
             <div className="rounded-lg border border-dashed border-[#D9E2EC] bg-[#F8FAFC] px-4 py-6 text-center text-[#94A3B8]">
@@ -209,22 +209,22 @@ export function AdminTaskLogDialog({
           ) : hasCollectionLanes ? (
             <div className="space-y-5">
               <div className="grid items-stretch gap-4 sm:grid-cols-2">
-                <section className="flex h-[42vh] min-h-[280px] flex-col overflow-hidden rounded-xl border border-[#D9E2EC] bg-white">
+                <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[#D9E2EC] bg-white sm:h-[42vh] sm:min-h-[280px]">
                   <h3 className="border-b border-[#E4E9F0] bg-[#F8FAFC] px-4 py-2.5 text-xs font-semibold text-[#35537A]">金采网进度</h3>
                   <div
                     ref={jincaiRef}
                     onScroll={handleLaneScroll("jincai")}
-                    className="min-h-0 flex-1 overflow-y-auto p-3"
+                    className="p-3 sm:min-h-0 sm:flex-1 sm:overflow-y-auto"
                   >
                     {renderLogList(logGroups.jincai)}
                   </div>
                 </section>
-                <section className="flex h-[42vh] min-h-[280px] flex-col overflow-hidden rounded-xl border border-[#D9E2EC] bg-white">
+                <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[#D9E2EC] bg-white sm:h-[42vh] sm:min-h-[280px]">
                   <h3 className="border-b border-[#E4E9F0] bg-[#F8FAFC] px-4 py-2.5 text-xs font-semibold text-[#35537A]">官网直采进度</h3>
                   <div
                     ref={directRef}
                     onScroll={handleLaneScroll("direct")}
-                    className="min-h-0 flex-1 overflow-y-auto p-3"
+                    className="p-3 sm:min-h-0 sm:flex-1 sm:overflow-y-auto"
                   >
                     {renderLogList(logGroups.direct)}
                   </div>
@@ -236,7 +236,7 @@ export function AdminTaskLogDialog({
                   <div
                     ref={commonRef}
                     onScroll={handleLaneScroll("common")}
-                    className="max-h-[22vh] overflow-y-auto p-3"
+                    className="max-h-none overflow-visible p-3 sm:max-h-[22vh] sm:overflow-y-auto"
                   >
                     {renderLogList(logGroups.common)}
                   </div>

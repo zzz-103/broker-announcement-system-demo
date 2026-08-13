@@ -189,21 +189,21 @@ export function UserApprovalManager() {
 
   return (
     <section className="mt-6 bg-white rounded-xl border border-[#E4E9F0] shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#E4E9F0] flex items-center justify-between gap-3 bg-white">
-        <div className="flex items-center gap-2.5">
+      <div className="flex flex-col items-stretch gap-3 border-b border-[#E4E9F0] bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2.5 sm:items-center">
           <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[#162B49] to-[#2563EB] flex items-center justify-center shadow-sm">
             <UserPlus className="w-4 h-4 text-white" />
           </div>
-          <div>
-            <h2 className="text-base font-bold text-[#172033]">用户资格审批录入</h2>
-            <p className="text-xs text-[#667085] mt-0.5">审批后自动生成用户名和一次性初始密码</p>
+          <div className="min-w-0">
+            <h2 className="break-words text-base font-bold text-[#172033]">用户资格审批录入</h2>
+            <p className="mt-0.5 break-words text-xs text-[#667085]">审批后自动生成用户名和一次性初始密码</p>
           </div>
         </div>
         <button
           type="button"
           onClick={() => void loadUsers()}
           disabled={isLoading}
-          className="h-8 px-3 rounded-lg border border-[#E4E9F0] text-xs text-[#344054] hover:bg-[#F5F7FA] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all"
+          className="flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-[#E4E9F0] px-3 text-xs text-[#344054] transition-all hover:bg-[#F5F7FA] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:h-8 sm:w-auto"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin" : ""}`} />
           刷新
@@ -304,7 +304,7 @@ export function UserApprovalManager() {
               <button
                 type="button"
                 onClick={() => void handleCopy()}
-                className="mt-3 h-8 px-3 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 active:scale-[0.98] flex items-center gap-1.5 transition-all"
+              className="mt-3 inline-flex h-11 items-center gap-1.5 rounded-lg bg-amber-600 px-3 text-xs font-semibold text-white transition-all hover:bg-amber-700 active:scale-[0.98] sm:h-8"
               >
                 <Clipboard className="w-3.5 h-3.5" />
                 {copyState === "copied" ? "已复制" : "复制密码"}
@@ -451,7 +451,7 @@ export function UserApprovalManager() {
                         type="button"
                         onClick={() => void handlePromote(user)}
                         disabled={promotingId !== null || deletingId !== null}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-200 px-3 text-xs font-semibold text-[#315EA8] hover:bg-blue-50 disabled:opacity-60"
+                        className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-blue-200 px-3 text-xs font-semibold text-[#315EA8] hover:bg-blue-50 disabled:opacity-60 md:h-8"
                       >
                         {promotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
                         任命管理员
@@ -460,7 +460,7 @@ export function UserApprovalManager() {
                         type="button"
                         onClick={() => void handleDelete(user)}
                         disabled={deletingId !== null || promotingId !== null || user.role === "admin"}
-                        className="h-8 px-3 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all"
+                        className="flex h-11 items-center gap-1.5 rounded-lg border border-red-200 px-3 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 md:h-8"
                       >
                         {deletingId === user.id ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -485,7 +485,7 @@ export function UserApprovalManager() {
                     type="button"
                     onClick={() => setPage((current) => Math.max(1, current - 1))}
                     disabled={isLoading || meta.page <= 1}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-11 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50 sm:h-8"
                   >
                     <ChevronLeft className="size-3.5" />上一页
                   </button>
@@ -493,7 +493,7 @@ export function UserApprovalManager() {
                     type="button"
                     onClick={() => setPage((current) => Math.min(meta.total_pages, current + 1))}
                     disabled={isLoading || meta.page >= meta.total_pages}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-11 items-center gap-1 rounded-lg border border-[#E4E9F0] px-2.5 text-xs text-[#475467] hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-50 sm:h-8"
                   >
                     下一页<ChevronRight className="size-3.5" />
                   </button>

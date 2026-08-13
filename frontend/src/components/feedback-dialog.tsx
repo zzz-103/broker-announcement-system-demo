@@ -108,7 +108,7 @@ export function FeedbackDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="border-[#D9E2EC] bg-white sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] overflow-y-auto overscroll-contain border-[#D9E2EC] bg-white p-4 sm:max-w-lg sm:p-6">
         {submitted ? (
           <div className="py-5 text-center">
             <div className="mx-auto mb-3 flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
@@ -116,7 +116,7 @@ export function FeedbackDialog({
             </div>
             <DialogTitle className="text-[#172033]">反馈已提交</DialogTitle>
             <p className="mt-2 text-sm text-[#667085]">感谢你的反馈，管理员将在控制台统一查看和处理。</p>
-            <button type="button" onClick={() => onOpenChange(false)} className="mt-5 h-10 rounded-lg bg-[#2563EB] px-5 text-sm font-semibold text-white hover:bg-blue-700">完成</button>
+            <button type="button" onClick={() => onOpenChange(false)} className="mt-5 h-11 rounded-lg bg-[#2563EB] px-5 text-sm font-semibold text-white hover:bg-blue-700">完成</button>
           </div>
         ) : (
           <>
@@ -148,7 +148,7 @@ export function FeedbackDialog({
                   <>
                     <label className="block text-sm font-medium text-[#344054]">
                       希望收录的券商 <span className="text-rose-600">*</span>
-                      <input value={brokerName} onChange={(event) => setBrokerName(event.target.value)} maxLength={100} placeholder="例如：XX证券" className="mt-1.5 h-10 w-full rounded-lg border border-[#D0D5DD] px-3 text-sm text-[#172033] outline-none transition-all focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10" />
+                      <input value={brokerName} onChange={(event) => setBrokerName(event.target.value)} maxLength={100} placeholder="例如：XX证券" className="mt-1.5 h-11 w-full rounded-lg border border-[#D0D5DD] px-3 text-sm text-[#172033] outline-none transition-all focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10" />
                     </label>
                     <label className="block text-sm font-medium text-[#344054]">
                       补充说明（选填）
@@ -163,7 +163,7 @@ export function FeedbackDialog({
                     </label>
                     <label className="block text-sm font-medium text-[#344054]">
                       关联券商或项目（选填）
-                      <input value={relatedContext} onChange={(event) => setRelatedContext(event.target.value)} maxLength={200} placeholder="例如：XX证券 / 某采购项目" className="mt-1.5 h-10 w-full rounded-lg border border-[#D0D5DD] px-3 text-sm text-[#172033] outline-none transition-all focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10" />
+                      <input value={relatedContext} onChange={(event) => setRelatedContext(event.target.value)} maxLength={200} placeholder="例如：XX证券 / 某采购项目" className="mt-1.5 h-11 w-full rounded-lg border border-[#D0D5DD] px-3 text-sm text-[#172033] outline-none transition-all focus:border-[#2563EB] focus:ring-4 focus:ring-[#2563EB]/10" />
                     </label>
                   </>
                 )}
@@ -171,8 +171,8 @@ export function FeedbackDialog({
               </div>
             )}
             <DialogFooter>
-              <button type="button" onClick={() => onOpenChange(false)} disabled={isSubmitting} className="h-10 rounded-lg border border-[#D0D5DD] px-4 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC] disabled:opacity-60">取消</button>
-              <button type="button" onClick={() => void handleSubmit()} disabled={!category || isSubmitting} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button type="button" onClick={() => onOpenChange(false)} disabled={isSubmitting} className="h-11 rounded-lg border border-[#D0D5DD] px-4 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC] disabled:opacity-60">取消</button>
+              <button type="button" onClick={() => void handleSubmit()} disabled={!category || isSubmitting} className="inline-flex h-11 items-center gap-1.5 rounded-lg bg-[#2563EB] px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60">
                 <Send className="size-3.5" />
                 {isSubmitting ? "正在提交..." : "提交反馈"}
               </button>

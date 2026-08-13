@@ -21,7 +21,7 @@ function safeUrl(value: string): string | null {
 export function SourceCard({ source, index }: { source: IntelligenceSource; index: number }) {
   const url = safeUrl(source.url);
   return (
-    <article className="border-b border-[#E4E7EC] py-3 last:border-b-0">
+    <article className="border-b border-[#E4E7EC] py-3 [overflow-wrap:anywhere] last:border-b-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2.5">
           <span className="mt-0.5 shrink-0 font-mono text-[11px] font-semibold text-[#315EA8]">[{index}]</span>
@@ -31,7 +31,7 @@ export function SourceCard({ source, index }: { source: IntelligenceSource; inde
           </div>
         </div>
         {url ? (
-          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-[#315EA8] underline-offset-2 hover:underline">
+          <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 shrink-0 items-center gap-1 text-[11px] font-semibold text-[#315EA8] underline-offset-2 hover:underline sm:min-h-0">
             <ExternalLink className="size-3.5" aria-hidden="true" />打开原文
           </a>
         ) : <span className="shrink-0 text-[10px] text-[#98A2B3]">链接不可用</span>}
@@ -106,7 +106,7 @@ export function ReportTemplateSwitcher({
           type="button"
           aria-pressed={value === style}
           onClick={() => onChange(style)}
-          className={`rounded px-2.5 py-1 text-[11px] font-semibold transition ${value === style ? "bg-[#172033] text-white" : "text-[#667085] hover:bg-[#F2F4F7]"}`}
+          className={`min-h-11 rounded px-3 py-2 text-[11px] font-semibold transition sm:min-h-0 sm:px-2.5 sm:py-1 ${value === style ? "bg-[#172033] text-white" : "text-[#667085] hover:bg-[#F2F4F7]"}`}
         >
           {label}
         </button>
@@ -165,10 +165,10 @@ function NewsletterSection({
 function NewsletterReportBody({ execution, report, sources, sourceIndexes }: { execution: IntelligenceAssistantExecution; report: IntelligenceReportV2; sources: IntelligenceSource[]; sourceIndexes: Map<string, number> }) {
   const executedAt = report.executed_at || execution.completed_at || execution.created_at;
   return (
-    <article className="space-y-7 bg-white px-1 py-1 text-[#1F1F1F] sm:px-3" aria-label="自定义情报助手日报">
+    <article className="space-y-7 bg-white px-1 py-1 text-[#1F1F1F] [overflow-wrap:anywhere] sm:px-3" aria-label="自定义情报助手日报">
       <header className="text-center">
-        <p className="text-[30px] font-black tracking-[0.24em] text-[#111111]">自定义情报助手</p>
-        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-[#667085]">金融科技情报日报 · Financial Tech Daily</p>
+        <p className="text-2xl font-black tracking-[0.12em] text-[#111111] sm:text-[30px] sm:tracking-[0.24em]">自定义情报助手</p>
+        <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#667085] sm:tracking-[0.24em]">金融科技情报日报 · Financial Tech Daily</p>
         <p className="mt-3 text-[11px] tracking-[0.16em] text-[#667085]">{formatNewsletterDate(executedAt)} · 深圳</p>
       </header>
 
@@ -267,7 +267,7 @@ export function ReportBody({ execution, templateStyle = "research" }: { executio
     ["风险与后续关注", report.risks_and_watch_items],
   ];
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 [overflow-wrap:anywhere]">
       <section className="border-b border-[#D0D5DD] pb-4">
         <p className="text-[10px] font-semibold tracking-wide text-[#98A2B3]">研究重点</p>
         <p className="mt-1.5 text-sm leading-6 text-[#344054]">{execution.research_direction || report.title}</p>

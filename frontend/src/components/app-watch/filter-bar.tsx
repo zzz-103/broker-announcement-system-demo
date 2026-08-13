@@ -66,7 +66,7 @@ function FilterOptionGroup({
               type="button"
               aria-pressed={isSelected}
               onClick={() => onToggle(option)}
-              className={`whitespace-nowrap rounded-md border px-2.5 py-1 text-[12px] font-medium transition-[border-color,background-color,color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:scale-[0.97] ${
+              className={`min-h-11 whitespace-nowrap rounded-md border px-2.5 py-1 text-[12px] font-medium transition-[border-color,background-color,color,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 active:scale-[0.97] md:min-h-0 ${
                 isSelected
                   ? "border-blue-600 bg-blue-600 text-white"
                   : "border-[#E4EAF2] bg-[#F8FAFC] text-[#475467] hover:border-blue-300 hover:bg-blue-50/50 hover:text-[#1D4ED8]"
@@ -81,7 +81,7 @@ function FilterOptionGroup({
             type="button"
             aria-expanded={false}
             onClick={() => onExpandedChange(true)}
-            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#2563EB] transition-colors hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
+            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-md bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#2563EB] transition-colors hover:bg-blue-100 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 md:min-h-0"
           >
             +{hiddenCount} 更多
             <ChevronDown className="size-3" />
@@ -92,7 +92,7 @@ function FilterOptionGroup({
             type="button"
             aria-expanded={true}
             onClick={() => onExpandedChange(false)}
-            className="inline-flex items-center gap-1 whitespace-nowrap rounded-md bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#667085] transition-colors hover:bg-slate-200 hover:text-[#344054] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25"
+            className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap rounded-md bg-[#EBF0F7] px-2.5 py-1 text-[12px] font-semibold text-[#667085] transition-colors hover:bg-slate-200 hover:text-[#344054] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/25 md:min-h-0"
           >
             收起
             <ChevronUp className="size-3" />
@@ -166,7 +166,7 @@ export function FilterBar({
           onChange={(event) => setFilters({ ...filters, search: event.target.value })}
           placeholder="搜索券商、App、版本或更新内容"
           aria-label="搜索券商、App、版本或更新内容"
-          className="h-9 w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] py-2 pr-3 pl-10 text-[13px] text-[#172033] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[#98A2B3] focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10"
+          className="h-11 w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] py-2 pr-3 pl-10 text-[13px] text-[#172033] outline-none transition-[border-color,background-color,box-shadow] duration-150 placeholder:text-[#98A2B3] focus:border-[#2563EB] focus:bg-white focus:ring-4 focus:ring-[#2563EB]/10 md:h-9"
         />
       </div>
 
@@ -184,13 +184,13 @@ export function FilterBar({
             { value: "all", label: "全部时间" },
           ]}
           placeholder="时间范围"
-          className="w-[120px]"
+          className="w-[120px] [&_button]:min-h-11 md:[&_button]:min-h-0"
         />
         {hasFilters && (
           <button
             type="button"
             onClick={resetFilters}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-[#667085] transition-[background-color,color,transform] duration-150 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/20 active:scale-[0.97]"
+            className="ml-auto inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-1.5 text-[12px] text-[#667085] transition-[background-color,color,transform] duration-150 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/20 active:scale-[0.97] md:min-h-0"
           >
             <RotateCcw className="size-3.5" />
             重置

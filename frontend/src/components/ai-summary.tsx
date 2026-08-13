@@ -113,17 +113,17 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
 
   return (
     <section className={`surface-panel relative overflow-hidden ${className}`}>
-      <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#F0F2F5]">
-        <div className="flex items-center gap-2.5">
+      <div className="flex flex-col gap-3 border-b border-[#F0F2F5] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-center gap-2.5">
           <div className="flex size-7 items-center justify-center rounded-md bg-[#EEF4FF] text-[#315EA8]">
             <FileText className="size-3.5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-[15px] font-bold text-[#172033]">招采分析</h3>
             <p className="text-[11px] text-[#7A8699]">基于近 30 天公开招采数据的分析摘要</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 sm:shrink-0 sm:justify-end">
           {updatedAt && (
             <span className="text-[11px] text-[#98A2B3]">
               更新于 {formatDateTime(updatedAt)}
@@ -133,7 +133,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[#102847] px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-md bg-[#102847] px-3 py-2 text-[12px] font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:min-h-0 sm:py-1.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? "animate-spin" : ""}`} />
               {isGenerating ? "更新中" : content ? "更新分析" : "生成分析"}
@@ -150,7 +150,7 @@ export function AiSummary({ className = "" }: AiSummaryProps) {
           </div>
         )}
         {content ? (
-          <div className="max-w-none text-[13px] text-[#374151] leading-relaxed">
+          <div className="max-w-none break-words text-[13px] leading-relaxed text-[#374151] [overflow-wrap:anywhere]">
             {/* 报告主标题（来自模型输出的 H1） */}
             {getReportTitle(content) && (
               <h3 className="mb-4 text-[17px] font-bold leading-snug text-[#102847]">
@@ -277,7 +277,7 @@ function SectionContent({ lines }: { lines: string[] }) {
   const flushList = () => {
     if (listItems.length > 0) {
       elements.push(
-        <ul key={`list-${elements.length}`} className="list-disc pl-5 space-y-2.5 my-2.5 text-[#475467]">
+        <ul key={`list-${elements.length}`} className="my-2.5 list-disc space-y-2.5 break-words pl-5 text-[#475467] [overflow-wrap:anywhere]">
           {listItems.map((item, i) => (
             <li key={i}>{renderInline(item)}</li>
           ))}
@@ -307,7 +307,7 @@ function SectionContent({ lines }: { lines: string[] }) {
         elements.push(
           <div key={i} className="flex gap-2 my-2 text-[13px] text-[#475467] leading-relaxed">
             <span className="text-[#2563EB] font-bold shrink-0">{match[1]}.</span>
-            <span>{renderInline(match[2])}</span>
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{renderInline(match[2])}</span>
           </div>,
         );
       }
@@ -316,7 +316,7 @@ function SectionContent({ lines }: { lines: string[] }) {
     } else {
       flushList();
       elements.push(
-        <p key={i} className="my-2 text-[13px] text-[#475467] leading-relaxed">{renderInline(line)}</p>,
+        <p key={i} className="my-2 break-words text-[13px] leading-relaxed text-[#475467] [overflow-wrap:anywhere]">{renderInline(line)}</p>,
       );
     }
   }

@@ -17,7 +17,7 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
   return (
     <nav
       aria-label="业务模块"
-      className="inline-flex h-9 shrink-0 items-center gap-0.5 rounded-md border border-white/12 bg-white/[0.04] p-0.5"
+      className="inline-flex h-12 shrink-0 items-center gap-0.5 rounded-md border border-white/12 bg-white/[0.04] p-0.5 sm:h-9"
     >
       {MODULES.map(({ key, label, icon: Icon }) => {
         const active = key === activeModule;
@@ -36,7 +36,7 @@ export function ModuleSwitcher({ activeModule }: { activeModule: ActiveModule })
                 router.push("/custom-intelligence");
               }
             }}
-            className={`inline-flex h-8 w-9 items-center justify-center gap-1 rounded-[5px] px-1.5 text-[12px] font-medium whitespace-nowrap transition-colors duration-150 motion-reduce:transition-none sm:w-[92px] sm:px-2 ${
+            className={`inline-flex h-11 w-11 items-center justify-center gap-1 rounded-[5px] px-1.5 text-[12px] font-medium whitespace-nowrap transition-colors duration-150 touch-manipulation motion-reduce:transition-none sm:h-8 sm:w-[92px] sm:px-2 ${
               active
                 ? "bg-white/[0.14] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
                 : "text-slate-300 hover:bg-white/[0.08] hover:text-white"

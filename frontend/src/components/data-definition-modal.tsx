@@ -13,12 +13,12 @@ export function DataDefinitionModal({
 }: DataDefinitionModalProps) {
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <DialogContent className="max-h-[80vh] max-w-[640px] gap-0 overflow-y-auto border-[#E4E9F0] bg-white p-0">
-          <DialogHeader className="sticky top-0 z-10 border-b border-[#E4E9F0] bg-white px-6 py-4">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-[640px] gap-0 overflow-y-auto overscroll-contain border-[#E4E9F0] bg-white p-0 sm:max-h-[80vh]">
+          <DialogHeader className="sticky top-0 z-10 border-b border-[#E4E9F0] bg-white px-4 py-4 sm:px-6">
             <DialogTitle className="text-[16px] font-semibold text-[#172033]">数据口径说明</DialogTitle>
             <DialogDescription className="sr-only">招采看板指标与数据范围说明</DialogDescription>
           </DialogHeader>
-          <div className="px-6 py-5 space-y-4 text-[13px] text-[#172033] leading-relaxed">
+          <div className="space-y-4 px-4 py-5 text-[13px] leading-relaxed text-[#172033] sm:px-6">
             <p>
               <strong>公告记录不等于独立项目。</strong>
               同一项目可能在不同阶段发布多条公告。“项目线索”按主体名称和标准化项目名去重计算。

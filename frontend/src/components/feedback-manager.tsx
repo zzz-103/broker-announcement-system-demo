@@ -79,17 +79,17 @@ export function FeedbackManager() {
 
   return (
     <section className="mt-6 overflow-hidden rounded-xl border border-[#E4E9F0] bg-white shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-[#E4E9F0] px-5 py-4">
-        <div className="flex items-center gap-2.5">
+      <div className="flex flex-col items-stretch gap-3 border-b border-[#E4E9F0] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2.5 sm:items-center">
           <div className="flex size-9 items-center justify-center rounded-lg bg-blue-50 text-[#2563EB]">
             <MessageSquareText className="size-4" />
           </div>
-          <div>
-            <h2 className="text-base font-bold text-[#172033]">用户反馈</h2>
-            <p className="mt-0.5 text-xs text-[#667085]">待处理反馈优先展示，可标记处理状态</p>
+          <div className="min-w-0">
+            <h2 className="break-words text-base font-bold text-[#172033]">用户反馈</h2>
+            <p className="mt-0.5 break-words text-xs text-[#667085]">待处理反馈优先展示，可标记处理状态</p>
           </div>
         </div>
-        <button type="button" onClick={() => void loadFeedback()} disabled={isLoading} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#E4E9F0] px-3 text-xs font-medium text-[#344054] transition-colors hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-60">
+        <button type="button" onClick={() => void loadFeedback()} disabled={isLoading} className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-[#E4E9F0] px-3 text-xs font-medium text-[#344054] transition-colors hover:bg-[#F5F7FA] disabled:cursor-not-allowed disabled:opacity-60 sm:h-8 sm:w-auto">
           <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
           刷新
         </button>
@@ -113,7 +113,7 @@ export function FeedbackManager() {
                 {entry.message && <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed text-[#475467]">{entry.message}</p>}
                 <p className="mt-2 text-[11px] text-[#98A2B3]">提交人：{entry.reporter_name || entry.reporter_username}（{entry.reporter_username}）</p>
               </div>
-              <button type="button" onClick={() => void toggleStatus(entry)} disabled={updatingId !== null} className={`inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${entry.status === "pending" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : "border-[#D0D5DD] text-[#667085] hover:bg-[#F8FAFC]"}`}>
+              <button type="button" onClick={() => void toggleStatus(entry)} disabled={updatingId !== null} className={`inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 lg:h-9 ${entry.status === "pending" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : "border-[#D0D5DD] text-[#667085] hover:bg-[#F8FAFC]"}`}>
                 {updatingId === entry.id ? <Loader2 className="size-3.5 animate-spin" /> : entry.status === "pending" ? <CheckCircle2 className="size-3.5" /> : <RotateCcw className="size-3.5" />}
                 {entry.status === "pending" ? "标记已处理" : "恢复待处理"}
               </button>

@@ -245,7 +245,7 @@ export function InstantSearchPanel({
                 rows={workspaceMode ? 2 : 3}
                 maxLength={1000}
                 autoFocus={!workspaceMode}
-                placeholder="例如：重点比较头部券商近半年的做法，并给出可执行建议。"
+                placeholder={"可以补充你特别关注的内容，例如：券商 AI 应用、财富管理转型。\n系统将自动检索相关情报并生成总结报告。"}
                 className="w-full resize-y rounded-md border border-[#D0D5DD] bg-white px-3 py-2 text-sm leading-6 text-[#172033] outline-none transition focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15"
               />
               <p className="mt-1 text-right text-[10px] text-[#98A2B3]">{form.focus.length}/1000</p>
@@ -278,15 +278,17 @@ export function InstantSearchPanel({
 
           </div>
 
-          <div className="mt-5 space-y-3 border-t border-[#E4EAF2] pt-4">
+          <div className="mt-5 border-t border-[#E4EAF2] pt-4">
             {!serviceAvailable && !optionsLoading && <p className="rounded-md bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-800">情报搜索服务暂不可用，请联系管理员。</p>}
-            <button type="submit" disabled={disabled} className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-[#2563EB] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
-              {activeExecutionId !== null ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}
-              {activeExecutionId !== null ? "正在生成报告…" : "生成报告"}
-            </button>
-            <button type="button" onClick={onSaveCurrentConfig} disabled={!form.focus.trim() && form.focus_tags.length === 0} className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-[#C8D7F0] bg-white px-3 py-2 text-xs font-semibold text-[#315EA8] hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-50">
-              <Bookmark className="size-3.5" aria-hidden="true" />保存为我的助手
-            </button>
+            <div className={`flex flex-wrap items-center justify-end gap-2.5 ${!serviceAvailable && !optionsLoading ? "mt-3" : ""}`}>
+              <button type="button" onClick={onSaveCurrentConfig} disabled={!form.focus.trim() && form.focus_tags.length === 0} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md border border-[#D7E0EC] bg-[#F8FAFD] px-3.5 py-2 text-xs font-semibold text-[#315EA8] transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-[#B8CAE5] hover:bg-[#EEF4FF] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transform-none sm:min-h-10">
+                <Bookmark className="size-3.5" aria-hidden="true" />保存为我的助手
+              </button>
+              <button type="submit" disabled={disabled} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-[#2563EB] px-5 py-2 text-sm font-semibold text-white shadow-sm transition-[background-color,box-shadow,transform] duration-150 ease-out hover:bg-[#1D4ED8] hover:shadow active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none motion-reduce:transform-none sm:min-h-10">
+                {activeExecutionId !== null ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Play className="size-4" aria-hidden="true" />}
+                {activeExecutionId !== null ? "正在生成报告…" : "生成报告"}
+              </button>
+            </div>
           </div>
         </form> : <WorkspaceRequestSummary form={form} onEdit={() => setEditingWorkspace(true)} />}
       </div>

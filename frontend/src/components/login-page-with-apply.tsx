@@ -290,7 +290,7 @@ export function LoginPageWithApply() {
                         type="button"
                         aria-label={showPassword ? "隐藏密码" : "显示密码"}
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#98A2B3] hover:text-[#172033] transition-colors"
+                        className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-md text-[#98A2B3] transition-colors hover:text-[#172033]"
                       >
                         {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                       </button>
@@ -554,7 +554,7 @@ function CredentialRow({
         <button
           type="button"
           onClick={onCopy}
-          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-[#E4E9F0] px-2.5 py-1.5 text-xs font-semibold text-[#344054] hover:bg-[#F8FAFC] transition-colors"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-[#E4E9F0] px-3 py-2 text-xs font-semibold text-[#344054] transition-colors hover:bg-[#F8FAFC]"
         >
           <Clipboard className="w-3.5 h-3.5" />
           {buttonLabel}

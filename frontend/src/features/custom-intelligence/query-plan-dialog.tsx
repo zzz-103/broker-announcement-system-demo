@@ -37,7 +37,7 @@ export function QueryPlanDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!submitting) onOpenChange(next); }}>
-      <DialogContent className="w-[calc(100%-1rem)] max-w-2xl border-[#D9E2EC] bg-white sm:w-full">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-y-auto overscroll-contain border-[#D9E2EC] bg-white p-4 sm:w-full sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base text-[#172033]"><SearchCheck className="size-4 text-[#315EA8]" />本次准备重点检索的方向</DialogTitle>
           <DialogDescription className="text-[#667085]">确认或修改研究方向后，系统才会开始检索公开资料。</DialogDescription>
@@ -53,7 +53,7 @@ export function QueryPlanDialog({
         {!loading && error && (
           <div className="space-y-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
             <div className="flex items-start gap-2"><AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" /><span>{error}</span></div>
-            <button type="button" onClick={onRetry} className="rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">重新整理</button>
+            <button type="button" onClick={onRetry} className="min-h-11 rounded-md border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50">重新整理</button>
           </div>
         )}
 
@@ -94,8 +94,8 @@ export function QueryPlanDialog({
         )}
 
         <DialogFooter>
-          <button type="button" onClick={() => onOpenChange(false)} disabled={submitting} className="rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC] disabled:opacity-50">取消</button>
-          <button type="button" onClick={onConfirm} disabled={loading || submitting || !plan || !canConfirm} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => onOpenChange(false)} disabled={submitting} className="min-h-11 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC] disabled:opacity-50">取消</button>
+          <button type="button" onClick={onConfirm} disabled={loading || submitting || !plan || !canConfirm} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
             {submitting && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}{submitting ? "正在开始…" : "立即确认"}
           </button>
         </DialogFooter>

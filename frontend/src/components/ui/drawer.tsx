@@ -22,7 +22,7 @@ function DrawerContent({
   return (
     <DialogContent
       className={cn(
-        "!inset-y-0 !right-0 !left-auto !top-0 !h-dvh !w-full !max-w-[720px] !translate-x-0 !translate-y-0 gap-0 overflow-y-auto rounded-none border-y-0 border-r-0 p-0 shadow-xl sm:!w-[42%]",
+        "!inset-y-0 !right-0 !left-auto !top-0 !h-dvh !max-h-dvh !w-full !max-w-[720px] !translate-x-0 !translate-y-0 gap-0 overflow-y-auto overscroll-contain rounded-none border-y-0 border-r-0 p-0 pt-[var(--safe-area-inset-top)] pr-[var(--safe-area-inset-right)] pb-[var(--safe-area-inset-bottom)] pl-[var(--safe-area-inset-left)] shadow-xl md:!w-[42%]",
         className,
       )}
       aria-describedby={undefined}

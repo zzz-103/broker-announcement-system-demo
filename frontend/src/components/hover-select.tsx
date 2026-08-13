@@ -30,14 +30,29 @@ export function HoverSelect({
 }: HoverSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [triggerWidth, setTriggerWidth] = useState(0);
+  const [panelPlacement, setPanelPlacement] = useState<"below" | "above">("below");
+  const [panelMaxHeight, setPanelMaxHeight] = useState(maxHeight);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const idRef = useRef(++nextId);
 
+  const updatePanelLayout = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 8;
+    const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding);
+    const availableAbove = Math.max(0, rect.top - viewportPadding);
+    const opensAbove = availableBelow < Math.min(maxHeight, 160) && availableAbove > availableBelow;
+    const availableHeight = opensAbove ? availableAbove : availableBelow;
+
+    setTriggerWidth(trigger.offsetWidth);
+    setPanelPlacement(opensAbove ? "above" : "below");
+    setPanelMaxHeight(Math.max(1, Math.min(maxHeight, availableHeight || maxHeight)));
+  }, [maxHeight]);
+
   const openDropdown = useCallback(() => {
-    if (triggerRef.current) {
-      setTriggerWidth(triggerRef.current.offsetWidth);
-    }
+    updatePanelLayout();
     if (activeDropdown && activeDropdown !== null) {
       activeDropdown(idRef.current);
     }
@@ -47,7 +62,7 @@ export function HoverSelect({
         setIsOpen(false);
       }
     };
-  }, []);
+  }, [updatePanelLayout]);
 
   const closeDropdown = useCallback(() => {
     setIsOpen(false);
@@ -82,11 +97,15 @@ export function HoverSelect({
     };
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", updatePanelLayout);
+    window.addEventListener("scroll", updatePanelLayout, true);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", updatePanelLayout);
+      window.removeEventListener("scroll", updatePanelLayout, true);
     };
-  }, [isOpen, closeDropdown]);
+  }, [isOpen, closeDropdown, updatePanelLayout]);
 
   const displayLabel =
     options.find((o) => o.value === value)?.label || placeholder;
@@ -107,8 +126,9 @@ export function HoverSelect({
         onClick={() => (isOpen ? closeDropdown() : openDropdown())}
         className={`
           w-full flex items-center justify-between gap-1.5
-          px-3 py-2 text-[13px] rounded-md
-          border transition-[background-color,border-color,box-shadow,color] duration-150 cursor-pointer
+          min-h-11 px-3 py-2 text-[13px] rounded-md
+          border transition-[background-color,border-color,box-shadow,color] duration-150 touch-manipulation cursor-pointer
+          sm:min-h-0
           ${
             isOpen
               ? "border-[#2563EB]/40 bg-white ring-1 ring-[#2563EB]/20"
@@ -130,15 +150,17 @@ export function HoverSelect({
       {isOpen && <div
         role="listbox"
         className={`
-          absolute top-full left-0 mt-1 rounded-lg z-50
+          absolute z-50 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg
           bg-white border border-[#D9E2EC]
           shadow-[0_8px_24px_rgba(16,40,71,0.12)]
+          ${panelPlacement === "above" ? "bottom-full mb-1" : "top-full mt-1"}
+          right-0 md:left-0 md:right-auto
         `}
-        style={{ width: triggerWidth > 0 ? `${triggerWidth}px` : "auto" }}
+        style={{ width: triggerWidth > 0 ? `${triggerWidth}px` : "auto", maxWidth: "calc(100vw - 1rem)" }}
       >
         <div
           className="overflow-y-auto py-1"
-          style={{ maxHeight: `${maxHeight}px` }}
+          style={{ maxHeight: `${panelMaxHeight}px` }}
         >
           {options.map((opt) => (
             <button
@@ -148,7 +170,7 @@ export function HoverSelect({
               aria-selected={opt.value === value}
               onClick={() => handleSelect(opt.value)}
               className={`
-                w-full text-left px-3 py-[7px] text-[13px] transition-colors duration-100
+                w-full min-h-11 text-left px-3 py-2 text-[13px] transition-colors duration-100 touch-manipulation sm:min-h-0 sm:py-[7px]
                 ${
                   opt.value === value
                     ? "bg-[#2563EB]/8 text-[#2563EB] font-medium"

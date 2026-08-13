@@ -62,7 +62,7 @@ function ExportMenu({ options }: { options: DashboardExportOption[] }) {
         title="导出数据"
         onClick={() => setOpen((value) => !value)}
         disabled={!hasEnabledOption}
-        className="inline-flex h-9 w-9 items-center justify-center gap-1.5 rounded-md border border-blue-300/40 bg-blue-500/90 px-2 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(37,99,235,0.22)] transition-colors hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-55 sm:w-[84px]"
+        className="inline-flex h-11 w-11 items-center justify-center gap-1.5 rounded-md border border-blue-300/40 bg-blue-500/90 px-2 text-[12px] font-semibold text-white shadow-[0_2px_8px_rgba(37,99,235,0.22)] transition-colors touch-manipulation hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-55 sm:h-9 sm:w-[84px]"
       >
         <Download className="size-3.5" aria-hidden="true" />
         <span className="hidden sm:inline">导出</span>
@@ -84,7 +84,7 @@ function ExportMenu({ options }: { options: DashboardExportOption[] }) {
                 setOpen(false);
                 option.onSelect();
               }}
-              className="flex w-full items-start justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-[#F2F6FC] disabled:cursor-not-allowed disabled:opacity-45"
+              className="flex min-h-11 w-full items-start justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors touch-manipulation hover:bg-[#F2F6FC] disabled:cursor-not-allowed disabled:opacity-45 sm:min-h-0"
             >
               <span className="min-w-0">
                 <span className="block truncate text-[12px] font-semibold text-[#344054]">{option.label}</span>
@@ -117,7 +117,7 @@ function UserMenu({
         aria-label={`用户菜单：${username || "当前用户"}`}
         title={username || "当前用户"}
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex h-9 w-9 min-w-0 items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2 text-left text-[12px] text-slate-200 transition-colors hover:bg-white/10 hover:text-white sm:w-[132px] sm:justify-start sm:px-2.5"
+        className="inline-flex h-11 w-11 min-w-0 items-center justify-center gap-1.5 rounded-md border border-white/15 bg-white/[0.04] px-2 text-left text-[12px] text-slate-200 transition-colors touch-manipulation hover:bg-white/10 hover:text-white sm:h-9 sm:w-[132px] sm:justify-start sm:px-2.5"
       >
         <UserRound className="size-3.5 shrink-0 text-slate-300" />
         <span className="hidden min-w-0 flex-1 truncate sm:block">{username || "当前用户"}</span>
@@ -140,7 +140,7 @@ function UserMenu({
                 setOpen(false);
                 onOpenAdmin();
               }}
-              className="mt-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-semibold text-[#344054] transition-colors hover:bg-[#F2F6FC]"
+              className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-semibold text-[#344054] transition-colors touch-manipulation hover:bg-[#F2F6FC] sm:min-h-0"
             >
               <Settings className="size-3.5 text-[#315EA8]" />
               管理控制台
@@ -153,7 +153,7 @@ function UserMenu({
               setOpen(false);
               onLogout();
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-semibold text-[#667085] transition-colors hover:bg-rose-50 hover:text-rose-600"
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[12px] font-semibold text-[#667085] transition-colors touch-manipulation hover:bg-rose-50 hover:text-rose-600 sm:min-h-0"
           >
             <LogOut className="size-3.5" />
             退出登录

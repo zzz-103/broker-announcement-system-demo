@@ -42,24 +42,38 @@ export function MultiHoverSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [panelWidth, setPanelWidth] = useState(0);
+  const [panelPlacement, setPanelPlacement] = useState<"below" | "above">("below");
+  const [panelMaxHeight, setPanelMaxHeight] = useState(maxHeight);
   const [searchQuery, setSearchQuery] = useState("");
 
   const closeDropdown = useCallback(() => {
     setIsOpen(false);
   }, []);
 
+  const updatePanelLayout = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 8;
+    const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding);
+    const availableAbove = Math.max(0, rect.top - viewportPadding);
+    const opensAbove = availableBelow < Math.min(maxHeight, 180) && availableAbove > availableBelow;
+    const availableHeight = opensAbove ? availableAbove : availableBelow;
+
+    setPanelWidth(Math.max(trigger.offsetWidth, 120));
+    setPanelPlacement(opensAbove ? "above" : "below");
+    setPanelMaxHeight(Math.max(1, Math.min(maxHeight, availableHeight || maxHeight)));
+  }, [maxHeight]);
+
   const openDropdown = useCallback(() => {
     // Close any other open dropdown first
     if (activeDropdownClose && activeDropdownClose !== closeDropdown) {
       activeDropdownClose();
     }
+    updatePanelLayout();
     setIsOpen(true);
     activeDropdownClose = closeDropdown;
-    // Measure trigger width
-    if (triggerRef.current) {
-      setPanelWidth(Math.max(triggerRef.current.offsetWidth, 120));
-    }
-  }, [closeDropdown]);
+  }, [closeDropdown, updatePanelLayout]);
 
   useEffect(() => {
     return () => {
@@ -80,11 +94,15 @@ export function MultiHoverSelect({
     };
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("resize", updatePanelLayout);
+    window.addEventListener("scroll", updatePanelLayout, true);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("resize", updatePanelLayout);
+      window.removeEventListener("scroll", updatePanelLayout, true);
     };
-  }, [closeDropdown, isOpen]);
+  }, [closeDropdown, isOpen, updatePanelLayout]);
 
   const handleSelect = (value: string) => {
     if (value === "") {
@@ -121,8 +139,9 @@ export function MultiHoverSelect({
         aria-expanded={isOpen}
         onClick={() => (isOpen ? closeDropdown() : openDropdown())}
         className={`
-          w-full flex items-center justify-between gap-1.5 px-3 py-1.5 rounded-md text-[13px]
-          border transition-[background-color,border-color,color] duration-150 whitespace-nowrap
+          w-full min-h-11 flex items-center justify-between gap-1.5 px-3 py-1.5 rounded-md text-[13px]
+          border transition-[background-color,border-color,color] duration-150 whitespace-nowrap touch-manipulation
+          sm:min-h-0
           ${
             values.length > 0
               ? "border-[#2563EB]/30 bg-[#2563EB]/5 text-[#2563EB]"
@@ -142,13 +161,15 @@ export function MultiHoverSelect({
         role="listbox"
         aria-multiselectable="true"
         className={`
-          absolute top-full left-0 mt-1 z-50
-          bg-white rounded-lg
+          absolute z-50 max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg
+          bg-white
           border border-[#D9E2EC] shadow-[0_8px_24px_rgba(16,40,71,0.12)]
+          ${panelPlacement === "above" ? "bottom-full mb-1" : "top-full mt-1"}
+          right-0 md:left-0 md:right-auto
         `}
-        style={{ minWidth: panelWidth, maxHeight: maxHeight + 8 }}
+        style={{ minWidth: panelWidth, maxWidth: "calc(100vw - 1rem)", maxHeight: panelMaxHeight + 8 }}
       >
-        <div className="py-1 overflow-y-auto" style={{ maxHeight }}>
+        <div className="py-1 overflow-y-auto" style={{ maxHeight: panelMaxHeight }}>
           {searchable && (
             <div className="px-2 pb-2">
               <input
@@ -156,7 +177,7 @@ export function MultiHoverSelect({
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder={searchPlaceholder}
-                className="h-8 w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] px-2.5 text-[12px] text-[#172033] placeholder:text-[#98A2B3] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/10"
+                className="h-11 w-full rounded-md border border-[#E4EAF2] bg-[#F8FAFC] px-2.5 text-[12px] text-[#172033] placeholder:text-[#98A2B3] touch-manipulation focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/10 sm:h-8"
               />
             </div>
           )}
@@ -168,8 +189,8 @@ export function MultiHoverSelect({
               aria-selected={values.length === 0}
               onClick={() => onChange([])}
               className={`
-                w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2
-                transition-colors duration-100
+                w-full min-h-11 text-left px-3 py-2 text-[13px] flex items-center gap-2
+                transition-colors duration-100 touch-manipulation sm:min-h-0 sm:py-1.5
                 ${values.length === 0 ? "bg-[#2563EB]/8 text-[#2563EB] font-medium" : "text-[#667085] hover:bg-[#F8FAFC]"}
               `}
             >
@@ -188,8 +209,8 @@ export function MultiHoverSelect({
                 aria-selected={isSelected}
                 onClick={() => handleSelect(opt.value)}
                 className={`
-                  w-full text-left px-3 py-1.5 text-[13px] flex items-center gap-2
-                  transition-colors duration-100
+                  w-full min-h-11 text-left px-3 py-2 text-[13px] flex items-center gap-2
+                  transition-colors duration-100 touch-manipulation sm:min-h-0 sm:py-1.5
                   ${isSelected ? "bg-[#2563EB]/8 text-[#2563EB]" : "text-[#344054] hover:bg-[#F8FAFC]"}
                 `}
               >
@@ -217,7 +238,7 @@ export function MultiHoverSelect({
                     <button
                       type="button"
                       onClick={() => onMissingSearch(searchQuery.trim())}
-                      className="mt-2 inline-flex h-8 items-center rounded-md bg-[#2563EB] px-2.5 text-[12px] font-semibold text-white hover:bg-blue-700 transition-colors"
+                      className="mt-2 inline-flex h-11 items-center rounded-md bg-[#2563EB] px-2.5 text-[12px] font-semibold text-white touch-manipulation transition-colors hover:bg-blue-700 sm:h-8"
                     >
                       登记需求
                     </button>

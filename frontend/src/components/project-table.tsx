@@ -271,7 +271,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               有金额优先
             </button>
           </div>
-          <label className="relative flex h-10 items-center gap-1.5 rounded-lg border border-[#E4EAF2] bg-white pl-3 pr-8 text-[12px] text-[#667085] transition-colors focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/10">
+          <label className="relative flex h-11 items-center gap-1.5 rounded-lg border border-[#E4EAF2] bg-white pl-3 pr-8 text-[12px] text-[#667085] transition-colors focus-within:border-[#2563EB] focus-within:ring-2 focus-within:ring-[#2563EB]/10 sm:h-10">
             <Rows3 className="h-3.5 w-3.5 text-[#98A2B3]" />
             <span className="font-medium">每页</span>
             <select
@@ -304,18 +304,18 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
                 <h4 className="min-w-0 text-sm font-bold leading-relaxed text-[#172033]">{record.normalizedProjectName}</h4>
                 <span className={`shrink-0 rounded border px-2 py-0.5 text-[11px] font-bold ${STAGE_STYLES[stage] || STAGE_STYLES["其他"]}`}>{stage}</span>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs text-[#667085]">
-                <p><span className="text-[#98A2B3]">券商：</span>{record.validBrokerName}</p>
+              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 break-words text-xs text-[#667085] [overflow-wrap:anywhere]">
+                <p className="min-w-0"><span className="text-[#98A2B3]">券商：</span>{record.validBrokerName}</p>
                 <p><span className="text-[#98A2B3]">日期：</span>{formatDate(record.validPublishDate)}</p>
                 <p className="col-span-2"><span className="text-[#98A2B3]">采购方式：</span>{record.procurement_method || "方式未识别"}</p>
                 <p className="col-span-2"><span className="text-[#98A2B3]">供应商：</span>{record.normalizedSupplier || "未披露"}</p>
                 <p className="col-span-2"><span className="text-[#98A2B3]">公开金额：</span>{record.display_amount_yuan !== null ? <span className={record.display_amount_kind === "winning" ? "text-[#0F9F8F]" : "text-[#2563EB]"}>{displayAmountLabel(record)} · {formatAmount(record.display_amount_yuan)}</span> : "未披露"}</p>
               </div>
               <details className="mt-3 border-t border-[#F0F2F5] pt-3 text-xs text-[#667085]">
-                <summary className="cursor-pointer font-medium text-[#2563EB]">展开次要字段</summary>
+                <summary className="flex min-h-11 cursor-pointer items-center font-medium text-[#2563EB]">展开次要字段</summary>
                 <div className="mt-2 space-y-1.5"><p>方向：{record.primaryDomain || "未识别"}</p><p>标签：{record.topicTags.join("、") || "无"}</p></div>
               </details>
-              <button type="button" onClick={() => onSelectProject(record)} className="mt-3 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 text-xs font-semibold text-[#2563EB] hover:bg-blue-50"><Eye className="size-3.5" />查看详情</button>
+              <button type="button" onClick={() => onSelectProject(record)} className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-blue-200 text-xs font-semibold text-[#2563EB] hover:bg-blue-50"><Eye className="size-3.5" />查看详情</button>
             </article>
           );
         })}
@@ -418,7 +418,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
               onClick={() => table.previousPage()}
             disabled={!table.getCanPreviousPage()}
             aria-label="上一页"
-            className="p-1.5 rounded-lg text-[#98A2B3] hover:text-[#102847] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className="flex size-11 items-center justify-center rounded-lg text-[#98A2B3] transition-all hover:bg-slate-100 hover:text-[#102847] disabled:cursor-not-allowed disabled:opacity-30 sm:size-8"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -450,7 +450,7 @@ export function ProjectTable({ data, onSelectProject }: ProjectTableProps) {
             onClick={() => table.nextPage()}
             disabled={!table.getCanNextPage()}
             aria-label="下一页"
-            className="p-1.5 rounded-lg text-[#98A2B3] hover:text-[#102847] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            className="flex size-11 items-center justify-center rounded-lg text-[#98A2B3] transition-all hover:bg-slate-100 hover:text-[#102847] disabled:cursor-not-allowed disabled:opacity-30 sm:size-8"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

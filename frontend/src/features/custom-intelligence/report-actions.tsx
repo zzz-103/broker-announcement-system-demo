@@ -21,10 +21,10 @@ export function ReportActions({ execution, pdfExporting, onExportPdf, onEmail, o
   const ready = !active && searchSucceeded && execution.status === "succeeded" && reportV2;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {ready && <Button variant="outline" size="sm" onClick={() => onExportPdf(execution)} disabled={pdfExporting}>{pdfExporting ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}下载 PDF</Button>}
-      {ready && <Button variant="outline" size="sm" onClick={() => onEmail(execution)}><Mail className="size-3.5" aria-hidden="true" />发送邮件</Button>}
-      {analysisFailed && onReanalyze && <Button variant="outline" size="sm" onClick={() => onReanalyze(execution)}><RefreshCw className="size-3.5" aria-hidden="true" />重新分析</Button>}
-      {!active && onRerun && <Button variant="outline" size="sm" onClick={() => onRerun(execution)}><RefreshCw className="size-3.5" aria-hidden="true" />再次生成</Button>}
+      {ready && <Button variant="outline" size="sm" className="min-h-11 sm:min-h-8" onClick={() => onExportPdf(execution)} disabled={pdfExporting}>{pdfExporting ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Download className="size-3.5" aria-hidden="true" />}下载 PDF</Button>}
+      {ready && <Button variant="outline" size="sm" className="min-h-11 sm:min-h-8" onClick={() => onEmail(execution)}><Mail className="size-3.5" aria-hidden="true" />发送邮件</Button>}
+      {analysisFailed && onReanalyze && <Button variant="outline" size="sm" className="min-h-11 sm:min-h-8" onClick={() => onReanalyze(execution)}><RefreshCw className="size-3.5" aria-hidden="true" />重新分析</Button>}
+      {!active && onRerun && <Button variant="outline" size="sm" className="min-h-11 sm:min-h-8" onClick={() => onRerun(execution)}><RefreshCw className="size-3.5" aria-hidden="true" />再次生成</Button>}
     </div>
   );
 }

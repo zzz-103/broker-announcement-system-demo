@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, Mail, Plus, X } from "lucide-react";
+import { Clock3, Loader2, Mail, Plus, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { HoverSelect } from "@/components/hover-select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -152,7 +152,7 @@ export function EmailDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="w-[calc(100%-1rem)] max-w-xl border-[#D9E2EC] bg-white sm:w-full">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-xl overflow-y-auto overscroll-contain border-[#D9E2EC] bg-white p-4 sm:w-full sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base text-[#172033]"><Mail className="size-4 text-[#315EA8]" />发送情报报告</DialogTitle>
           <DialogDescription className="text-[#667085]">选择报告模板与发送格式，可发送 HTML 正文、PDF 附件或两者。</DialogDescription>
@@ -221,7 +221,7 @@ export function EmailDialog({
                 type="button"
                 onClick={addRecipient}
                 disabled={sending || recipients.length >= MAX_RECIPIENTS}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-[#2563EB] px-3 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus className="size-3.5" aria-hidden="true" />添加
               </button>
@@ -244,7 +244,7 @@ export function EmailDialog({
                   type="button"
                   onClick={() => { setDomainChoice(domain); setCustomDomain(""); setError(""); setConfirmExternal(false); }}
                   disabled={sending}
-                  className={`rounded-full border px-2 py-1 text-[10px] ${domainChoice === domain ? "border-[#8BADE4] bg-[#EEF4FF] text-[#315EA8]" : "border-[#E4EAF2] bg-white text-[#667085] hover:border-[#BFD2F3]"}`}
+                  className={`min-h-11 rounded-full border px-3 py-2 text-[10px] sm:min-h-0 sm:px-2 sm:py-1 ${domainChoice === domain ? "border-[#8BADE4] bg-[#EEF4FF] text-[#315EA8]" : "border-[#E4EAF2] bg-white text-[#667085] hover:border-[#BFD2F3]"}`}
                 >
                   @{domain}
                 </button>
@@ -285,11 +285,15 @@ export function EmailDialog({
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">以下地址不属于 @{COMPANY_DOMAIN}：{external.join("、")}。确认仍要发送吗？</div>
           )}
           {error && <p role="alert" className="text-xs text-red-600">{error}</p>}
+          <div className="flex items-start gap-2 rounded-md border border-[#DCE8F8] bg-[#F5F8FD] px-3 py-2.5 text-xs leading-5 text-[#526580]">
+            <Clock3 className="mt-0.5 size-3.5 shrink-0 text-[#5E83BD]" aria-hidden="true" />
+            <p>邮件发送与接收可能有延迟，预计 30 分钟内送达，请勿重复发送。</p>
+          </div>
         </div>
 
         <DialogFooter>
-          <button type="button" onClick={() => close(false)} disabled={sending} className="rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC]">取消</button>
-          <button type="button" onClick={() => void submit()} disabled={sending || !execution || recipients.length === 0} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => close(false)} disabled={sending} className="min-h-11 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-sm font-semibold text-[#475467] hover:bg-[#F8FAFC]">取消</button>
+          <button type="button" onClick={() => void submit()} disabled={sending || !execution || recipients.length === 0} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8] disabled:cursor-not-allowed disabled:opacity-50">
             {sending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}{confirmExternal ? "确认发送" : "发送报告"}
           </button>
         </DialogFooter>
