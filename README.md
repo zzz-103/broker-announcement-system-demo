@@ -56,7 +56,7 @@ RUN_FRONTEND_STATIC_SMOKE=1 .venv/bin/python -m pytest -q backend/api/tests/test
 
 访问 `http://127.0.0.1:8000`、`http://127.0.0.1:8000/api/health` 和 `http://127.0.0.1:8000/docs`。新 Clone 不含业务运行数据；管理员登录后在“管理控制台 → 数据管理”选择可信 ZIP，先预览再确认导入，即可恢复招采、App 更新、AI 摘要以及可选的匹配增量基线。用户、审计、自定义情报、邮件配置和密钥不在数据包内，需在目标环境单独初始化。
 
-Windows PowerShell、双终端开发启动、逐项成功标志、数据导入后的重启复核和故障处理，请严格按 [docs/OPERATIONS.md](docs/OPERATIONS.md) 的“从零 Clone 手把手流程”执行。
+Windows PowerShell、双终端开发启动、逐项成功标志、数据导入后的重启复核和故障处理，请严格按 [docs/OPERATIONS.md](docs/OPERATIONS.md) 执行。无需启动前端时，操作手册第 12 节给出了纯终端启动采集/Pipeline、查询日志、取消任务、设置日期窗口、LLM/采集 worker、请求节流和 Cron 调度的完整命令。
 
 百度检索 API、共享 LLM API 和 SMTP 发件配置均可在“管理控制台 → 情报技术配置”维护。SMTP 支持配置主机、端口、SSL、用户名、发件地址和授权码；密钥仅返回掩码，查看原值需要二次验证管理员密码。
 
