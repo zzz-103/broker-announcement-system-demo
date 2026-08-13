@@ -207,12 +207,12 @@ try {
     finally { Pop-Location }
 
     Write-Host "Building $BackendImage from $GitSha"
-    docker build --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
+    docker build --network host --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
     Assert-LastExitCode 'Build backend image'
     docker run --rm --entrypoint python $BackendImage -c "import backend.broker_app_watch.cli; print('broker app watch import ok')"
     Assert-LastExitCode 'Validate broker app watch image import'
     Write-Host "Building $FrontendImage from $GitSha"
-    docker build --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
+    docker build --network host --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
     Assert-LastExitCode 'Build frontend image'
 
     Set-EnvValue -Path $EnvFile -Key 'BROKER_VERSION' -Value $Version
