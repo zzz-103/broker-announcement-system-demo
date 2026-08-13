@@ -26,9 +26,8 @@ COPY requirements-lock.txt /app/requirements-lock.txt
 # Adjust the relative requirements path for the container structure
 RUN python -c "import pathlib; p = pathlib.Path('/app/backend/api/requirements.txt'); p.write_text(p.read_text().replace('../../requirements.txt', '/app/requirements.txt'))"
 
-# Keep downloaded wheels between builds without storing them in the image.
-RUN --mount=type=cache,id=broker-backend-pip,target=/root/.cache/pip \
-    pip install -r /app/backend/api/requirements.txt -c /app/requirements-lock.txt
+# Avoid reusing proxy-corrupted wheels between release builds.
+RUN pip install --no-cache-dir -r /app/backend/api/requirements.txt -c /app/requirements-lock.txt
 
 # Copy backend codebase
 COPY backend /app/backend
