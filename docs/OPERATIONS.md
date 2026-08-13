@@ -1,15 +1,12 @@
 # 安装、运行与交接操作手册
 
-本文面向第一次接手项目、机器上没有本仓库运行环境的维护者。除明确标注“可选”或“生产”的步骤外，请按顺序执行，不要跳过成功标志检查。
+本文面向第一次接手项目、机器上没有本仓库运行环境的维护者。首次使用只需完成依赖安装、创建 `.env`、构建前端、启动 API 和一次 health 检查；完整测试、外部服务和生产部署均按需执行。
 
-## 1. 开始前先拿齐交接物
+最快流程：Clone 项目 → 安装 Python/前端依赖 → 复制并修改 `.env` → 构建前端 → 启动 FastAPI → 检查 health 并登录。新 Clone 没有业务数据属于正常情况，需要时再导入可信数据包。
 
-在运行命令前，确认以下四项：
+## 1. 开始前准备
 
-1. 可访问的 Git 仓库地址、交付分支和完整提交号。远端 Clone 只能取得已经推送的提交；“交付人本机工作树干净”不代表本地提交已经在远端。
-2. 一份由本系统导出的可信 `dashboard-data.zip`。新 Clone 不包含招采、App 更新和 AI 摘要等业务运行数据。
-3. 受控的运行配置或凭据清单。至少需要新环境自己的管理员密码和调度 Token。
-4. 若需要恢复用户、审计、自定义情报或管理员技术配置，另行取得经过批准的 SQLite 备份及恢复说明。dashboard-data ZIP 不包含这些数据。
+只做本地首次启动时，准备好 Git 仓库地址以及本环境使用的管理员密码和调度 Token 即可。新 Clone 不含业务数据；需要查看真实看板内容时，再准备由本系统导出的可信 `dashboard-data.zip`。
 
 交接边界如下：
 
@@ -18,7 +15,7 @@
 - `.env`、LLM 配置、SMTP 授权码、资格名单和 SQLite 通过受控渠道单独交付。
 - 不要直接复制上一位维护者的整个开发目录；其中可能混有虚拟环境、缓存、日志和本机路径。
 
-## 2. 准备工具并检查版本
+## 2. 准备工具
 
 正式推荐版本：
 
@@ -47,9 +44,9 @@ node --version
 corepack --version
 ```
 
-成功标志：四条命令都能输出版本，Python 为 3.11.x，Node 不低于 20.9。若 `python3.11` 或 `py -3.11` 不存在，先安装 Python 3.11；不要把系统 Python 目录复制进项目。若 `corepack` 不存在，使用包含 Corepack 的 Node 发行方式补齐后再继续。
+命令能输出版本即可继续。Python 应为 3.11.x，Node 不低于 20.9；缺少 Corepack 时，安装带 Corepack 的 Node 发行版。
 
-## 3. 从空目录 Clone 并核对交付提交
+## 3. Clone 项目
 
 选择一个新的父目录，不要 clone 到旧项目目录里面。
 
@@ -59,8 +56,6 @@ macOS/Linux：
 cd ~/work
 git clone https://github.com/zzz-103/broker-announcement-system-demo.git
 cd broker-announcement-system-demo
-git rev-parse HEAD
-git status --short
 ```
 
 Windows PowerShell 示例：
@@ -69,17 +64,9 @@ Windows PowerShell 示例：
 Set-Location D:\work
 git clone https://github.com/zzz-103/broker-announcement-system-demo.git
 Set-Location broker-announcement-system-demo
-git rev-parse HEAD
-git status --short
 ```
 
-逐项确认：
-
-1. `git rev-parse HEAD` 等于交付人给出的完整提交号；如果不同，先确认分支和提交是否已经推送，不要在错误版本上继续部署。
-2. `git status --short` 没有任何输出。此时仓库不应有 `.env`、`.venv`、`frontend/node_modules`、`frontend/out` 或 `frontend/.next`。
-3. 根目录存在 `requirements.txt`、`requirements-lock.txt`、`frontend/pnpm-lock.yaml`、`.env.example`、`README.md` 和本手册。
-
-后续所有后端命令都从仓库根执行；所有前端命令会明确要求先进入 `frontend/`。
+若这是正式交接，再用 `git rev-parse HEAD` 核对交付提交号。后续后端命令均从仓库根执行。
 
 ## 4. 创建 Python 虚拟环境并安装固定依赖
 
@@ -89,9 +76,7 @@ git status --short
 
 ```bash
 python3.11 -m venv .venv
-.venv/bin/python --version
 .venv/bin/python -m pip install -r requirements.txt -c requirements-lock.txt
-.venv/bin/python -m pip check
 ```
 
 ### 4.2 Windows PowerShell
@@ -100,12 +85,10 @@ python3.11 -m venv .venv
 
 ```powershell
 py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe --version
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt -c requirements-lock.txt
-.\.venv\Scripts\python.exe -m pip check
 ```
 
-成功标志：安装命令退出码为 0，最后一条显示 `No broken requirements found.`。`requirements.txt` 声明直接依赖范围，`requirements-lock.txt` 作为 constraints 固定交接验收版本；不要只安装其中一个文件，也不要把 lock 当成 `-r` 单独安装。
+安装命令退出码为 0 即可。`requirements.txt` 和 `requirements-lock.txt` 必须像上面一样同时使用。
 
 若公司网络下载大 wheel 较慢，可以只增加读取超时后重试：
 
@@ -121,7 +104,6 @@ macOS/Linux：
 
 ```bash
 cd frontend
-corepack pnpm --version
 corepack pnpm install --frozen-lockfile
 cd ..
 ```
@@ -130,12 +112,11 @@ Windows PowerShell：
 
 ```powershell
 Set-Location frontend
-corepack pnpm --version
 corepack pnpm install --frozen-lockfile
 Set-Location ..
 ```
 
-成功标志：`corepack pnpm --version` 显示 `9.0.0`，安装命令退出码为 0。必须保留 `--frozen-lockfile`；如果提示 lockfile 与 `package.json` 不一致，应停止并让代码维护者修复提交，不要在交接机器上临时重写 lockfile。
+安装命令退出码为 0 即可。必须保留 `--frozen-lockfile`；若提示 lockfile 不一致，请让代码维护者修复，不要在交接机器上重写 lockfile。
 
 项目的 `frontend/next-env.d.ts`、`.next/`、`out/` 和 `node_modules/` 都是本地生成物并已忽略。Next.js 在 dev/build 间重写 `next-env.d.ts` 是正常行为，不要把它重新加入 Git。
 
@@ -155,15 +136,16 @@ Windows PowerShell：
 Copy-Item .env.example .env
 ```
 
-用文本编辑器打开根 `.env`，至少完成以下修改：
+用文本编辑器打开根 `.env`，首次本地启动只需修改：
 
 ```dotenv
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=请替换为本环境密码
 SCHEDULER_TOKEN=请替换为另一个不同的值
+SCHEDULER_ENABLED=false
 ```
 
-不要把上面的中文占位文本或示例 `change-me` 当作真实值。`ADMIN_PASSWORD` 与 `SCHEDULER_TOKEN` 必须不同。第一次本地验收只启动 API 时，不必启动 scheduler；也可以暂时把 `SCHEDULER_ENABLED=false`，待调度联调时再启用。
+不要把上面的中文占位文本或示例 `change-me` 当作真实值。`ADMIN_PASSWORD` 与 `SCHEDULER_TOKEN` 必须不同。首次启动不运行 scheduler，待调度联调时再启用。
 
 保留本地前端来源：
 
@@ -190,42 +172,16 @@ Windows 使用：
 Copy-Item backend\config\user_qualification.example.csv backend\config\user_qualification.csv
 ```
 
-配置完成后执行：
+`.env`、真实资格名单、运行数据库和构建产物均不应提交到 Git。
 
-```bash
-git status --short
-```
+## 7. 构建前端
 
-成功标志：仍然没有输出。`.env`、真实资格名单、运行数据库和构建产物都应被忽略。若这里出现这些文件，先停止并检查路径，不要提交凭据或运行数据。
-
-## 7. 在启动服务前完成离线验收
-
-以下命令不调用真实爬虫、搜索、LLM 或 SMTP。
-
-### 7.1 后端测试
-
-macOS/Linux：
-
-```bash
-.venv/bin/python -m pytest -q
-```
-
-Windows PowerShell：
-
-```powershell
-.\.venv\Scripts\python.exe -m pytest -q
-```
-
-成功标志：pytest 最终退出码为 0。通过数量会随版本变化，不要把某次数字当作长期承诺；默认跳过需要生产静态产物的显式 smoke 是预期行为。
-
-### 7.2 前端类型检查、lint 和生产构建
+首次使用无需先跑整套 pytest、类型检查、lint 或静态 smoke，直接构建前端即可。
 
 macOS/Linux：
 
 ```bash
 cd frontend
-corepack pnpm run ts-check
-corepack pnpm run lint:build
 NEXT_PUBLIC_API_BASE_URL= corepack pnpm build
 cd ..
 ```
@@ -234,46 +190,15 @@ Windows PowerShell：
 
 ```powershell
 Set-Location frontend
-corepack pnpm run ts-check
-corepack pnpm run lint:build
 $env:NEXT_PUBLIC_API_BASE_URL=""
 corepack pnpm build
 Remove-Item Env:NEXT_PUBLIC_API_BASE_URL
 Set-Location ..
 ```
 
-空 `NEXT_PUBLIC_API_BASE_URL` 表示生产静态页面与 FastAPI 同源。成功标志：类型检查和 lint 退出 0，构建输出列出 `/`、`/admin`、`/app-updates`、`/custom-intelligence`，并生成 `frontend/out`。
+空 `NEXT_PUBLIC_API_BASE_URL` 表示静态页面与 FastAPI 同源。命令完成并生成 `frontend/out` 即可。
 
-### 7.3 显式生产静态页面 smoke
-
-macOS/Linux：
-
-```bash
-RUN_FRONTEND_STATIC_SMOKE=1 .venv/bin/python -m pytest -q backend/api/tests/test_route_ownership.py -k static_export
-```
-
-Windows PowerShell：
-
-```powershell
-$env:RUN_FRONTEND_STATIC_SMOKE="1"
-.\.venv\Scripts\python.exe -m pytest -q backend/api/tests/test_route_ownership.py -k static_export
-Remove-Item Env:RUN_FRONTEND_STATIC_SMOKE
-```
-
-成功标志：该 smoke 通过，并检查 `/`、`/admin`、`/app-updates`、`/custom-intelligence` 和 `/version.json`。若 `frontend/out` 不存在，它会明确失败；先重新执行生产构建，不要把 smoke 改回静默跳过。
-
-### 7.4 App Watch 离线配置检查
-
-macOS/Linux：
-
-```bash
-.venv/bin/python -m backend.broker_app_watch.cli check-config
-.venv/bin/python -m backend.broker_app_watch.cli dry-run
-```
-
-Windows 将 Python 路径替换为 `.\.venv\Scripts\python.exe`。成功标志：配置读取成功，dry-run 列出计划来源并明确“不发起网络请求”。
-
-## 8. 第一次启动：先用单进程 FastAPI 验收
+## 8. 启动并做最小调试
 
 完成生产构建后，FastAPI 会同源托管 `frontend/out`。这是一条最简单的首次启动链路。
 
@@ -291,17 +216,12 @@ Windows PowerShell：
 
 不要把 `--workers 1` 改成多 worker。Session、任务状态、互斥锁和日志在进程内。
 
-看到 `Application startup complete` 后，在浏览器逐个打开：
+看到 `Application startup complete` 后，只做两项检查：
 
-1. `http://127.0.0.1:8000/api/health`：应返回 `{"status":"ok"}`；
-2. `http://127.0.0.1:8000/docs`：应显示 OpenAPI 页面；
-3. `http://127.0.0.1:8000/`；
-4. `http://127.0.0.1:8000/admin`；
-5. `http://127.0.0.1:8000/app-updates`；
-6. `http://127.0.0.1:8000/custom-intelligence`；
-7. `http://127.0.0.1:8000/version.json`。
+1. 打开 `http://127.0.0.1:8000/api/health`，应返回 `{"status":"ok"}`；
+2. 打开 `http://127.0.0.1:8000/`，使用 `.env` 中的管理员账号登录。
 
-也可在终端二检查 health：
+若页面打不开，先在另一个终端检查 health：
 
 ```bash
 curl --fail http://127.0.0.1:8000/api/health
@@ -313,9 +233,9 @@ Windows PowerShell：
 Invoke-RestMethod http://127.0.0.1:8000/api/health
 ```
 
-使用 `.env` 中的管理员用户名和密码登录。第一次启动和首次登录会按需创建被忽略的 `backend/data/users.db` 和 `backend/data/audit.db`；这是正常初始化，不要加入 Git。
+health 正常但页面异常时，重新执行第 7 节构建；health 也失败时，查看启动终端最后一段报错，优先检查 `.env`、依赖安装和 8000 端口占用。首次启动无需先跑整套测试。
 
-按 `Ctrl+C` 停止 API，再执行同一启动命令一次。health 和 `/admin` 再次可访问才算重启链路通过。后端重启会清空内存 Session，浏览器需要重新登录。
+第一次启动和登录会按需创建被忽略的 `backend/data/users.db` 和 `backend/data/audit.db`，属于正常初始化。需要接口调试时再访问 `http://127.0.0.1:8000/docs`。用 `Ctrl+C` 停止服务。
 
 ## 9. 日常开发：后端和 Next.js 分两个终端
 
@@ -469,11 +389,10 @@ git status --branch --short
 - `git status --short` 刚 Clone 就有输出：确认是否 clone 到旧目录、是否运行过会改 tracked 文件的旧脚本；不要直接删除不认识的文件。
 - 找不到 Python 3.11：安装 3.11 后重新创建 `.venv`，不要让 3.10/3.12 的虚拟环境冒充正式交接环境。
 - pip 下载超时：保留 requirements + constraints，使用 `--timeout 300` 重试或配置公司批准的镜像；不要擅自改版本。
-- `pip check` 报冲突：确认安装命令同时包含 `-r requirements.txt -c requirements-lock.txt`，并确认虚拟环境是新建的。
 - frozen lockfile 失败：确认 Git 提交正确；不要在交接机上运行会改 lockfile 的安装命令。
-- 后端无法启动：从仓库根运行，确认 `.env` 已创建、管理员密码已替换、8000 端口未占用；先执行 pytest 和 `pip check`。
+- 后端无法启动：从仓库根运行，确认 `.env` 已创建、管理员密码已替换、8000 端口未占用，然后查看启动终端最后一段报错。
 - 前端无法连接 API：检查 `NEXT_PUBLIC_API_BASE_URL`、`FRONTEND_ORIGIN` 和端口；后端重启后需重新登录。
-- 生产页面 404：确认已执行空 API Base URL 的 `pnpm build`，且 `frontend/out` 存在；再执行显式静态 smoke。
+- 页面 404：确认已按第 7 节执行前端构建且 `frontend/out` 存在，然后重启 API。
 - 当前没有可用看板数据：新 Clone 的正常初始状态；导入可信 dashboard-data ZIP，不要为补历史数据直接重跑完整 Pipeline。
 - 导入失败：使用系统原样导出的 ZIP，检查 Manifest/schema/hash/count、可选 baseline 和 64 MiB 限制；不要自行重打包混入数据库或密钥。
 - 导入后重启丢失：检查 `DASHBOARD_DATA_EXPORT_DIR` 是否位于持久化的 `backend/data` 下，生产 Compose 是否挂载 `./runtime/data:/app/backend/data`。
@@ -483,35 +402,19 @@ git status --branch --short
 - 邮件失败：确认主机/端口/SSL、用户名/发件地址、授权码和网络放行；不要把授权码打印到终端或提交到 Git。
 - Docker 构建或启动失败：确认 Docker Compose v2、运行目录模板和受限配置齐全，先执行 `docker compose config`，再查看四服务日志。本项目没有 Redis/Celery。
 
-## 15. 交接完成前的最终清单
+## 15. 正式交接清单
 
-逐项打勾：
+以下清单用于正式交接，不是首次本地启动的前置步骤：
 
 - [ ] 交付提交号与新 Clone 的 `git rev-parse HEAD` 一致，并且远端可访问；
-- [ ] Python 使用 requirements + constraints 安装，`pip check` 通过；
-- [ ] pnpm 使用 Corepack 9.0.0 和 frozen lockfile 安装；
+- [ ] Python 和前端依赖安装成功；
 - [ ] `.env` 已使用新环境的两个不同秘密值，未提交真实凭据；
-- [ ] 后端 pytest、前端类型检查、lint、生产构建均退出 0；
-- [ ] 显式静态 smoke 覆盖四页和 `/version.json`；
-- [ ] FastAPI 单 worker 启动，health、OpenAPI、登录和四页可用；
-- [ ] 首次启动/登录后的 SQLite 初始化完成，停止并重启后服务仍可用；
+- [ ] 前端构建成功，FastAPI 单 worker 启动，health 正常且管理员可以登录；
 - [ ] 可信 ZIP 预览、导入成功，source 为 imported；
 - [ ] API 重启后 imported 来源和数据仍可读取；
 - [ ] 外部采集/搜索/LLM/SMTP/生产发布中未执行的项目已明确写成“未验证”；
 - [ ] 母仓库执行 `git status --short` 无输出，没有把 `.env`、SQLite、ZIP、构建产物或缓存加入 Git。
 
-## 16. 最近一次从零模拟记录
+## 16. 历史验证说明
 
-2026-08-12 对提交 `ad5dbb0` 创建了独立临时 Clone，并确认初始目录不含 `.env`、`.venv`、`frontend/node_modules` 或构建产物。本次机器没有 Python 3.11，因此使用 Python 3.12.13 做额外兼容模拟；正式推荐版本仍为 Python 3.11。
-
-实际完成：
-
-- requirements + constraints 从空虚拟环境安装成功，19 个锁定直接依赖全部匹配，`pip check` 通过；
-- Node.js 24.17.0 + Corepack 按项目声明使用 pnpm 9.0.0，frozen lockfile 安装成功；
-- 后端测试、前端类型检查、lint、空 API Base URL 生产构建和显式静态 smoke 通过；测试数量只记录在执行日志中，不作为长期文档承诺；
-- FastAPI 单 worker 首次启动成功，health、OpenAPI、管理员登录、四个静态页面和 `/version.json` 可访问，用户/审计 SQLite 自动初始化；
-- FastAPI 停止并重启成功；Next.js dev 与 FastAPI 双终端启动成功，四个 dev 页面可访问；
-- App Watch `check-config` 和 `dry-run` 成功，未发起网络请求；
-- 使用可信数据包预览无警告，导入后 source 为 imported，读取到 1,425 条招采和 69 条 App 更新；API 重启后 imported 来源、包版本和数据仍可读取。
-
-本次未运行真实爬虫、百度搜索、LLM、SMTP、完整 Pipeline、独立 scheduler 定时触发、Docker/PowerShell 生产发布或生产网络策略验收。这些项目必须在目标环境获得明确授权后单独验证。
+仓库曾在MAC测试环境独立临时 Clone 中完成依赖安装、前端构建、单 worker FastAPI 启动、管理员登录和数据包导入验证。该记录仅说明链路曾可用，不能代表在Windows环境中可用，不能替代当前环境的 health 与登录检查；真实爬虫、搜索、LLM、SMTP、调度器和生产发布仍须在获得授权后分别验证。
