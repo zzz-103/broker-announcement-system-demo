@@ -5,9 +5,9 @@
 ```text
 浏览器
   └─ HTTP / Bearer SSE
-     └─ Nginx Gateway（生产）
+     └─ frontend 镜像内 Nginx（生产）
         ├─ Next.js 静态导出（frontend/out）
-        └─ FastAPI（单 worker）
+        └─ /api 反向代理 → FastAPI（单 worker）
            ├─ 内存 Session、任务状态、互斥锁、SSE 日志
            ├─ SQLite：用户、审计、自定义情报、邮件配置
            ├─ CSV / JSON：招采、App 更新、AI 摘要、dashboard-data
@@ -18,7 +18,7 @@
   └─ X-Scheduler-Token HTTP → FastAPI 内部任务接口
 ```
 
-当前代码没有 Redis、Celery、Kafka 或业务数据库服务。生产 Compose 是 `backend-api`、`backend-scheduler`、`frontend`、`gateway` 四服务；FastAPI 必须单 worker，因为 Session、任务锁和日志历史保存在进程内。
+当前代码没有 Redis、Celery、Kafka 或业务数据库服务。生产 Compose 是 `backend-api`、`backend-scheduler`、`frontend` 三服务；frontend 镜像同时封装 Nginx、静态文件和 API 反向代理，不需要服务器额外拉取 Nginx 镜像。FastAPI 必须单 worker，因为 Session、任务锁和日志历史保存在进程内。
 
 ## 主要模块
 
@@ -34,7 +34,7 @@
 | App Watch | `backend/broker_app_watch/` | 来源采集、解析、归一化、LLM 补充、原子导出 |
 | 自定义情报 | `custom_intelligence_*`、`qianfan_search.py`、`intelligence_*` | 查询规划、联网搜索、Report V2、PDF、邮件、管理员配置 |
 | 数据包 | `dashboard_package.py`、`dashboard_package_import.py` | 标准化、校验、Export=Import、live/imported 源选择 |
-| 发布 | `scripts/deploy-release.ps1`、`deploy/` | Windows 镜像构建、四服务发布、健康检查和回滚 |
+| 发布 | `scripts/deploy-release.ps1`、`deploy/` | `linux/amd64` 镜像构建、三服务发布、健康检查和回滚 |
 
 `backend/api/main.py` 只装配中间件、领域路由和静态前端；业务逻辑留在各服务模块。`frontend/src/lib/api/` 是前端唯一 API/SSE 客户端层，`shared/dashboard-data/contracts.ts` 是看板契约的 TypeScript 定义。
 

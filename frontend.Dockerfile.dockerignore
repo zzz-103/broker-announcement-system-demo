@@ -6,5 +6,10 @@
 **/.next
 **/out
 **/__pycache__
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
 *.pyc
 *.log

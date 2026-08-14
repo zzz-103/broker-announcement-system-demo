@@ -7,6 +7,7 @@ backend/config/user_qualification.csv
 backend/config/broker_app_watch/settings.yaml
 docs/network-whitelist.csv
 runtime/
+release/
 
 # Generated crawler and task output
 **/output/

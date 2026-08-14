@@ -5,10 +5,13 @@ WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 
-# Production is served through the gateway, so browser requests must use same-origin /api.
+# Production is served by this image's Nginx, so browser requests use same-origin /api.
 # This takes precedence over any developer-only frontend/.env.local configuration.
 ARG NEXT_PUBLIC_API_BASE_URL=
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+ARG APP_VERSION=1.9.0
+ARG GIT_SHA=unknown
+ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 
 COPY frontend/pnpm-lock.yaml frontend/.npmrc ./
 
@@ -28,35 +31,14 @@ COPY shared/dashboard-data/ /shared/dashboard-data/
 
 RUN pnpm build
 
-ARG APP_VERSION
-ARG GIT_SHA
 RUN printf '{"version":"%s","git_sha":"%s"}\n' "$APP_VERSION" "$GIT_SHA" > /app/out/version.json
 
 
 FROM nginx:1.27-alpine
 
-RUN rm -f /etc/nginx/conf.d/default.conf && \
-    printf '%s\n' \
-    'server {' \
-    '    listen 3000;' \
-    '    server_name _;' \
-    '    root /usr/share/nginx/html;' \
-    '    index index.html;' \
-    '' \
-    '    location / {' \
-    '        try_files $uri $uri.html $uri/ /index.html;' \
-    '    }' \
-    '' \
-    '    location = /health {' \
-    '        access_log off;' \
-    '        add_header Content-Type text/plain;' \
-    '        return 200 "ok";' \
-    '    }' \
-    '}' \
-    > /etc/nginx/conf.d/default.conf
-
+COPY deploy/frontend.nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/out /usr/share/nginx/html
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["nginx", "-g", "daemon off;"]

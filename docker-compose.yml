@@ -1,8 +1,8 @@
-# Development backend stack only. Production uses deploy/docker-compose.example.yml
-# copied into the external deployment directory and includes frontend + gateway.
+# Development backend stack only. Production uses deploy/docker-compose.example.yml.
 services:
   backend-api:
-    image: ${BROKER_IMAGE:-broker-backend:1.7.1}
+    image: ${BROKER_IMAGE:-broker-backend:1.9.0}
+    platform: linux/amd64
     ports:
       - "5000:8000"
     restart: unless-stopped
@@ -10,7 +10,6 @@ services:
       - .env
     environment:
       - SCHEDULER_ENABLED=false
-      - FRONTEND_DIST_PATH=/app/frontend/out
     volumes:
       - ./runtime/data:/app/backend/data
       - ./runtime/scraper-output:/app/backend/python-http-www-cfcpn-com-jcw/output
@@ -30,7 +29,8 @@ services:
         max-file: "5"
 
   backend-scheduler:
-    image: ${BROKER_IMAGE:-broker-backend:1.7.1}
+    image: ${BROKER_IMAGE:-broker-backend:1.9.0}
+    platform: linux/amd64
     command: python -m backend.api.scheduler
     restart: unless-stopped
     environment:

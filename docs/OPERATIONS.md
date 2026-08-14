@@ -666,11 +666,11 @@ docker compose stop backend-scheduler
 源码目录与生产运行目录分开。首次准备 `D:\broker-system`：
 
 1. 将 `deploy/docker-compose.example.yml` 复制为 `D:\broker-system\docker-compose.yml`；
-2. 将 `deploy/nginx.conf` 复制到同目录；
-3. 创建生产 `.env`，设置 `BROKER_VERSION`、`BROKER_PUBLIC_URL`、管理员密码、调度 Token 和所需配置；
-4. 创建 `runtime\data`、`runtime\scraper-output`、`runtime\app-watch-data`、`runtime\config`；
-5. 在 `runtime\config` 放置受限的 `llm_api_config.json` 和 `user_qualification.csv`；
-6. 执行 `docker compose config`，确认四服务配置能展开且没有缺失变量。
+2. 创建生产 `.env`，设置 `BROKER_VERSION`、`BROKER_PUBLIC_URL`、管理员密码、调度 Token 和所需配置；
+3. 创建 `runtime\data`、`runtime\scraper-output`、`runtime\app-watch-data`、`runtime\config`；
+4. 在 `runtime\config` 放置受限的 `llm_api_config.json` 和 `user_qualification.csv`；
+5. 首次部署时，在 API 启动前将现有 `users.db`、`audit.db` 放入 `runtime\data`；这些文件与 `.env` 均应通过受控渠道交付并限制为仅部署账号可读写；
+6. 执行 `docker compose config`，确认三服务配置能展开且没有缺失变量。
 
 发布前确认源码分支、提交号和工作树：
 
@@ -686,10 +686,10 @@ git status --branch --short
 `git status --short` 必须无输出，交付提交必须已在远端。`frontend/package.json` 版本必须等于发布版本。然后执行：
 
 ```powershell
-.\scripts\deploy-release.ps1 -Version 1.7.1 -DeployDir D:\broker-system
+.\scripts\deploy-release.ps1 -Version 1.9.0 -DeployDir D:\broker-system
 ```
 
-脚本构建 backend/frontend 镜像，验证四个 Compose 服务，更新生产 `.env`，重建容器，检查 API、首页和 `version.json`，失败时尝试回滚。生产访问默认为 `http://localhost:8080`。不要在生产运行目录执行 `git pull`，也不要绕过脚本直接更新版本。
+脚本使用 buildx 将 backend/frontend 统一构建为 `linux/amd64`，验证三个 Compose 服务和镜像架构，更新生产 `.env`，重建容器，检查 API、首页和 `version.json`，失败时尝试回滚。frontend 镜像已包含 Nginx、静态文件和反向代理配置；生产访问默认为 `http://localhost:8080`。不要在生产运行目录执行 `git pull`，也不要绕过脚本直接更新版本。
 
 根 `docker-compose.yml` 只有 backend-api/backend-scheduler，适合后端开发验证；完整生产拓扑以 `deploy/docker-compose.example.yml` 为准。FastAPI 始终保持一个 worker。
 
@@ -709,7 +709,7 @@ git status --branch --short
 - App Watch 配置失败：先运行 `check-config` 和 `dry-run`；dry-run 不联网，可用于区分配置问题和网络问题。
 - 搜索/LLM 失败：在“情报技术配置”检查服务端 Key、模型、base URL 和连接测试；503 常见于未配置，504 为上游超时。
 - 邮件失败：确认主机/端口/SSL、用户名/发件地址、授权码和网络放行；不要把授权码打印到终端或提交到 Git。
-- Docker 构建或启动失败：确认 Docker Compose v2、运行目录模板和受限配置齐全，先执行 `docker compose config`，再查看四服务日志。本项目没有 Redis/Celery。
+- Docker 构建或启动失败：确认 Docker Compose v2、buildx、运行目录模板和受限配置齐全，先执行 `docker compose config`，再查看三个服务日志。本项目没有 Redis/Celery。
 
 ## 15. 正式交接清单
 

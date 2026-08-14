@@ -21,8 +21,9 @@ $ComposeFile = Join-Path $DeployDir 'docker-compose.yml'
 $EnvFile = Join-Path $DeployDir '.env'
 $ReleaseDir = Join-Path $DeployDir 'deploy\releases'
 $Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$BackendImage = "broker-backend:$Version"
-$FrontendImage = "broker-frontend:$Version"
+$Registry = '172.16.96.238:5000'
+$BackendImage = "$Registry/broker-backend:v$Version"
+$FrontendImage = "$Registry/broker-frontend:v$Version"
 $DeploymentStarted = $false
 $RollbackAttempted = $false
 $RollbackSucceeded = $false
@@ -187,7 +188,7 @@ try {
         Assert-LastExitCode 'Validate Docker Compose configuration'
         $composeServices = @(docker compose config --services)
         Assert-LastExitCode 'Read Docker Compose services'
-        foreach ($requiredService in @('backend-api', 'backend-scheduler', 'frontend', 'gateway')) {
+        foreach ($requiredService in @('backend-api', 'backend-scheduler', 'frontend')) {
             if ($composeServices -notcontains $requiredService) {
                 throw "Required Compose service not found: $requiredService"
             }
@@ -207,26 +208,31 @@ try {
     finally { Pop-Location }
 
     Write-Host "Building $BackendImage from $GitSha"
-    docker build --network host --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
+    docker buildx build --platform linux/amd64 --load --network host --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
     Assert-LastExitCode 'Build backend image'
     docker run --rm --entrypoint python $BackendImage -c "import backend.broker_app_watch.cli; print('broker app watch import ok')"
     Assert-LastExitCode 'Validate broker app watch image import'
     Write-Host "Building $FrontendImage from $GitSha"
-    docker build --network host --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
+    docker buildx build --platform linux/amd64 --load --network host --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
     Assert-LastExitCode 'Build frontend image'
+    foreach ($image in @($BackendImage, $FrontendImage)) {
+        $architecture = (docker image inspect $image --format '{{.Architecture}}').Trim()
+        Assert-LastExitCode "Inspect image architecture: $image"
+        if ($architecture -ne 'amd64') { throw "Image $image has architecture '$architecture', expected 'amd64'." }
+    }
 
     Set-EnvValue -Path $EnvFile -Key 'BROKER_VERSION' -Value $Version
     $DeploymentStarted = $true
     Push-Location $DeployDir
     try {
-        docker compose up -d --force-recreate --pull never backend-api backend-scheduler frontend gateway
+        docker compose up -d --force-recreate --pull never backend-api backend-scheduler frontend
         Assert-LastExitCode 'Recreate release containers'
         docker compose ps
     }
     finally { Pop-Location }
-    if (-not (Test-DeploymentHealth)) { throw 'New version failed gateway health validation.' }
+    if (-not (Test-DeploymentHealth)) { throw 'New version failed public health validation.' }
 
-    Write-ReleaseRecord -Result 'succeeded' -Message 'Gateway API and homepage health checks passed.'
+    Write-ReleaseRecord -Result 'succeeded' -Message 'Public API and homepage health checks passed.'
     Write-Host "Version $Version deployed successfully. Open: $PublicBaseUrl"
 }
 catch {
@@ -237,10 +243,10 @@ catch {
         try {
             Set-EnvValue -Path $EnvFile -Key 'BROKER_VERSION' -Value $PreviousVersion
             Push-Location $DeployDir
-            try { docker compose up -d --force-recreate --pull never backend-api backend-scheduler frontend gateway; Assert-LastExitCode 'Recreate rollback containers' }
+            try { docker compose up -d --force-recreate --pull never backend-api backend-scheduler frontend; Assert-LastExitCode 'Recreate rollback containers' }
             finally { Pop-Location }
             $RollbackSucceeded = Test-DeploymentHealth
-            if (-not $RollbackSucceeded) { throw 'Rollback containers did not pass gateway health validation.' }
+            if (-not $RollbackSucceeded) { throw 'Rollback containers did not pass public health validation.' }
         }
         catch { $failureMessage = "$failureMessage Rollback failed: $($_.Exception.Message)" }
     }

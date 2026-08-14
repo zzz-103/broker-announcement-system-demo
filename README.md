@@ -8,7 +8,7 @@
 - 招采看板、App 更新看板、AI 摘要与标准数据包导入/导出
 - 自定义情报搜索、报告持久化、PDF 与可配置 SMTP 邮件发送
 - 管理员任务/SSE 日志、用户审批、反馈、审计与 AI 技术配置
-- 独立定时调度器，以及 Windows Docker Compose + Nginx 发布流程
+- 独立定时调度器，以及封装 Nginx 的 `linux/amd64` Docker Compose 发布流程
 
 ## 快速开始
 
