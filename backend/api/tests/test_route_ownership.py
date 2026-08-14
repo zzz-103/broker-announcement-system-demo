@@ -444,6 +444,68 @@ class RouteOwnershipTests(unittest.TestCase):
         )
         self.assertEqual(self.client.delete(f"/api/admin/users/{user_id}", headers=admin_headers).status_code, 409)
 
+    def test_super_admin_can_demote_admin_and_revoke_existing_sessions(self) -> None:
+        admin_headers = self._admin_headers()
+        suffix = uuid.uuid4().hex[:8]
+        created = self.client.post(
+            "/api/admin/users",
+            headers=admin_headers,
+            json={"name": "Demoted Admin", "email": f"demoted-{suffix}@example.com", "department": "Test"},
+        )
+        self.assertEqual(created.status_code, 200)
+        user_id = int(created.json()["user"]["id"])
+        username = str(created.json()["user"]["username"])
+        password = str(created.json()["initial_password"])
+
+        promoted = self.client.post(f"/api/admin/users/{user_id}/promote", headers=admin_headers)
+        self.assertEqual(promoted.status_code, 200)
+        promoted_login = self.client.post(
+            "/api/login",
+            json={"username": username, "password": password},
+        )
+        self.assertEqual(promoted_login.status_code, 200)
+        promoted_headers = {"Authorization": f"Bearer {promoted_login.json()['token']}"}
+        self.assertEqual(promoted_login.json()["is_admin"], True)
+
+        self.assertEqual(
+            self.client.post(f"/api/admin/users/{user_id}/demote", headers=promoted_headers).status_code,
+            403,
+        )
+        with patch.object(accounts, "write_audit_event_safely", return_value=False):
+            demoted = self.client.post(f"/api/admin/users/{user_id}/demote", headers=admin_headers)
+        self.assertEqual(demoted.status_code, 200)
+        self.assertEqual(demoted.json()["user"]["role"], "user")
+
+        self.assertEqual(self.client.get("/api/admin/users", headers=promoted_headers).status_code, 401)
+        relogin = self.client.post(
+            "/api/login",
+            json={"username": username, "password": password},
+        )
+        self.assertEqual(relogin.status_code, 200)
+        self.assertEqual(relogin.json()["role"], "user")
+        self.assertFalse(relogin.json()["is_admin"])
+        self.assertFalse(relogin.json()["is_super_admin"])
+        self.assertEqual(
+            self.client.get(
+                "/api/admin/users",
+                headers={"Authorization": f"Bearer {relogin.json()['token']}"},
+            ).status_code,
+            403,
+        )
+
+    def test_super_admin_identity_is_reserved_from_creation_and_listing(self) -> None:
+        admin_headers = self._admin_headers()
+        reserved = self.client.post(
+            "/api/admin/users",
+            headers=admin_headers,
+            json={"name": "伪超级管理员", "email": "route-audit-admin@example.com", "department": "Test"},
+        )
+        self.assertEqual(reserved.status_code, 409)
+
+        listed = self.client.get("/api/admin/users", headers=admin_headers)
+        self.assertEqual(listed.status_code, 200)
+        self.assertTrue(all(user["username"] != "route-audit-admin" for user in listed.json()["users"]))
+
     def test_admin_search_config_requires_admin_and_redacts_key(self) -> None:
         admin_headers = self._admin_headers()
         self.assertEqual(

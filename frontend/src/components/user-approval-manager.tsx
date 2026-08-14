@@ -10,6 +10,7 @@ import {
   Loader2,
   RefreshCw,
   ShieldCheck,
+  ShieldOff,
   Search,
   Trash2,
   UserPlus,
@@ -22,6 +23,7 @@ import {
   BackendApiError,
   createAdminUser,
   deleteAdminUser,
+  demoteAdminUser,
   getAdminUsers,
   promoteAdminUser,
 } from "@/lib/api/backend-client";
@@ -62,6 +64,7 @@ export function UserApprovalManager() {
   const [isCreating, setIsCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [promotingId, setPromotingId] = useState<number | null>(null);
+  const [demotingId, setDemotingId] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [createdCredential, setCreatedCredential] = useState<CreatedCredential | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -160,8 +163,8 @@ export function UserApprovalManager() {
   };
 
   const handlePromote = async (user: AdminUser) => {
-    if (!token || !isSuperAdmin || promotingId !== null || user.role === "admin") return;
-    const confirmed = window.confirm(`确认任命「${user.name}」为管理员吗？该操作不可撤销。`);
+    if (!token || !isSuperAdmin || promotingId !== null || demotingId !== null || user.role === "admin") return;
+    const confirmed = window.confirm(`确认任命「${user.name}」为管理员吗？之后可由超级管理员取消任命。`);
     if (!confirmed) return;
     setPromotingId(user.id);
     setError("");
@@ -172,6 +175,22 @@ export function UserApprovalManager() {
       if (!handleAuthError(error)) setError(errorMessage(error));
     } finally {
       setPromotingId(null);
+    }
+  };
+
+  const handleDemote = async (user: AdminUser) => {
+    if (!token || !isSuperAdmin || promotingId !== null || demotingId !== null || user.role !== "admin") return;
+    const confirmed = window.confirm(`确认取消「${user.name}」的管理员任命吗？取消后将恢复普通用户权限。`);
+    if (!confirmed) return;
+    setDemotingId(user.id);
+    setError("");
+    try {
+      await demoteAdminUser(token, user.id);
+      await loadUsers();
+    } catch (error) {
+      if (!handleAuthError(error)) setError(errorMessage(error));
+    } finally {
+      setDemotingId(null);
     }
   };
 
@@ -394,17 +413,27 @@ export function UserApprovalManager() {
                           {isSuperAdmin && user.role === "user" && <button
                             type="button"
                             onClick={() => void handlePromote(user)}
-                            disabled={promotingId !== null || deletingId !== null}
+                            disabled={promotingId !== null || demotingId !== null || deletingId !== null}
                             title="任命为管理员"
                             className="inline-flex h-8 items-center gap-1 rounded-lg border border-blue-100 px-2 text-[11px] font-semibold text-[#315EA8] hover:bg-blue-50 disabled:opacity-50"
                           >
                             {promotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
                             任命管理员
                           </button>}
+                          {isSuperAdmin && user.role === "admin" && <button
+                            type="button"
+                            onClick={() => void handleDemote(user)}
+                            disabled={promotingId !== null || demotingId !== null || deletingId !== null}
+                            title="取消管理员任命"
+                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-amber-200 px-2 text-[11px] font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                          >
+                            {demotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
+                            取消管理员
+                          </button>}
                           <button
                             type="button"
                             onClick={() => void handleDelete(user)}
-                            disabled={deletingId !== null || promotingId !== null || user.role === "admin"}
+                            disabled={deletingId !== null || promotingId !== null || demotingId !== null || user.role === "admin"}
                             title="删除用户"
                             className="h-8 w-8 inline-flex items-center justify-center rounded-lg border border-red-100 text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
                           >
@@ -450,16 +479,25 @@ export function UserApprovalManager() {
                       {isSuperAdmin && user.role === "user" && <button
                         type="button"
                         onClick={() => void handlePromote(user)}
-                        disabled={promotingId !== null || deletingId !== null}
+                        disabled={promotingId !== null || demotingId !== null || deletingId !== null}
                         className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-blue-200 px-3 text-xs font-semibold text-[#315EA8] hover:bg-blue-50 disabled:opacity-60 md:h-8"
                       >
                         {promotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
                         任命管理员
                       </button>}
+                      {isSuperAdmin && user.role === "admin" && <button
+                        type="button"
+                        onClick={() => void handleDemote(user)}
+                        disabled={promotingId !== null || demotingId !== null || deletingId !== null}
+                        className="inline-flex h-11 items-center gap-1.5 rounded-lg border border-amber-200 px-3 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60 md:h-8"
+                      >
+                        {demotingId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
+                        取消管理员
+                      </button>}
                       <button
                         type="button"
                         onClick={() => void handleDelete(user)}
-                        disabled={deletingId !== null || promotingId !== null || user.role === "admin"}
+                        disabled={deletingId !== null || promotingId !== null || demotingId !== null || user.role === "admin"}
                         className="flex h-11 items-center gap-1.5 rounded-lg border border-red-200 px-3 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 md:h-8"
                       >
                         {deletingId === user.id ? (

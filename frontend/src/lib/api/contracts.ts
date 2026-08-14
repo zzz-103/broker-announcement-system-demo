@@ -37,6 +37,7 @@ export type AuditEventType =
   | "login_success"
   | "dashboard_view"
   | "user_role_promoted"
+  | "user_role_demoted"
   | "custom_intelligence_config_updated"
   | "custom_intelligence_secret_revealed"
   | "custom_intelligence_connection_tested"

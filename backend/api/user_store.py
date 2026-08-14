@@ -41,6 +41,14 @@ class AlreadyAdminError(UserStoreError):
     pass
 
 
+class NotAdminError(UserStoreError):
+    pass
+
+
+class ReservedAdminUsernameError(UserStoreError):
+    pass
+
+
 class FeedbackNotFoundError(UserStoreError):
     pass
 
@@ -133,6 +141,11 @@ def username_from_email(email: str) -> str:
 
 def qualification_email_domain() -> str:
     return os.getenv("USER_QUALIFICATION_EMAIL_DOMAIN", "csco.com.cn").strip().lower().lstrip("@")
+
+
+def is_reserved_admin_username(username: str) -> bool:
+    configured_username = os.getenv("ADMIN_USERNAME", "admin").strip()
+    return bool(configured_username) and username.strip().casefold() == configured_username.casefold()
 
 
 def read_qualification_csv_text(path: Path) -> str:
@@ -379,18 +392,19 @@ def _fetch_user_by_email_or_username(
 
 def list_users(page: int, page_size: int, query: str | None = None) -> tuple[list[ApprovedUser], int, int]:
     normalized_query = query.strip() if query else ""
-    where_clause = ""
-    parameters: list[object] = []
+    where_clauses = ["LOWER(username) <> LOWER(?)"]
+    parameters: list[object] = [os.getenv("ADMIN_USERNAME", "admin").strip()]
     if normalized_query:
         escaped_query = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{escaped_query}%"
-        where_clause = """
-            WHERE name LIKE ? ESCAPE '\\'
-               OR email LIKE ? ESCAPE '\\'
-               OR department LIKE ? ESCAPE '\\'
-               OR username LIKE ? ESCAPE '\\'
-        """
+        where_clauses.append("""
+            (name LIKE ? ESCAPE '\\'
+             OR email LIKE ? ESCAPE '\\'
+             OR department LIKE ? ESCAPE '\\'
+             OR username LIKE ? ESCAPE '\\')
+        """)
         parameters.extend([pattern, pattern, pattern, pattern])
+    where_clause = f"WHERE {' AND '.join(where_clauses)}"
     try:
         with _connection() as connection:
             ensure_schema(connection)
@@ -468,6 +482,8 @@ def create_user_with_username(
 ) -> tuple[ApprovedUser, str]:
     normalized_email = normalize_email(email)
     resolved_username = (username or username_from_email(normalized_email)).strip()
+    if is_reserved_admin_username(resolved_username):
+        raise ReservedAdminUsernameError("administrator username is reserved")
     initial_password = generate_initial_password()
     password_hash = hash_password(initial_password)
     created_at = datetime.now(timezone.utc).isoformat()
@@ -584,12 +600,12 @@ def delete_user(user_id: int) -> None:
         with _connection() as connection:
             ensure_schema(connection)
             row = connection.execute(
-                "SELECT role FROM approved_users WHERE id = ?",
+                "SELECT role, username FROM approved_users WHERE id = ?",
                 (user_id,),
             ).fetchone()
             if row is None:
                 raise UserNotFoundError("user not found")
-            if str(row["role"] or "user") == "admin":
+            if is_reserved_admin_username(str(row["username"])) or str(row["role"] or "user") == "admin":
                 raise ProtectedAdminError("promoted administrators cannot be deleted")
             cursor = connection.execute("DELETE FROM approved_users WHERE id = ?", (user_id,))
             connection.commit()
@@ -605,22 +621,58 @@ def promote_user_to_admin(user_id: int) -> ApprovedUser:
     try:
         with _connection() as connection:
             ensure_schema(connection)
-            cursor = connection.execute(
-                "UPDATE approved_users SET role = 'admin' WHERE id = ? AND role = 'user'",
-                (user_id,),
-            )
             row = connection.execute(
                 "SELECT id, name, email, department, username, role, created_at FROM approved_users WHERE id = ?",
                 (user_id,),
             ).fetchone()
             if row is None:
                 raise UserNotFoundError("user not found")
+            if is_reserved_admin_username(str(row["username"])):
+                raise ProtectedAdminError("super administrator cannot be promoted")
+            cursor = connection.execute(
+                "UPDATE approved_users SET role = 'admin' WHERE id = ? AND role = 'user'",
+                (user_id,),
+            )
             if cursor.rowcount == 0:
                 raise AlreadyAdminError("user is already an administrator")
-            if cursor.rowcount:
-                connection.commit()
+            connection.commit()
+            row = connection.execute(
+                "SELECT id, name, email, department, username, role, created_at FROM approved_users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
     except (AlreadyAdminError, UserNotFoundError):
         raise
     except sqlite3.Error as exc:
         raise UserStoreError("failed to promote user") from exc
+    return row_to_user(row)
+
+
+def demote_user_to_user(user_id: int) -> ApprovedUser:
+    try:
+        with _connection() as connection:
+            ensure_schema(connection)
+            row = connection.execute(
+                "SELECT id, name, email, department, username, role, created_at FROM approved_users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                raise UserNotFoundError("user not found")
+            if is_reserved_admin_username(str(row["username"])):
+                raise ProtectedAdminError("super administrator cannot be demoted")
+            cursor = connection.execute(
+                "UPDATE approved_users SET role = 'user' WHERE id = ? AND role = 'admin'",
+                (user_id,),
+            )
+            if cursor.rowcount == 0:
+                raise NotAdminError("user is not an administrator")
+            row = connection.execute(
+                "SELECT id, name, email, department, username, role, created_at FROM approved_users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+    except (NotAdminError, ProtectedAdminError, UserNotFoundError):
+        raise
+    except sqlite3.Error as exc:
+        raise UserStoreError("failed to demote user") from exc
+    if row is None:
+        raise UserStoreError("failed to demote user")
     return row_to_user(row)

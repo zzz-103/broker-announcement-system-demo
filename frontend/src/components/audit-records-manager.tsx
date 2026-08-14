@@ -22,6 +22,7 @@ const EVENT_LABELS: Record<AuditEventType, string> = {
   login_success: "成功登录",
   dashboard_view: "进入看板",
   user_role_promoted: "任命管理员",
+  user_role_demoted: "取消管理员",
   custom_intelligence_config_updated: "情报配置更新",
   custom_intelligence_secret_revealed: "情报密钥查看",
   custom_intelligence_connection_tested: "情报连接测试",

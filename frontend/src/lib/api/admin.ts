@@ -66,6 +66,14 @@ export function promoteAdminUser(token: string, userId: number): Promise<{ user:
   );
 }
 
+export function demoteAdminUser(token: string, userId: number): Promise<{ user: AdminUsersResponse["users"][number] }> {
+  return requestJson<{ user: AdminUsersResponse["users"][number] }>(
+    `/api/admin/users/${encodeURIComponent(String(userId))}/demote`,
+    { method: "POST" },
+    token,
+  );
+}
+
 export function getAdminFeedback(token: string): Promise<AdminFeedbackResponse> {
   return requestJson<AdminFeedbackResponse>("/api/admin/feedback", {}, token);
 }

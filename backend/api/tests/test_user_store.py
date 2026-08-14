@@ -14,10 +14,13 @@ from backend.api.user_store import (
     apply_for_user,
     create_user,
     create_user_with_username,
+    demote_user_to_user,
     generate_initial_password,
     hash_password,
     list_users,
+    NotAdminError,
     promote_user_to_admin,
+    ReservedAdminUsernameError,
 )
 
 
@@ -69,6 +72,12 @@ class UserStoreSecurityTests(unittest.TestCase):
             with self.assertRaises(AlreadyAdminError):
                 promote_user_to_admin(user.id)
 
+            demoted = demote_user_to_user(user.id)
+            self.assertEqual(demoted.role, "user")
+            self.assertEqual(authenticate_user(user.username, password).role, "user")
+            with self.assertRaises(NotAdminError):
+                demote_user_to_user(user.id)
+
             with self.assertRaises(DuplicateUserError):
                 create_user_with_username(
                     "Test User",
@@ -101,6 +110,36 @@ class UserStoreSecurityTests(unittest.TestCase):
 
             self.assertEqual(admin_password, "123456")
             self.assertEqual(registration_password, "123456")
+
+    def test_super_admin_username_is_reserved_and_hidden_from_user_list(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            os.environ,
+            {
+                "ADMIN_USERNAME": "admin",
+                "USER_DB_PATH": str(Path(temp_dir) / "users.db"),
+            },
+        ):
+            with self.assertRaises(ReservedAdminUsernameError):
+                create_user("冒充超级管理员", "admin@example.com", "测试部门")
+
+            create_user("普通用户", "normal@example.com", "测试部门")
+            db_path = Path(temp_dir) / "users.db"
+            with sqlite3.connect(db_path) as connection:
+                connection.execute(
+                    "INSERT INTO approved_users (name, email, department, username, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        "历史同名账号",
+                        "legacy-admin@example.com",
+                        "测试部门",
+                        "admin",
+                        hash_password("legacy-password"),
+                        "admin",
+                        "2026-08-12T00:00:00+00:00",
+                    ),
+                )
+            users, total, _ = list_users(1, 10)
+            self.assertEqual(total, 1)
+            self.assertEqual([user.username for user in users], ["normal"])
 
 
 if __name__ == "__main__":

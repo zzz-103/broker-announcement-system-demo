@@ -32,9 +32,11 @@ from ..user_store import (
     DuplicateUserError,
     FeedbackNotFoundError,
     InvalidUserCredentialsError,
+    NotAdminError,
     ProtectedAdminError,
     QualificationNotFoundError,
     QualificationServiceUnavailableError,
+    ReservedAdminUsernameError,
     UserNotFoundError,
     UserStoreError,
     apply_for_user,
@@ -42,6 +44,7 @@ from ..user_store import (
     create_feedback,
     create_user,
     delete_user,
+    demote_user_to_user,
     get_user_names_by_ids,
     list_feedback,
     list_users,
@@ -158,6 +161,9 @@ def login(payload: LoginRequest, request: Request) -> LoginResponse:
             is_super_admin=True,
         )
 
+    if username.strip().casefold() == expected_username.strip().casefold():
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
     try:
         user = authenticate_user(username, password)
     except InvalidUserCredentialsError as exc:
@@ -246,6 +252,9 @@ def apply_user(payload: UserApplyRequest, request: Request) -> dict[str, object]
     except QualificationNotFoundError as exc:
         audit_result = "qualification_not_found"
         raise HTTPException(status_code=404, detail=QUALIFICATION_NOT_FOUND_MESSAGE) from exc
+    except ReservedAdminUsernameError as exc:
+        audit_result = "reserved_admin_username"
+        raise HTTPException(status_code=409, detail="超级管理员账号为保留账号，无法注册") from exc
     except UserStoreError as exc:
         audit_result = "internal_error"
         raise HTTPException(status_code=500, detail="failed to apply for user account") from exc
@@ -455,6 +464,8 @@ def post_admin_user(payload: AdminUserCreateRequest) -> dict[str, object]:
         raise HTTPException(status_code=400, detail="email is invalid")
     try:
         user, initial_password = create_user(name, email, department)
+    except ReservedAdminUsernameError as exc:
+        raise HTTPException(status_code=409, detail="超级管理员账号为保留账号，不能创建同名用户") from exc
     except DuplicateUserError as exc:
         raise HTTPException(status_code=409, detail="email or username already exists") from exc
     except UserStoreError as exc:
@@ -485,6 +496,8 @@ def promote_admin_user(
 ) -> dict[str, object]:
     try:
         user = promote_user_to_admin(user_id)
+    except ProtectedAdminError as exc:
+        raise HTTPException(status_code=409, detail="超级管理员账号不能被任命或修改") from exc
     except AlreadyAdminError as exc:
         raise HTTPException(status_code=409, detail="user is already an administrator") from exc
     except UserNotFoundError as exc:
@@ -499,5 +512,46 @@ def promote_admin_user(
         role=str(session.get("role") or "") or None,
         source="admin_console",
         metadata={"target_user_id": user.id, "target_username": user.username, "new_role": "admin"},
+    )
+    return {"user": user.to_dict()}
+
+
+@router.post(
+    "/api/admin/users/{user_id}/demote",
+    dependencies=[Depends(require_super_admin_token)],
+)
+def demote_admin_user(
+    user_id: int,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, object]:
+    try:
+        user = demote_user_to_user(user_id)
+    except ProtectedAdminError as exc:
+        raise HTTPException(status_code=409, detail="超级管理员身份不能被取消") from exc
+    except NotAdminError as exc:
+        raise HTTPException(status_code=409, detail="该用户当前不是管理员") from exc
+    except UserNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="user not found") from exc
+    except UserStoreError as exc:
+        raise HTTPException(status_code=500, detail="failed to demote user") from exc
+
+    with session_tokens_lock:
+        for token in tuple(session_tokens):
+            session = session_tokens.get(token)
+            if (
+                session is not None
+                and session.get("user_id") == user.id
+                and session.get("is_super_admin") is not True
+            ):
+                del session_tokens[token]
+
+    session = get_session(authorization)
+    write_audit_event_safely(
+        event_type="user_role_demoted",
+        user_id=int(session["user_id"]) if isinstance(session.get("user_id"), int) else None,
+        username=str(session.get("username") or "") or None,
+        role=str(session.get("role") or "") or None,
+        source="admin_console",
+        metadata={"target_user_id": user.id, "target_username": user.username, "new_role": "user"},
     )
     return {"user": user.to_dict()}
