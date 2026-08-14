@@ -17,6 +17,7 @@ from typing import Iterator
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DB_PATH = PROJECT_ROOT / "backend" / "data" / "users.db"
 DEFAULT_QUALIFICATION_CSV_PATH = PROJECT_ROOT / "backend" / "config" / "user_qualification.csv"
+INITIAL_PASSWORD = "123456"
 HASH_ITERATIONS = 210_000
 
 
@@ -147,9 +148,8 @@ def read_qualification_csv_text(path: Path) -> str:
 
 
 def generate_initial_password() -> str:
-    # URL-safe, copy-friendly and unique per account.  The plaintext value is
-    # returned once by the account-creation flow and is never stored.
-    return secrets.token_urlsafe(18)
+    """Return the fixed initial password used for newly created accounts."""
+    return INITIAL_PASSWORD
 
 
 def hash_password(password: str) -> str:

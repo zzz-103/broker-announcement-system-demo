@@ -11,6 +11,7 @@ from backend.api.user_store import (
     AlreadyAdminError,
     DuplicateUserError,
     authenticate_user,
+    apply_for_user,
     create_user,
     create_user_with_username,
     generate_initial_password,
@@ -49,12 +50,8 @@ class UserStoreSecurityTests(unittest.TestCase):
             self.assertEqual(total, 1)
             self.assertEqual(users[0].role, "user")
 
-    def test_initial_passwords_are_unique_and_not_the_legacy_default(self) -> None:
-        first = generate_initial_password()
-        second = generate_initial_password()
-        self.assertGreaterEqual(len(first), 20)
-        self.assertNotEqual(first, second)
-        self.assertNotEqual(first, "123456")
+    def test_initial_password_is_fixed(self) -> None:
+        self.assertEqual(generate_initial_password(), "123456")
 
     def test_created_password_matches_hash_and_duplicate_application_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
@@ -62,7 +59,7 @@ class UserStoreSecurityTests(unittest.TestCase):
             {"USER_DB_PATH": str(Path(temp_dir) / "users.db")},
         ):
             user, password = create_user("Test User", "test.user@example.com", "Test")
-            self.assertTrue(password)
+            self.assertEqual(password, "123456")
             self.assertEqual(user.username, "test.user")
             self.assertEqual(authenticate_user(user.username, password).id, user.id)
             self.assertEqual(user.role, "user")
@@ -79,6 +76,31 @@ class UserStoreSecurityTests(unittest.TestCase):
                     "Test",
                     username="test.user",
                 )
+
+    def test_registration_and_admin_entry_use_the_same_initial_password(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            qualification_path = root / "user_qualification.csv"
+            qualification_path.write_text(
+                "姓名中文,邮箱,邮箱前缀\n注册用户,registered@csco.com.cn,registered\n",
+                encoding="utf-8",
+            )
+            with patch.dict(
+                os.environ,
+                {
+                    "USER_DB_PATH": str(root / "users.db"),
+                    "USER_QUALIFICATION_CSV_PATH": str(qualification_path),
+                },
+            ):
+                _, admin_password = create_user("管理员录入", "admin-entry@example.com", "测试部门")
+                _, registration_password = apply_for_user(
+                    "注册用户",
+                    "registered@csco.com.cn",
+                    "测试部门",
+                )
+
+            self.assertEqual(admin_password, "123456")
+            self.assertEqual(registration_password, "123456")
 
 
 if __name__ == "__main__":
