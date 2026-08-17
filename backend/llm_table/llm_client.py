@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpx
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LLM_OVERRIDE_PATH = PROJECT_ROOT / "backend" / "data" / "llm_api_config.override.json"
@@ -134,10 +136,17 @@ class OpenAICompatibleClient:
                 "缺少 openai 依赖，请先在当前环境中安装 openai。"
             ) from exc
         self.config = config
+        timeout = httpx.Timeout(
+            self.config.timeout_seconds,
+            connect=min(5.0, self.config.timeout_seconds),
+            write=min(10.0, self.config.timeout_seconds),
+            pool=min(5.0, self.config.timeout_seconds),
+        )
         self.client = OpenAI(
             base_url=self.config.base_url,
             api_key=self.config.api_key,
-            timeout=self.config.timeout_seconds,
+            timeout=timeout,
+            max_retries=0,
         )
 
     def _request_json(self, request_kwargs: dict[str, Any], *, fallback_to_text: bool = False) -> Any:

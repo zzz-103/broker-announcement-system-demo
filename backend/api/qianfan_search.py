@@ -9,6 +9,7 @@ import httpx
 
 from .config import settings
 from .custom_intelligence_store import store
+from .service_url import service_url_port
 
 QIANFAN_WEB_SEARCH_ENDPOINT = "https://qianfan.baidubce.com/v2/ai_search/web_search"
 QIANFAN_AUTH_HEADER = "Authorization"
@@ -251,7 +252,7 @@ def effective_search_config() -> EffectiveSearchConfig:
         return EffectiveSearchConfig(
             enabled=bool(row.get("enabled")),
             api_key=saved_api_key or settings.baidu_qianfan_api_key,
-            endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
+            endpoint=str(row.get("endpoint") or QIANFAN_WEB_SEARCH_ENDPOINT).strip(),
             # V2 intentionally removes the alternate AppBuilder header.  The
             # server always sends the documented bce-v3 Bearer credential in
             # the standard Authorization header.
@@ -263,7 +264,7 @@ def effective_search_config() -> EffectiveSearchConfig:
     return EffectiveSearchConfig(
         enabled=bool(api_key),
         api_key=api_key,
-        endpoint=QIANFAN_WEB_SEARCH_ENDPOINT,
+        endpoint=settings.baidu_qianfan_endpoint or QIANFAN_WEB_SEARCH_ENDPOINT,
         auth_header=QIANFAN_AUTH_HEADER,
         timeout_seconds=settings.baidu_qianfan_timeout_seconds,
         config_source="env",
@@ -281,6 +282,10 @@ def validate_configuration() -> None:
         missing.append("Endpoint")
     if missing:
         raise QianfanConfigurationError(f"百度智能搜索配置缺失：{', '.join(missing)}")
+    try:
+        service_url_port(config.endpoint)
+    except ValueError as exc:
+        raise QianfanConfigurationError("百度智能搜索 Endpoint 无效") from exc
 
 
 def _authorization_value(api_key: str) -> str:
@@ -301,7 +306,13 @@ class QianfanSearchClient:
             "Accept": "application/json",
         }
         try:
-            with httpx.Client(timeout=config.timeout_seconds) as client:
+            timeout = httpx.Timeout(
+                config.timeout_seconds,
+                connect=min(5.0, config.timeout_seconds),
+                write=min(10.0, config.timeout_seconds),
+                pool=min(5.0, config.timeout_seconds),
+            )
+            with httpx.Client(timeout=timeout) as client:
                 response = client.post(config.endpoint, headers=headers, json=payload)
         except httpx.TimeoutException as exc:
             raise QianfanTimeoutError("百度智能搜索请求超时") from exc

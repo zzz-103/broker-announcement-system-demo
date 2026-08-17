@@ -9,7 +9,7 @@ RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
 # This takes precedence over any developer-only frontend/.env.local configuration.
 ARG NEXT_PUBLIC_API_BASE_URL=
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
-ARG APP_VERSION=1.9.0
+ARG APP_VERSION=1.9.1
 ARG GIT_SHA=unknown
 ENV NEXT_PUBLIC_APP_VERSION=$APP_VERSION
 

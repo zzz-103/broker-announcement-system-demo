@@ -172,6 +172,7 @@ export interface IntelligenceSearchTestRecord {
 export interface IntelligenceSearchConfigResponse {
   enabled: boolean;
   endpoint: string;
+  port: number;
   auth_header: string;
   timeout_seconds: number;
   api_key_mask: string;
@@ -184,6 +185,8 @@ export interface IntelligenceSearchConfigResponse {
 
 export interface IntelligenceSearchConfigInput {
   enabled: boolean;
+  endpoint: string;
+  port: number;
   timeout_seconds: number;
   api_key?: string;
 }
@@ -350,6 +353,7 @@ export interface IntelligenceAssistantEmailResponse {
 export interface IntelligenceLlmConfigResponse {
   enabled: boolean;
   base_url: string;
+  port: number;
   model: string;
   temperature?: number;
   top_p?: number;
@@ -363,6 +367,7 @@ export interface IntelligenceLlmConfigResponse {
 export interface IntelligenceLlmConfigInput {
   enabled: boolean;
   base_url: string;
+  port: number;
   model: string;
   temperature: number;
   top_p: number;

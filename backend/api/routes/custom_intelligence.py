@@ -70,6 +70,7 @@ from ..qianfan_search import (
     qianfan_http_status,
     test_search_configuration,
 )
+from ..service_url import service_url_port
 
 
 router = APIRouter()
@@ -477,6 +478,7 @@ def _admin_search_config_payload() -> dict[str, object]:
     return {
         "enabled": config.enabled,
         "endpoint": config.endpoint,
+        "port": service_url_port(config.endpoint),
         "auth_header": config.auth_header,
         "timeout_seconds": config.timeout_seconds,
         "api_key_mask": _mask_api_key(config.api_key),

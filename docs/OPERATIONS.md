@@ -156,6 +156,7 @@ FRONTEND_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:500
 初次离线启动不需要填写百度、LLM 或 SMTP 凭据。保持以下功能关闭或留空即可：
 
 - `BAIDU_QIANFAN_API_KEY=`；
+- `BAIDU_QIANFAN_ENDPOINT=` 可留用示例默认值，后续由管理员页面覆盖；
 - SMTP 用户名、发件地址和授权码留空；
 - `CUSTOM_INTELLIGENCE_EMAIL_ENABLED=false`；
 - 不创建真实 `backend/config/llm_api_config.json`，除非已经通过受控渠道拿到配置。
@@ -314,7 +315,7 @@ corepack pnpm dev
 初次离线交接通过后，再进入“管理控制台 → 情报技术配置”逐项配置和测试：
 
 1. 百度搜索 API Key；
-2. DeepSeek/OpenAI-compatible base URL、模型和 Key；
+2. DeepSeek/OpenAI-compatible base URL、端口、模型和 Key；
 3. SMTP 主机、端口、SSL、用户名、发件地址和授权码。
 
 SMTP 用户名和发件地址填写同一个有效邮箱。配置保存后再点“测试已保存配置”；连接测试只完成 SMTP 登录，不发送邮件。GET 配置只返回授权码掩码，查看完整授权码需要管理员密码二次验证。
@@ -686,7 +687,7 @@ git status --branch --short
 `git status --short` 必须无输出，交付提交必须已在远端。`frontend/package.json` 版本必须等于发布版本。然后执行：
 
 ```powershell
-.\scripts\deploy-release.ps1 -Version 1.9.0 -DeployDir D:\broker-system
+.\scripts\deploy-release.ps1 -Version 1.9.1 -DeployDir D:\broker-system
 ```
 
 脚本使用 buildx 将 backend/frontend 统一构建为 `linux/amd64`，验证三个 Compose 服务和镜像架构，更新生产 `.env`，重建容器，检查 API、首页和 `version.json`，失败时尝试回滚。frontend 镜像已包含 Nginx、静态文件和反向代理配置；生产访问默认为 `http://localhost:8080`。不要在生产运行目录执行 `git pull`，也不要绕过脚本直接更新版本。
