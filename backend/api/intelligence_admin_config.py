@@ -16,6 +16,7 @@ from ..llm_table.llm_client import (
 )
 from .config import settings
 from .contracts import AssistantAudience, ReportLength, TimeRange
+from .service_url import service_url_port, service_url_with_port
 
 
 class IntelligenceTopicCreateCompat(BaseModel):
@@ -59,6 +60,7 @@ class DeepSeekConfigUpdate(BaseModel):
 
     enabled: bool = True
     base_url: str = Field(default="", max_length=1_000)
+    port: int | None = Field(default=None, ge=1, le=65_535)
     model: str = Field(default="", max_length=300)
     api_key: str | None = Field(default=None, max_length=2_000)
     temperature: float = Field(default=0.1, ge=0, le=2)
@@ -145,6 +147,7 @@ def public_deepseek_config() -> dict[str, object]:
         return {
             "enabled": False,
             "base_url": "",
+            "port": 443,
             "model": "",
             "temperature": 0.1,
             "top_p": 1.0,
@@ -163,6 +166,7 @@ def public_deepseek_config() -> dict[str, object]:
     return {
         "enabled": configured,
         "base_url": config.base_url,
+        "port": service_url_port(config.base_url),
         "model": config.model,
         "api_key_mask": _mask_secret(config.api_key),
         "has_api_key": bool(config.api_key),
@@ -189,9 +193,12 @@ def save_deepseek_config(payload: DeepSeekConfigUpdate) -> dict[str, object]:
         api_key = str(base.get("api_key") or "")
     if payload.enabled and not api_key:
         raise ValueError("DeepSeek API Key 不能为空")
+    base_url = payload.base_url.strip() or str(base.get("base_url") or "")
+    if base_url:
+        base_url = service_url_with_port(base_url, payload.port or service_url_port(base_url))
     data = {
         **base,
-        "base_url": payload.base_url.strip() or str(base.get("base_url") or ""),
+        "base_url": base_url,
         "model": payload.model.strip() or str(base.get("model") or ""),
         "api_key": api_key,
         "temperature": payload.temperature,

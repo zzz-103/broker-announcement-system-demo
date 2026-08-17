@@ -58,7 +58,7 @@ RUN_FRONTEND_STATIC_SMOKE=1 .venv/bin/python -m pytest -q backend/api/tests/test
 
 Windows PowerShell、双终端开发启动、逐项成功标志、数据导入后的重启复核和故障处理，请严格按 [docs/OPERATIONS.md](docs/OPERATIONS.md) 执行。无需启动前端时，操作手册第 12 节给出了纯终端启动采集/Pipeline、查询日志、取消任务、设置日期窗口、LLM/采集 worker、请求节流和 Cron 调度的完整命令。
 
-百度检索 API、共享 LLM API 和 SMTP 发件配置均可在“管理控制台 → 情报技术配置”维护。SMTP 支持配置主机、端口、SSL、用户名、发件地址和授权码；密钥仅返回掩码，查看原值需要二次验证管理员密码。
+百度检索 API、共享 LLM API 和 SMTP 发件配置均可在“管理控制台 → 情报技术配置”维护。百度 Endpoint 与端口、DeepSeek/OpenAI-compatible Base URL 与端口，以及 SMTP 主机与端口均可独立调整；密钥仅返回掩码，查看原值需要二次验证管理员密码。
 
 ## 核心链路
 

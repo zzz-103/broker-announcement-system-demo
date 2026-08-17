@@ -38,11 +38,14 @@ from backend.api.qianfan_search import (
     QianfanSearchClient,
     QianfanSearchResult,
     QianfanTimeoutError,
+    QianfanUpstreamError,
     build_search_payload,
     effective_search_config,
     parse_search_response,
     validate_configuration,
 )
+from backend.api.service_url import service_url_port, service_url_with_port
+from backend.llm_table.llm_client import LLMApiConfig, OpenAICompatibleClient
 
 
 class CustomIntelligenceCoreTests(unittest.TestCase):
@@ -269,10 +272,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             self.assertFalse(config.enabled)
             self.assertEqual(config.api_key, "env-key")
             self.assertEqual(config.auth_header, "Authorization")
-            self.assertEqual(
-                config.endpoint,
-                "https://qianfan.baidubce.com/v2/ai_search/web_search",
-            )
+            self.assertEqual(config.endpoint, "https://db.example.com")
             with self.assertRaises(QianfanDisabledError):
                 validate_configuration()
 
@@ -468,6 +468,24 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
         self.assertEqual([item["round_type"] for item in rounds], ["planned", "supplemental", "supplemental"])
         self.assertEqual(diagnostics["supplemental_query_count"], 2)
 
+    def test_search_transport_failure_stops_remaining_queries(self) -> None:
+        with patch.object(
+            service.client,
+            "search",
+            side_effect=QianfanUpstreamError("百度智能搜索网络请求失败"),
+        ) as search:
+            with self.assertRaises(QianfanUpstreamError) as raised:
+                _search_with_queries(
+                    [
+                        {"query": "查询一", "purpose": "一"},
+                        {"query": "查询二", "purpose": "二"},
+                    ],
+                    time_range="month",
+                    supplemental_queries=[{"query": "补充查询", "purpose": "补充"}],
+                )
+        self.assertEqual(search.call_count, 1)
+        self.assertEqual(len(getattr(raised.exception, "search_rounds", [])), 1)
+
     def test_parser_generated_rank_ids_are_scoped_per_query(self) -> None:
         parsed_first = parse_search_response(
             {"references": [{"title": "来源甲", "url": "https://one.example.com/a"}]}
@@ -601,6 +619,39 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             with self.assertRaises(QianfanTimeoutError) as raised:
                 QianfanSearchClient().search(build_search_payload("test"))
         self.assertEqual(raised.exception.request_id, "request-timeout")
+
+    def test_service_ports_and_fast_connect_timeouts_are_applied(self) -> None:
+        self.assertEqual(service_url_with_port("https://search.example.com/v2", 8443), "https://search.example.com:8443/v2")
+        self.assertEqual(service_url_with_port("https://search.example.com/v2", 443), "https://search.example.com/v2")
+        self.assertEqual(service_url_port("http://search.example.com/v2"), 80)
+
+        response = httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "answer"}}], "references": []},
+            request=httpx.Request("POST", "https://example.com"),
+        )
+        with (
+            patch.dict(os.environ, {"BAIDU_QIANFAN_API_KEY": "test-only"}),
+            patch("backend.api.qianfan_search.httpx.Client") as client_class,
+        ):
+            client_class.return_value.__enter__.return_value.post.return_value = response
+            QianfanSearchClient().search(build_search_payload("test"))
+        search_timeout = client_class.call_args.kwargs["timeout"]
+        self.assertEqual(search_timeout.connect, 5.0)
+        self.assertEqual(search_timeout.read, 120.0)
+
+        llm_config = LLMApiConfig(
+            base_url="https://llm.example.com/v1",
+            api_key="test-only",
+            model="test-model",
+            timeout_seconds=180,
+        )
+        with patch("openai.OpenAI") as openai_class:
+            OpenAICompatibleClient(llm_config)
+        llm_kwargs = openai_class.call_args.kwargs
+        self.assertEqual(llm_kwargs["max_retries"], 0)
+        self.assertEqual(llm_kwargs["timeout"].connect, 5.0)
+        self.assertEqual(llm_kwargs["timeout"].read, 180)
 
     def test_client_uses_fixed_bearer_authorization_and_web_search_payload(self) -> None:
         response = httpx.Response(

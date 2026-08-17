@@ -554,6 +554,8 @@ class RouteOwnershipTests(unittest.TestCase):
                 headers=admin_headers,
                 json={
                     "enabled": True,
+                    "endpoint": "https://search.example.test/v2/ai_search/web_search",
+                    "port": 8443,
                     "timeout_seconds": 30,
                     "api_key": "bce-v3/route-secret-key",
                 },
@@ -564,6 +566,8 @@ class RouteOwnershipTests(unittest.TestCase):
             self.assertEqual(body["api_key_mask"], "bce-v3/••••••••••••••••")
             self.assertTrue(body["has_api_key"])
             self.assertEqual(body["config_source"], "admin")
+            self.assertEqual(body["endpoint"], "https://search.example.test:8443/v2/ai_search/web_search")
+            self.assertEqual(body["port"], 8443)
             self.assertNotIn("route-secret-key", saved.text)
 
             loaded = self.client.get(
@@ -593,12 +597,27 @@ class RouteOwnershipTests(unittest.TestCase):
                 headers=admin_headers,
                 json={
                     "enabled": True,
+                    "endpoint": "https://search-backup.example.test/web_search",
+                    "port": 9443,
                     "timeout_seconds": 45,
                     "api_key": "bce-v3/changed-secret-key",
                 },
             )
             self.assertEqual(changed.status_code, 200)
+            self.assertEqual(changed.json()["endpoint"], "https://search-backup.example.test:9443/web_search")
+            self.assertEqual(changed.json()["port"], 9443)
             self.assertNotIn("changed-secret-key", changed.text)
+            legacy_update = self.client.post(
+                "/api/admin/custom-intelligence/search-config",
+                headers=admin_headers,
+                json={"enabled": True, "timeout_seconds": 30},
+            )
+            self.assertEqual(legacy_update.status_code, 200)
+            self.assertEqual(
+                legacy_update.json()["endpoint"],
+                "https://search-backup.example.test:9443/web_search",
+            )
+            self.assertEqual(legacy_update.json()["port"], 9443)
             revealed_changed = self.client.post(
                 "/api/admin/custom-intelligence/search-config/reveal-key",
                 headers=admin_headers,
@@ -642,6 +661,7 @@ class RouteOwnershipTests(unittest.TestCase):
                 json={
                     "enabled": True,
                     "base_url": "https://llm.example.test/v1",
+                    "port": 8443,
                     "model": "test-deepseek-model",
                     "api_key": llm_secret,
                     "temperature": 0.1,
@@ -654,6 +674,8 @@ class RouteOwnershipTests(unittest.TestCase):
             self.assertEqual(saved_llm.status_code, 200)
             self.assertNotIn(llm_secret, saved_llm.text)
             self.assertTrue(saved_llm.json()["has_api_key"])
+            self.assertEqual(saved_llm.json()["base_url"], "https://llm.example.test:8443/v1")
+            self.assertEqual(saved_llm.json()["port"], 8443)
             self.assertEqual(saved_llm.json()["config_source"], "override")
             self.assertEqual(
                 self.client.post(

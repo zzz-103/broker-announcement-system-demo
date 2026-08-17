@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import smtplib
 import ssl
 import tempfile
 import unittest
@@ -220,6 +221,31 @@ class CustomIntelligenceAdminMailTests(unittest.TestCase):
 
         with self.assertRaisesRegex(EmailConfigurationError, "主机格式"):
             validate_smtp_server("https://smtp.example.com", 465)
+
+    def test_smtp_connection_test_reports_safe_specific_failure(self):
+        config = EffectiveSMTPConfig(
+            True,
+            "mail.example.test",
+            465,
+            "sender@example.test",
+            "sender@example.test",
+            "test-auth-code",
+            True,
+            5,
+            "test",
+        )
+        with patch(
+            "backend.api.intelligence_email.smtplib.SMTP_SSL",
+            side_effect=smtplib.SMTPAuthenticationError(535, b"authentication failed"),
+        ):
+            with self.assertRaisesRegex(EmailConfigurationError, "鉴权失败"):
+                check_smtp_configuration(config)
+        with patch(
+            "backend.api.intelligence_email.smtplib.SMTP_SSL",
+            side_effect=ssl.SSLError("wrong version number"),
+        ):
+            with self.assertRaisesRegex(EmailConfigurationError, "传输方式与端口不匹配"):
+                check_smtp_configuration(config)
 
     def test_html_note_is_escaped_and_precedes_report(self):
         execution = {

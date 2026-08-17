@@ -139,6 +139,8 @@ class SearchServiceConfigUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     enabled: bool
+    endpoint: str = Field(default="", max_length=1_000)
+    port: int | None = Field(default=None, ge=1, le=65_535)
     timeout_seconds: float = Field(default=120, ge=1, le=600)
     api_key: str | None = Field(default=None, max_length=1_000)
 

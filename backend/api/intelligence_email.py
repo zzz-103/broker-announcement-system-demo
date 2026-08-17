@@ -555,8 +555,18 @@ def test_smtp_configuration(config: EffectiveSMTPConfig) -> dict[str, object]:
         with client as smtp:
             smtp.ehlo()
             smtp.login(config.username, config.authorization_code)
-    except Exception as exc:
-        raise EmailConfigurationError("SMTP 连接测试失败") from exc
+    except ssl.SSLCertVerificationError as exc:
+        raise EmailConfigurationError("SMTP TLS 证书验证失败，请联系邮件服务器管理员检查证书") from exc
+    except ssl.SSLError as exc:
+        raise EmailConfigurationError("SMTP 传输方式与端口不匹配，请检查 SSL/TLS 选项") from exc
+    except smtplib.SMTPAuthenticationError as exc:
+        raise EmailConfigurationError("SMTP 鉴权失败，请检查用户名和授权码") from exc
+    except smtplib.SMTPNotSupportedError as exc:
+        raise EmailConfigurationError("SMTP 服务器不支持当前登录或传输方式") from exc
+    except smtplib.SMTPException as exc:
+        raise EmailConfigurationError("SMTP 协议交互失败，请检查服务器配置") from exc
+    except (TimeoutError, OSError) as exc:
+        raise EmailConfigurationError("SMTP 主机或端口无法连接，请检查网络和防火墙") from exc
     return {"status": "success", "message": "SMTP 连接测试成功"}
 
 

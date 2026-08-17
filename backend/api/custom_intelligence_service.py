@@ -29,6 +29,7 @@ from .qianfan_search import (
     QianfanReference,
     QianfanSearchResult,
     QianfanTimeoutError,
+    QianfanUpstreamError,
     build_search_payload,
     client as qianfan_client,
     effective_search_config,
@@ -1087,6 +1088,12 @@ def _search_with_queries(
                     "error": error_message,
                 }
             )
+            # A timeout or transport failure indicates that the shared search
+            # service itself is unavailable. Retrying every planned query
+            # would multiply the same wait up to eight times without adding
+            # useful coverage, so keep the diagnostic and stop this execution.
+            if isinstance(exc, (QianfanTimeoutError, QianfanUpstreamError)):
+                break
             continue
         # Scope parser-generated rank ids to this query. Explicit provider ids
         # (including numeric ids) remain stable and can deduplicate across

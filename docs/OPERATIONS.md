@@ -156,6 +156,7 @@ FRONTEND_ORIGIN=http://localhost:3000,http://127.0.0.1:3000,http://localhost:500
 初次离线启动不需要填写百度、LLM 或 SMTP 凭据。保持以下功能关闭或留空即可：
 
 - `BAIDU_QIANFAN_API_KEY=`；
+- `BAIDU_QIANFAN_ENDPOINT=` 可留用示例默认值，后续由管理员页面覆盖；
 - SMTP 用户名、发件地址和授权码留空；
 - `CUSTOM_INTELLIGENCE_EMAIL_ENABLED=false`；
 - 不创建真实 `backend/config/llm_api_config.json`，除非已经通过受控渠道拿到配置。
@@ -313,11 +314,11 @@ corepack pnpm dev
 
 初次离线交接通过后，再进入“管理控制台 → 情报技术配置”逐项配置和测试：
 
-1. 百度搜索 API Key；
-2. DeepSeek/OpenAI-compatible base URL、模型和 Key；
+1. 百度搜索 Endpoint、端口和 API Key；
+2. DeepSeek/OpenAI-compatible base URL、端口、模型和 Key；
 3. SMTP 主机、端口、SSL、用户名、发件地址和授权码。
 
-SMTP 用户名和发件地址填写同一个有效邮箱。配置保存后再点“测试已保存配置”；连接测试只完成 SMTP 登录，不发送邮件。GET 配置只返回授权码掩码，查看完整授权码需要管理员密码二次验证。
+SMTP 用户名和发件地址填写同一个有效邮箱。“保存并测试”会先保存界面当前配置，再由后端完成 SMTP 登录测试，不发送邮件；端口 25 自动选择非隐式 SSL，465 自动选择隐式 SSL。GET 配置只返回授权码掩码，查看完整授权码需要管理员密码二次验证。
 
 管理页配置保存在 `USER_DB_PATH`（或独立的 `CUSTOM_INTELLIGENCE_DB_PATH`），优先于 `.env` 回退值。生产必须持久化该数据库；dashboard-data ZIP 不会恢复这些配置。
 

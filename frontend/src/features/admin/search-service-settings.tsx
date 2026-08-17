@@ -132,6 +132,8 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
 
   const [searchConfig, setSearchConfig] = useState<IntelligenceSearchConfigResponse | null>(null);
   const [searchEnabled, setSearchEnabled] = useState(true);
+  const [searchEndpoint, setSearchEndpoint] = useState("https://qianfan.baidubce.com/v2/ai_search/web_search");
+  const [searchPort, setSearchPort] = useState("443");
   const [searchTimeout, setSearchTimeout] = useState(120);
   const [searchKey, setSearchKey] = useState("");
   const [searchKeyTouched, setSearchKeyTouched] = useState(false);
@@ -141,6 +143,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   const [llmEnabled, setLlmEnabled] = useState(true);
   const [llmModel, setLlmModel] = useState("");
   const [llmEndpoint, setLlmEndpoint] = useState("");
+  const [llmPort, setLlmPort] = useState("443");
   const [llmTimeout, setLlmTimeout] = useState(120);
   const [llmKey, setLlmKey] = useState("");
   const [llmKeyTouched, setLlmKeyTouched] = useState(false);
@@ -149,7 +152,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   const [smtpConfig, setSmtpConfig] = useState<IntelligenceSmtpConfigResponse | null>(null);
   const [smtpEnabled, setSmtpEnabled] = useState(true);
   const [smtpHost, setSmtpHost] = useState("");
-  const [smtpPort, setSmtpPort] = useState(465);
+  const [smtpPort, setSmtpPort] = useState("465");
   const [smtpUseSsl, setSmtpUseSsl] = useState(true);
   const [smtpUsername, setSmtpUsername] = useState("");
   const [smtpFrom, setSmtpFrom] = useState("");
@@ -176,13 +179,13 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
   }, [onAuthError]);
 
   const applySearchConfig = useCallback((next: IntelligenceSearchConfigResponse) => {
-    setSearchConfig(next); setSearchEnabled(next.enabled); setSearchTimeout(next.timeout_seconds); setSearchKey(""); setSearchKeyTouched(false); setSearchTest(next.last_test);
+    setSearchConfig(next); setSearchEnabled(next.enabled); setSearchEndpoint(next.endpoint); setSearchPort(String(next.port)); setSearchTimeout(next.timeout_seconds); setSearchKey(""); setSearchKeyTouched(false); setSearchTest(next.last_test);
   }, []);
   const applyLlmConfig = useCallback((next: IntelligenceLlmConfigResponse) => {
-    setLlmConfig(next); setLlmEnabled(next.enabled); setLlmModel(next.model); setLlmEndpoint(next.base_url); setLlmTimeout(next.timeout_seconds); setLlmKey(""); setLlmKeyTouched(false);
+    setLlmConfig(next); setLlmEnabled(next.enabled); setLlmModel(next.model); setLlmEndpoint(next.base_url); setLlmPort(String(next.port)); setLlmTimeout(next.timeout_seconds); setLlmKey(""); setLlmKeyTouched(false);
   }, []);
   const applySmtpConfig = useCallback((next: IntelligenceSmtpConfigResponse) => {
-    setSmtpConfig(next); setSmtpEnabled(next.enabled); setSmtpHost(next.host); setSmtpPort(next.port); setSmtpUseSsl(next.use_ssl); setSmtpUsername(next.username); setSmtpFrom(next.from_address); setSmtpTimeout(next.timeout_seconds); setSmtpAuthorizationCode(""); setSmtpAuthorizationCodeTouched(false);
+    setSmtpConfig(next); setSmtpEnabled(next.enabled); setSmtpHost(next.host); setSmtpPort(String(next.port)); setSmtpUseSsl(next.use_ssl); setSmtpUsername(next.username); setSmtpFrom(next.from_address); setSmtpTimeout(next.timeout_seconds); setSmtpAuthorizationCode(""); setSmtpAuthorizationCodeTouched(false);
   }, []);
 
   useEffect(() => {
@@ -216,24 +219,39 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
     if (!token || testing) return;
     setTesting(kind); setMessage(""); setError("");
     try {
-      const result = kind === "search" ? await testAdminSearchConfig(token) : kind === "llm" ? await testAdminLlmConfig(token) : await testAdminSmtpConfig(token);
+      let result: IntelligenceSearchTestRecord;
+      if (kind === "search") result = await testAdminSearchConfig(token);
+      else if (kind === "llm") result = await testAdminLlmConfig(token);
+      else {
+        const port = Number(smtpPort);
+        const timeout = Number(smtpTimeout);
+        if (!smtpHost.trim() || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error("请填写有效的 SMTP 主机和端口。");
+        if (!smtpUsername.trim() || !smtpFrom.trim() || smtpUsername.trim().toLowerCase() !== smtpFrom.trim().toLowerCase()) throw new Error("SMTP 用户名与发件地址必须填写同一个有效邮箱地址。");
+        if (!Number.isFinite(timeout) || timeout < 1 || timeout > 180) throw new Error("SMTP 连接超时必须为 1-180 秒。");
+        const saved = await saveAdminSmtpConfig(token, { enabled: smtpEnabled, host: smtpHost.trim(), port, use_ssl: smtpUseSsl, username: smtpUsername.trim(), from_address: smtpFrom.trim(), timeout_seconds: timeout, authorization_code: smtpAuthorizationCodeTouched && smtpAuthorizationCode.trim() ? smtpAuthorizationCode.trim() : undefined });
+        applySmtpConfig(saved);
+        result = await testAdminSmtpConfig(token);
+      }
       if (kind === "search") setSearchTest(result); else if (kind === "llm") setLlmTest(result); else setSmtpTest(result);
       if (result.status === "success") finish(result.message); else setError(result.message);
     } catch (err) { handleError(err, "连接测试失败"); } finally { setTesting(null); }
   };
   const saveSearch = async () => {
     if (!token || saving) return;
+    const port = Number(searchPort);
     const timeout = Number(searchTimeout);
+    if (!safeHttpUrl(searchEndpoint) || !Number.isInteger(port) || port < 1 || port > 65535) { setError("请填写有效的百度检索 Endpoint，并将端口设为 1-65535。"); return; }
     if (!Number.isInteger(timeout) || timeout < 1 || timeout > 600) { setError("百度检索超时必须为 1-600 秒。"); return; }
     setSaving("search");
-    try { applySearchConfig(await saveAdminSearchConfig(token, { enabled: searchEnabled, timeout_seconds: timeout, api_key: searchKeyTouched && searchKey.trim() ? searchKey.trim() : undefined })); finish("百度检索配置已保存。"); } catch (err) { handleError(err, "无法保存百度检索配置"); } finally { setSaving(null); }
+    try { applySearchConfig(await saveAdminSearchConfig(token, { enabled: searchEnabled, endpoint: searchEndpoint.trim(), port, timeout_seconds: timeout, api_key: searchKeyTouched && searchKey.trim() ? searchKey.trim() : undefined })); finish("百度检索配置已保存。"); } catch (err) { handleError(err, "无法保存百度检索配置"); } finally { setSaving(null); }
   };
   const saveLlm = async () => {
     if (!token || saving) return;
+    const port = Number(llmPort);
     const timeout = Number(llmTimeout);
-    if (!llmModel.trim() || !llmEndpoint.trim() || !Number.isInteger(timeout) || timeout < 1 || timeout > 600) { setError("请填写模型、Endpoint，并将超时设为 1-600 秒。"); return; }
+    if (!llmModel.trim() || !safeHttpUrl(llmEndpoint) || !Number.isInteger(port) || port < 1 || port > 65535 || !Number.isInteger(timeout) || timeout < 1 || timeout > 600) { setError("请填写有效的模型、Endpoint、1-65535 端口，并将超时设为 1-600 秒。"); return; }
     setSaving("llm");
-    try { applyLlmConfig(await saveAdminLlmConfig(token, { enabled: true, base_url: llmEndpoint.trim(), model: llmModel.trim(), temperature: llmConfig?.temperature ?? 0.1, top_p: llmConfig?.top_p ?? 1, max_tokens: llmConfig?.max_tokens ?? 16384, timeout_seconds: timeout, use_json_object: llmConfig?.use_json_object ?? true, api_key: llmKeyTouched && llmKey.trim() ? llmKey.trim() : undefined })); finish("DeepSeek 配置已保存。"); } catch (err) { handleError(err, "无法保存 DeepSeek 配置"); } finally { setSaving(null); }
+    try { applyLlmConfig(await saveAdminLlmConfig(token, { enabled: true, base_url: llmEndpoint.trim(), port, model: llmModel.trim(), temperature: llmConfig?.temperature ?? 0.1, top_p: llmConfig?.top_p ?? 1, max_tokens: llmConfig?.max_tokens ?? 16384, timeout_seconds: timeout, use_json_object: llmConfig?.use_json_object ?? true, api_key: llmKeyTouched && llmKey.trim() ? llmKey.trim() : undefined })); finish("DeepSeek 配置已保存。"); } catch (err) { handleError(err, "无法保存 DeepSeek 配置"); } finally { setSaving(null); }
   };
   const saveSmtp = async () => {
     if (!token || saving) return;
@@ -292,7 +310,8 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
           <Field label="服务状态"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={searchEnabled} onChange={(event) => setSearchEnabled(event.target.checked)} className="size-4 accent-[#2563EB]" />{searchEnabled ? "已启用" : "已停用"}</label></Field>
           <Field label="请求超时（秒）"><input type="number" min={1} max={600} value={searchTimeout} onChange={(event) => setSearchTimeout(Number(event.target.value))} className={INPUT_CLASS} /></Field>
           <SecretField label="百度 API Key" masked={searchConfig?.api_key_mask || ""} value={searchKey} touched={searchKeyTouched} onChange={(value) => { setSearchKey(value); setSearchKeyTouched(true); }} onReveal={() => setRevealTarget("search")} />
-          <Field label="Endpoint"><div className="break-all rounded-md border border-[#D0D5DD] bg-[#F8FAFC] px-3 py-2.5 font-mono text-xs text-[#475467]">{searchConfig?.endpoint || "https://qianfan.baidubce.com/v2/ai_search/web_search"}</div></Field>
+          <Field label="Endpoint"><input value={searchEndpoint} onChange={(event) => setSearchEndpoint(event.target.value)} placeholder="https://qianfan.baidubce.com/v2/ai_search/web_search" className={cn(INPUT_CLASS, "font-mono")} /></Field>
+          <Field label="服务端口"><input type="number" min={1} max={65535} value={searchPort} onChange={(event) => setSearchPort(event.target.value)} className={INPUT_CLASS} /></Field>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveSearch()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "search" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("search")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "search" ? "测试中…" : "测试连接"}</button></div><TestResult result={searchTest} />
       </SectionCard>
@@ -303,6 +322,7 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
           <Field label="模型"><input value={llmModel} onChange={(event) => setLlmModel(event.target.value)} placeholder="deepseek-chat" className={INPUT_CLASS} /></Field>
           <Field label="请求超时（秒）"><input type="number" min={1} max={600} value={llmTimeout} onChange={(event) => setLlmTimeout(Number(event.target.value))} className={INPUT_CLASS} /></Field>
           <Field label="Base URL"><input value={llmEndpoint} onChange={(event) => setLlmEndpoint(event.target.value)} placeholder="https://api.deepseek.com/v1" className={INPUT_CLASS} /></Field>
+          <Field label="服务端口"><input type="number" min={1} max={65535} value={llmPort} onChange={(event) => setLlmPort(event.target.value)} className={INPUT_CLASS} /></Field>
           <SecretField label="DeepSeek API Key" masked={llmConfig?.api_key_mask || ""} value={llmKey} touched={llmKeyTouched} onChange={(value) => { setLlmKey(value); setLlmKeyTouched(true); }} onReveal={() => setRevealTarget("llm")} />
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveLlm()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "llm" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("llm")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "llm" ? "测试中…" : "测试模型"}</button></div><TestResult result={llmTest} />
@@ -312,14 +332,14 @@ export function SearchServiceSettings({ token, onAuthError }: SearchServiceSetti
         <div className="grid min-w-0 gap-4 [&>*]:min-w-0 lg:grid-cols-2">
           <Field label="服务状态"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={smtpEnabled} onChange={(event) => setSmtpEnabled(event.target.checked)} className="size-4 accent-[#2563EB]" />{smtpEnabled ? "已启用" : "已停用"}</label></Field>
           <Field label="SMTP 主机"><input value={smtpHost} onChange={(event) => setSmtpHost(event.target.value)} placeholder="smtp.csco.com.cn" className={cn(INPUT_CLASS, "font-mono")} /></Field>
-          <Field label="SMTP 端口"><input type="number" min={1} max={65535} value={smtpPort} onChange={(event) => setSmtpPort(Number(event.target.value))} className={INPUT_CLASS} /></Field>
+          <Field label="SMTP 端口"><input type="number" min={1} max={65535} value={smtpPort} onChange={(event) => { const value = event.target.value; setSmtpPort(value); if (value === "25") setSmtpUseSsl(false); else if (value === "465") setSmtpUseSsl(true); }} className={INPUT_CLASS} /></Field>
           <Field label="连接安全"><label className="inline-flex h-11 items-center gap-2 rounded-md border border-[#D0D5DD] px-3 text-xs font-semibold text-[#344054]"><input type="checkbox" checked={smtpUseSsl} onChange={(event) => setSmtpUseSsl(event.target.checked)} className="size-4 accent-[#2563EB]" />{smtpUseSsl ? "SSL/TLS（常用端口 465）" : "非 SSL（常用端口 25）"}</label></Field>
           <Field label="用户名"><input value={smtpUsername} onChange={(event) => setSmtpUsername(event.target.value)} placeholder="发件邮箱地址" className={INPUT_CLASS} /></Field>
           <Field label="发件地址"><input type="email" value={smtpFrom} onChange={(event) => setSmtpFrom(event.target.value)} placeholder="name@company.example" className={INPUT_CLASS} /></Field>
           <Field label="连接超时（秒）"><input type="number" min={1} max={180} value={smtpTimeout} onChange={(event) => setSmtpTimeout(Number(event.target.value))} className={INPUT_CLASS} /></Field>
           <SecretField label="邮箱授权码" masked={smtpConfig?.authorization_code_mask || ""} value={smtpAuthorizationCode} touched={smtpAuthorizationCodeTouched} onChange={(value) => { setSmtpAuthorizationCode(value); setSmtpAuthorizationCodeTouched(true); }} onReveal={() => setRevealTarget("smtp")} />
         </div>
-        <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveSmtp()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "smtp" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("smtp")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "smtp" ? "测试中…" : "测试已保存配置"}</button><span className="text-[11px] text-[#98A2B3]">修改后请先保存，再测试连接。</span></div><TestResult result={smtpTest} />
+        <div className="flex flex-wrap items-center gap-2 border-t border-[#EEF2F6] pt-4"><button type="button" onClick={() => void saveSmtp()} disabled={saving !== null} className="inline-flex items-center gap-1.5 rounded-md bg-[#2563EB] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#1D4ED8] disabled:opacity-50"><Save className="size-3.5" aria-hidden="true" />{saving === "smtp" ? "保存中…" : "保存"}</button><button type="button" onClick={() => void runTest("smtp")} disabled={testing !== null} className="inline-flex items-center gap-1.5 rounded-md border border-[#D0D5DD] px-3.5 py-2 text-xs font-semibold text-[#475467] disabled:opacity-50"><Wrench className="size-3.5" aria-hidden="true" />{testing === "smtp" ? "保存并测试中…" : "保存并测试"}</button><span className="text-[11px] text-[#98A2B3]">测试会先保存界面当前配置，再由后端连接 SMTP。</span></div><TestResult result={smtpTest} />
       </SectionCard>
 
       <SectionCard title="系统默认分析规则" description="规则应用于报告生成，不影响检索规划；来源与引用规则不可关闭。">

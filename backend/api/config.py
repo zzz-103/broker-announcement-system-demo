@@ -218,6 +218,13 @@ class Settings:
         return os.getenv("BAIDU_QIANFAN_API_KEY", "").strip()
 
     @property
+    def baidu_qianfan_endpoint(self) -> str:
+        return os.getenv(
+            "BAIDU_QIANFAN_ENDPOINT",
+            "https://qianfan.baidubce.com/v2/ai_search/web_search",
+        ).strip()
+
+    @property
     def baidu_qianfan_timeout_seconds(self) -> float:
         try:
             value = float(os.getenv("BAIDU_QIANFAN_TIMEOUT_SECONDS", "120"))

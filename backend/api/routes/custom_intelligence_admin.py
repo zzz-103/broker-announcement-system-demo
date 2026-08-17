@@ -32,6 +32,7 @@ from ..intelligence_email import (
     validate_smtp_server,
 )
 from ..user_store import UserStoreError
+from ..service_url import service_url_port, service_url_with_port
 from . import custom_intelligence as ci
 
 
@@ -64,9 +65,14 @@ def post_admin_search_config(
             api_key = current.api_key
         if payload.enabled and not api_key:
             raise HTTPException(status_code=400, detail="百度搜索 API Key 不能为空")
+        requested_endpoint = payload.endpoint or current.endpoint
+        endpoint = service_url_with_port(
+            requested_endpoint,
+            payload.port or service_url_port(requested_endpoint),
+        )
         ci.store.save_search_config(
             enabled=payload.enabled,
-            endpoint=ci.QIANFAN_WEB_SEARCH_ENDPOINT,
+            endpoint=endpoint,
             auth_header="Authorization",
             timeout_seconds=payload.timeout_seconds,
             updated_by_user_id=ci._admin_actor_id(authorization),
@@ -82,6 +88,8 @@ def post_admin_search_config(
         return ci._admin_search_config_payload()
     except HTTPException:
         raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="百度搜索 Endpoint 或端口无效") from exc
     except Exception as exc:
         raise ci._handle_store_error(exc, "无法保存情报搜索服务配置") from exc
 
@@ -322,7 +330,7 @@ def post_admin_smtp_config_test(
     tested_at = datetime.now(timezone.utc).isoformat()
     try:
         result = ci.test_smtp_configuration(effective_smtp_config(ci.store))
-    except EmailConfigurationError:
+    except EmailConfigurationError as exc:
         ci._audit_intelligence_event(
             authorization,
             "custom_intelligence_connection_tested",
@@ -330,7 +338,7 @@ def post_admin_smtp_config_test(
             target="smtp",
             result="failed",
         )
-        return {"status": "failed", "message": "SMTP 连接测试失败，请检查服务器、端口、传输方式、授权码与网络。", "tested_at": tested_at}
+        return {"status": "failed", "message": str(exc), "tested_at": tested_at}
     ci._audit_intelligence_event(
         authorization,
         "custom_intelligence_connection_tested",
