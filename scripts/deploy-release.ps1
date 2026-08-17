@@ -32,6 +32,9 @@ $RollbackSucceeded = $false
 $PreviousVersion = $null
 $GitSha = $null
 $PublicBaseUrl = 'http://localhost:8080'
+$BuildKitProbeTimeoutSeconds = 45
+$BuildKitBuildTimeoutSeconds = 900
+$FallbackBuildTimeoutSeconds = 1800
 
 function Assert-LastExitCode {
     param([string]$Step)
@@ -39,6 +42,36 @@ function Assert-LastExitCode {
     if ($LASTEXITCODE -ne 0) {
         throw "$Step failed. Exit code: $LASTEXITCODE"
     }
+}
+
+function ConvertTo-ProcessArgument {
+    param([AllowEmptyString()][string]$Value)
+
+    if ($null -eq $Value -or $Value.Length -eq 0) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Invoke-DockerWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+
+        [Parameter(Mandatory = $true)]
+        [int]$TimeoutSeconds
+    )
+
+    $argumentString = ($Arguments | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' '
+    $process = Start-Process -FilePath 'docker' -ArgumentList $argumentString -NoNewWindow -PassThru
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        Write-Warning "Docker command timed out after ${TimeoutSeconds}s: docker $argumentString"
+        try { $process.Kill($true) }
+        catch { $process.Kill() }
+        $process.WaitForExit()
+        return [pscustomobject]@{ ExitCode = -124; TimedOut = $true }
+    }
+
+    return [pscustomobject]@{ ExitCode = $process.ExitCode; TimedOut = $false }
 }
 
 function Invoke-ReleaseImageBuild {
@@ -50,25 +83,34 @@ function Invoke-ReleaseImageBuild {
     )
 
     $buildxReady = $true
-    docker buildx version *> $null
-    if ($LASTEXITCODE -ne 0) { $buildxReady = $false }
-    if ($buildxReady) {
-        docker buildx inspect --bootstrap *> $null
-        if ($LASTEXITCODE -ne 0) { $buildxReady = $false }
+    try {
+        $buildxVersion = Invoke-DockerWithTimeout -Arguments @('buildx', 'version') -TimeoutSeconds $BuildKitProbeTimeoutSeconds
+        if ($buildxVersion.TimedOut -or $buildxVersion.ExitCode -ne 0) { $buildxReady = $false }
+        if ($buildxReady) {
+            $buildxBootstrap = Invoke-DockerWithTimeout -Arguments @('buildx', 'inspect', '--bootstrap') -TimeoutSeconds $BuildKitProbeTimeoutSeconds
+            if ($buildxBootstrap.TimedOut -or $buildxBootstrap.ExitCode -ne 0) { $buildxReady = $false }
+        }
+    }
+    catch {
+        Write-Warning "Unable to probe BuildKit/buildx: $($_.Exception.Message)"
+        $buildxReady = $false
     }
 
     if ($buildxReady) {
         Write-Host "Building $Image with BuildKit/buildx cache"
-        docker buildx build --platform linux/amd64 --load --network host @BuildArguments -f $Dockerfile -t $Image $SourceDir
-        if ($LASTEXITCODE -eq 0) { return }
-        Write-Warning "BuildKit build failed for $Image; retrying with the compatibility Dockerfile."
+        $buildxArguments = @('buildx', 'build', '--platform', 'linux/amd64', '--load', '--network', 'host') + $BuildArguments + @('-f', $Dockerfile, '-t', $Image, $SourceDir)
+        $buildxBuild = Invoke-DockerWithTimeout -Arguments $buildxArguments -TimeoutSeconds $BuildKitBuildTimeoutSeconds
+        if (-not $buildxBuild.TimedOut -and $buildxBuild.ExitCode -eq 0) { return }
+        Write-Warning "BuildKit build failed or timed out for $Image; retrying with the compatibility Dockerfile."
     }
     else {
         Write-Warning "BuildKit/buildx is unavailable; using the compatibility Dockerfile for $Image."
     }
 
-    docker build --platform linux/amd64 @BuildArguments -f $FallbackDockerfile -t $Image $SourceDir
-    Assert-LastExitCode "Fallback Docker build: $Image"
+    $fallbackArguments = @('build', '--platform', 'linux/amd64') + $BuildArguments + @('-f', $FallbackDockerfile, '-t', $Image, $SourceDir)
+    $fallbackBuild = Invoke-DockerWithTimeout -Arguments $fallbackArguments -TimeoutSeconds $FallbackBuildTimeoutSeconds
+    if ($fallbackBuild.TimedOut) { throw "Fallback Docker build timed out: $Image" }
+    if ($fallbackBuild.ExitCode -ne 0) { throw "Fallback Docker build failed: $Image (exit code $($fallbackBuild.ExitCode))" }
 }
 
 function Get-EnvValue {
