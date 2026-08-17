@@ -27,7 +27,10 @@ COPY requirements-lock.txt /app/requirements-lock.txt
 RUN python -c "import pathlib; p = pathlib.Path('/app/backend/api/requirements.txt'); p.write_text(p.read_text().replace('../../requirements.txt', '/app/requirements.txt'))"
 
 # Avoid reusing proxy-corrupted wheels between release builds.
-RUN pip install --no-cache-dir --timeout 300 --retries 5 \
+# Keep the BuildKit pip cache across release builds. The cache is local to the
+# builder and never becomes part of the runtime image layer.
+RUN --mount=type=cache,id=broker-backend-pip,target=/root/.cache/pip \
+    pip install --timeout 300 --retries 5 \
     -r /app/backend/api/requirements.txt -c /app/requirements-lock.txt
 
 # Copy backend codebase
