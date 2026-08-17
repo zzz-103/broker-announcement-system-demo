@@ -15,7 +15,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $SourceDir = Split-Path -Parent $PSScriptRoot
 $BackendDockerfile = Join-Path $SourceDir 'backend.Dockerfile'
+$BackendDockerfileFallback = Join-Path $SourceDir 'backend.Dockerfile.fallback'
 $FrontendDockerfile = Join-Path $SourceDir 'frontend.Dockerfile'
+$FrontendDockerfileFallback = Join-Path $SourceDir 'frontend.Dockerfile.fallback'
 $PackageJson = Join-Path $SourceDir 'frontend\package.json'
 $ComposeFile = Join-Path $DeployDir 'docker-compose.yml'
 $EnvFile = Join-Path $DeployDir '.env'
@@ -37,6 +39,36 @@ function Assert-LastExitCode {
     if ($LASTEXITCODE -ne 0) {
         throw "$Step failed. Exit code: $LASTEXITCODE"
     }
+}
+
+function Invoke-ReleaseImageBuild {
+    param(
+        [string]$Image,
+        [string]$Dockerfile,
+        [string]$FallbackDockerfile,
+        [string[]]$BuildArguments = @()
+    )
+
+    $buildxReady = $true
+    docker buildx version *> $null
+    if ($LASTEXITCODE -ne 0) { $buildxReady = $false }
+    if ($buildxReady) {
+        docker buildx inspect --bootstrap *> $null
+        if ($LASTEXITCODE -ne 0) { $buildxReady = $false }
+    }
+
+    if ($buildxReady) {
+        Write-Host "Building $Image with BuildKit/buildx cache"
+        docker buildx build --platform linux/amd64 --load --network host @BuildArguments -f $Dockerfile -t $Image $SourceDir
+        if ($LASTEXITCODE -eq 0) { return }
+        Write-Warning "BuildKit build failed for $Image; retrying with the compatibility Dockerfile."
+    }
+    else {
+        Write-Warning "BuildKit/buildx is unavailable; using the compatibility Dockerfile for $Image."
+    }
+
+    docker build --platform linux/amd64 @BuildArguments -f $FallbackDockerfile -t $Image $SourceDir
+    Assert-LastExitCode "Fallback Docker build: $Image"
 }
 
 function Get-EnvValue {
@@ -145,7 +177,7 @@ try {
         if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Required command not found: $command" }
     }
     foreach ($path in @(
-        $SourceDir, $DeployDir, $BackendDockerfile, $FrontendDockerfile, $PackageJson, $ComposeFile, $EnvFile,
+        $SourceDir, $DeployDir, $BackendDockerfile, $BackendDockerfileFallback, $FrontendDockerfile, $FrontendDockerfileFallback, $PackageJson, $ComposeFile, $EnvFile,
         (Join-Path $DeployDir 'runtime\config\llm_api_config.json'),
         (Join-Path $DeployDir 'runtime\config\user_qualification.csv')
     )) {
@@ -207,14 +239,18 @@ try {
     }
     finally { Pop-Location }
 
-    Write-Host "Building $BackendImage from $GitSha"
-    docker buildx build --platform linux/amd64 --load --network host --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $BackendDockerfile -t $BackendImage $SourceDir
-    Assert-LastExitCode 'Build backend image'
+    Invoke-ReleaseImageBuild -Image $BackendImage -Dockerfile $BackendDockerfile -FallbackDockerfile $BackendDockerfileFallback -BuildArguments @(
+        '--label', "org.opencontainers.image.version=$Version",
+        '--label', "org.opencontainers.image.revision=$GitSha"
+    )
     docker run --rm --entrypoint python $BackendImage -c "import backend.broker_app_watch.cli; print('broker app watch import ok')"
     Assert-LastExitCode 'Validate broker app watch image import'
-    Write-Host "Building $FrontendImage from $GitSha"
-    docker buildx build --platform linux/amd64 --load --network host --build-arg "APP_VERSION=$Version" --build-arg "GIT_SHA=$GitSha" --label "org.opencontainers.image.version=$Version" --label "org.opencontainers.image.revision=$GitSha" -f $FrontendDockerfile -t $FrontendImage $SourceDir
-    Assert-LastExitCode 'Build frontend image'
+    Invoke-ReleaseImageBuild -Image $FrontendImage -Dockerfile $FrontendDockerfile -FallbackDockerfile $FrontendDockerfileFallback -BuildArguments @(
+        '--build-arg', "APP_VERSION=$Version",
+        '--build-arg', "GIT_SHA=$GitSha",
+        '--label', "org.opencontainers.image.version=$Version",
+        '--label', "org.opencontainers.image.revision=$GitSha"
+    )
     foreach ($image in @($BackendImage, $FrontendImage)) {
         $architecture = (docker image inspect $image --format '{{.Architecture}}').Trim()
         Assert-LastExitCode "Inspect image architecture: $image"
