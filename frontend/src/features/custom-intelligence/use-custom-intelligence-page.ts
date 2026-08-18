@@ -56,6 +56,9 @@ function visibleFocus(focus: string, focusTags: string[], extraFocus: string): s
   const normalizedFocus = focus.trim() === focusTags.join("、") ? "" : focus;
   return mergeLegacyFocus(normalizedFocus, extraFocus);
 }
+function selectableReportLength(value: IntelligenceAssistantRequest["report_length"]): IntelligenceAssistantRequest["report_length"] {
+  return value === "deep" ? "standard" : value;
+}
 function normalizedRequest(request: IntelligenceAssistantRequest): IntelligenceAssistantRequest {
   const focusTags = request.focus_tags.slice(0, 8);
   return {
@@ -68,7 +71,7 @@ function normalizedRequest(request: IntelligenceAssistantRequest): IntelligenceA
 }
 function formFromTopic(topic: IntelligenceAssistantTopic): IntelligenceAssistantRequest {
   const focusTags = [...topic.focus_tags].slice(0, 8);
-  return { audience: canonicalAudience(topic.audience), audience_detail: topic.audience_detail, focus_tags: focusTags, focus: visibleFocus(topic.focus, focusTags, topic.extra_focus), extra_focus: "", time_range: topic.time_range, report_length: topic.report_length };
+  return { audience: canonicalAudience(topic.audience), audience_detail: topic.audience_detail, focus_tags: focusTags, focus: visibleFocus(topic.focus, focusTags, topic.extra_focus), extra_focus: "", time_range: topic.time_range, report_length: selectableReportLength(topic.report_length) };
 }
 function formFromExecution(execution: IntelligenceAssistantExecution): IntelligenceAssistantRequest {
   const snapshot = execution.snapshot;
@@ -80,7 +83,7 @@ function formFromExecution(execution: IntelligenceAssistantExecution): Intellige
     focus: visibleFocus(snapshot.focus ?? execution.original_query ?? "", focusTags, snapshot.extra_focus ?? ""),
     extra_focus: "",
     time_range: snapshot.time_range ?? DEFAULT_FORM.time_range,
-    report_length: snapshot.report_length ?? DEFAULT_FORM.report_length,
+    report_length: selectableReportLength(snapshot.report_length ?? DEFAULT_FORM.report_length),
   };
 }
 function readableError(error: unknown, fallback: string): string {

@@ -1283,6 +1283,30 @@ class RouteOwnershipTests(unittest.TestCase):
                             "cumulative_source_count": 1,
                         }
                     ],
+                    "analysis": {
+                        "status": "succeeded",
+                        "report_length": "standard",
+                        "source_count": 1,
+                        "thinking": "enabled",
+                        "token_budget": 32768,
+                        "attempt_count": 1,
+                        "api_key": "must-not-leak",
+                        "raw_output": "must-not-leak",
+                        "attempts": [
+                            {
+                                "attempt": 1,
+                                "status": "succeeded",
+                                "mode": "json_object",
+                                "thinking": "enabled",
+                                "token_budget": 32768,
+                                "finish_reason": "stop",
+                                "provider_request_id": "provider-request-safe",
+                                "completion_tokens": 2048,
+                                "api_key": "must-not-leak",
+                                "raw_output": "must-not-leak",
+                            }
+                        ],
+                    },
                 },
                 ensure_ascii=False,
             ),
@@ -1333,6 +1357,11 @@ class RouteOwnershipTests(unittest.TestCase):
         self.assertEqual(diagnostics.status_code, 200)
         self.assertEqual(diagnostics.json()["diagnostics"]["counts"]["round_count"], 1)
         self.assertEqual(diagnostics.json()["diagnostics"]["search"]["rounds"][0]["new_source_count"], 1)
+        analysis_diagnostics = diagnostics.json()["diagnostics"]["analysis"]
+        self.assertEqual(analysis_diagnostics["token_budget"], 32768)
+        self.assertEqual(analysis_diagnostics["thinking"], "enabled")
+        self.assertEqual(analysis_diagnostics["attempts"][0]["provider_request_id"], "provider-request-safe")
+        self.assertNotIn("must-not-leak", diagnostics.text)
 
         fake_rerun = {"id": 9002, "topic_id": None, "trigger_type": "rerun", "status": "pending", "sources": []}
         with patch.object(custom_intelligence_routes, "submit_execution", return_value=fake_rerun) as rerun_submit:

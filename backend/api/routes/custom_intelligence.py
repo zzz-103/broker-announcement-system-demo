@@ -321,6 +321,12 @@ def _admin_execution_summary(
 
 
 def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, object]:
+    def safe_int(value: object, default: int = 0) -> int:
+        try:
+            return int(value) if value is not None else default
+        except (TypeError, ValueError):
+            return default
+
     summary = _admin_execution_summary(execution)
     payload = execution.get("request_payload") if isinstance(execution.get("request_payload"), dict) else {}
     search_summary = payload.get("search_summary") if isinstance(payload.get("search_summary"), dict) else {}
@@ -357,6 +363,39 @@ def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, obje
         safe_rounds.append(row)
 
     plan = payload.get("query_plan") if isinstance(payload.get("query_plan"), dict) else {}
+    analysis_payload = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    safe_analysis_attempts: list[dict[str, object]] = []
+    raw_analysis_attempts = analysis_payload.get("attempts")
+    if isinstance(raw_analysis_attempts, list):
+        for item in raw_analysis_attempts[:10]:
+            if not isinstance(item, dict):
+                continue
+            safe_analysis_attempts.append(
+                {
+                    key: item.get(key)
+                    for key in (
+                        "attempt",
+                        "status",
+                        "mode",
+                        "thinking",
+                        "token_budget",
+                        "started_at",
+                        "duration_ms",
+                        "error_code",
+                        "error_message",
+                        "exception_type",
+                        "http_status",
+                        "provider_request_id",
+                        "provider_model",
+                        "finish_reason",
+                        "content_length",
+                        "prompt_tokens",
+                        "completion_tokens",
+                        "total_tokens",
+                    )
+                    if item.get(key) is not None
+                }
+            )
     raw_queries = plan.get("queries") if isinstance(plan.get("queries"), list) else []
     planner_queries = [
         {
@@ -403,6 +442,17 @@ def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, obje
         stage = "search"
     else:
         stage = "planning"
+    stage_errors: dict[str, object] = {}
+    seen_stage_errors: set[str] = set()
+    analysis_stage_error = str(execution.get("analysis_error_message") or "").strip()
+    for key in ("error_message", "search_error_message", "analysis_error_message", "planning_error_message"):
+        value = execution.get(key)
+        normalized = str(value or "").strip()
+        if key == "error_message" and analysis_stage_error and normalized.endswith(analysis_stage_error):
+            continue
+        if normalized and normalized not in seen_stage_errors:
+            stage_errors[key] = value
+            seen_stage_errors.add(normalized)
     return {
         **summary,
         "execution_id": execution.get("id"),
@@ -436,6 +486,17 @@ def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, obje
                 for item in safe_rounds
             ],
         },
+        "analysis": {
+            "status": analysis_payload.get("status") or execution.get("analysis_status") or "not_run",
+            "report_length": analysis_payload.get("report_length") or "unknown",
+            "source_count": safe_int(analysis_payload.get("source_count") or report_sources),
+            "thinking": analysis_payload.get("thinking") or "unknown",
+            "token_budget": safe_int(analysis_payload.get("token_budget")),
+            "attempt_count": safe_int(analysis_payload.get("attempt_count"), len(safe_analysis_attempts)),
+            "error_code": analysis_payload.get("error_code"),
+            "error_message": analysis_payload.get("error_message"),
+            "attempts": safe_analysis_attempts,
+        },
         "counts": {
             "final_source_count": report_sources,
             "final_domain_count": summary.get("domain_count", 0),
@@ -452,11 +513,7 @@ def _admin_execution_diagnostics(execution: dict[str, object]) -> dict[str, obje
         },
         "final_sources": source_rows[:100],
         "request_ids": request_ids,
-        "stage_errors": {
-            key: execution.get(key)
-            for key in ("error_message", "search_error_message", "analysis_error_message", "planning_error_message")
-            if execution.get(key)
-        },
+        "stage_errors": stage_errors,
         "delivery_logs": store.list_delivery_logs(int(execution["id"])),
     }
 

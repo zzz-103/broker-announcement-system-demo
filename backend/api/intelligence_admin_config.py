@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from ..llm_table.llm_client import (
     LLMApiConfig,
     OpenAICompatibleClient,
+    parse_json_text,
     resolve_llm_override_path,
     write_llm_config_override,
 )
@@ -236,14 +237,30 @@ def test_deepseek_configuration() -> dict[str, object]:
         raise ValueError("DeepSeek 尚未配置")
     config.validate()
     client = OpenAICompatibleClient(config)
-    # A deliberately tiny, non-sensitive request. Tests patch the client;
-    # production receives no report prompt or user data here.
+    # Exercise the same structured-output capability used by reports without
+    # transmitting any user data. Merely checking that ``choices`` exists can
+    # report success even when JSON mode returns an empty content field.
+    request_kwargs: dict[str, object] = {
+        "model": config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "只输出严格 JSON，格式示例：{\"status\":\"ok\"}",
+            },
+            {"role": "user", "content": "返回结构化连通性结果。"},
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": 4_096,
+        "temperature": 0,
+    }
+    if config.model.casefold().startswith("deepseek-v4"):
+        request_kwargs["reasoning_effort"] = "high"
+        request_kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
     response = client.client.chat.completions.create(
-        model=config.model,
-        messages=[{"role": "user", "content": "回复 OK"}],
-        max_tokens=2,
-        temperature=0,
+        **request_kwargs,
     )
-    if getattr(response, "choices", None) is None:
-        raise ValueError("DeepSeek 返回为空")
-    return {"status": "success", "message": "DeepSeek 连接测试成功"}
+    content = client._extract_message_content(response)
+    parsed = parse_json_text(content)
+    if not isinstance(parsed, dict) or str(parsed.get("status") or "").casefold() != "ok":
+        raise ValueError("DeepSeek JSON 模式返回格式不正确")
+    return {"status": "success", "message": "DeepSeek 连接与 JSON 报告模式测试成功"}

@@ -449,6 +449,36 @@ export interface IntelligenceExecutionDiagnostics extends IntelligenceAdminExecu
     rounds: Array<Record<string, string | number | boolean | null>>;
     per_query: Array<Record<string, string | number | boolean | null>>;
   };
+  analysis: {
+    status: string;
+    report_length: string;
+    source_count: number;
+    thinking: string;
+    token_budget: number;
+    attempt_count: number;
+    error_code?: string | null;
+    error_message?: string | null;
+    attempts: Array<{
+      attempt?: number;
+      status?: string;
+      mode?: string;
+      thinking?: string;
+      token_budget?: number;
+      started_at?: string;
+      duration_ms?: number;
+      error_code?: string;
+      error_message?: string;
+      exception_type?: string;
+      http_status?: number;
+      provider_request_id?: string;
+      provider_model?: string;
+      finish_reason?: string;
+      content_length?: number;
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    }>;
+  };
   counts: Record<string, number>;
   final_sources: Array<Pick<IntelligenceSource, "id" | "title" | "url" | "site_name" | "date">>;
   request_ids: string[];

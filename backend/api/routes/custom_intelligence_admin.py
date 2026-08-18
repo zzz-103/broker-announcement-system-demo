@@ -215,7 +215,7 @@ def post_admin_llm_config_test(
     tested_at = datetime.now(timezone.utc).isoformat()
     try:
         result = ci.test_deepseek_configuration()
-    except Exception:
+    except Exception as exc:
         ci._audit_intelligence_event(
             authorization,
             "custom_intelligence_connection_tested",
@@ -223,7 +223,11 @@ def post_admin_llm_config_test(
             target="deepseek",
             result="failed",
         )
-        return {"status": "failed", "message": "DeepSeek 连接测试失败，请检查配置与网络。", "tested_at": tested_at}
+        return {
+            "status": "failed",
+            "message": ci._deepseek_test_error_message(exc),
+            "tested_at": tested_at,
+        }
     ci._audit_intelligence_event(
         authorization,
         "custom_intelligence_connection_tested",
