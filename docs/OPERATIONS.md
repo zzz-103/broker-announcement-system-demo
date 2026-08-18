@@ -687,7 +687,7 @@ git status --branch --short
 `git status --short` 必须无输出，交付提交必须已在远端。`frontend/package.json` 版本必须等于发布版本。然后执行：
 
 ```powershell
-.\scripts\deploy-release.ps1 -Version 1.9.1 -DeployDir D:\broker-system
+.\scripts\deploy-release.ps1 -Version 1.9.2 -DeployDir D:\broker-system
 ```
 
 脚本使用 buildx 将 backend/frontend 统一构建为 `linux/amd64`，验证三个 Compose 服务和镜像架构，更新生产 `.env`，重建容器，检查 API、首页和 `version.json`，失败时尝试回滚。frontend 镜像已包含 Nginx、静态文件和反向代理配置；生产访问默认为 `http://localhost:8080`。不要在生产运行目录执行 `git pull`，也不要绕过脚本直接更新版本。

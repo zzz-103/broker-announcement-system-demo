@@ -16,7 +16,7 @@ export const DEFAULT_FORM: IntelligenceAssistantRequest = {
   focus: "",
   extra_focus: "",
   time_range: "month",
-  report_length: "standard",
+  report_length: "concise",
 };
 
 export const AUDIENCE_OPTIONS: readonly { value: IntelligenceAssistantAudience; label: string; detail: string }[] = [
@@ -82,9 +82,8 @@ export const TIME_RANGE_OPTIONS: readonly { value: IntelligenceTimeRange; label:
 ];
 
 export const REPORT_LENGTH_OPTIONS: readonly { value: IntelligenceReportLength; label: string; detail: string }[] = [
-  { value: "concise", label: "简报", detail: "约 3 分钟读完" },
-  { value: "standard", label: "标准", detail: "完整结论、动态与建议" },
-  { value: "deep", label: "深度", detail: "更多案例和来源核验" },
+  { value: "concise", label: "标准", detail: "重点结论清晰，约 3 分钟读完" },
+  { value: "standard", label: "深度", detail: "完整结论、动态、影响与建议" },
 ];
 
 export const AUDIENCE_LABEL: Record<string, string> = Object.fromEntries(
@@ -101,6 +100,7 @@ export const TIME_RANGE_LABEL: Record<string, string> = Object.fromEntries(
 export const REPORT_LENGTH_LABEL: Record<string, string> = Object.fromEntries(
   REPORT_LENGTH_OPTIONS.map((option) => [option.value, option.label]),
 );
+REPORT_LENGTH_LABEL.deep = "深度（历史超长）";
 
 export const FIELD_INPUT_CLASS =
   "w-full rounded-md border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm text-[#172033] outline-none transition placeholder:text-[#98A2B3] focus:border-[#4F7CFF] focus:ring-2 focus:ring-[#4F7CFF]/15";

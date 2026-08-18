@@ -1,7 +1,7 @@
 # Development backend stack only. Production uses deploy/docker-compose.example.yml.
 services:
   backend-api:
-    image: ${BROKER_IMAGE:-broker-backend:1.9.1}
+    image: ${BROKER_IMAGE:-broker-backend:1.9.2}
     platform: linux/amd64
     ports:
       - "5000:8000"
@@ -29,7 +29,7 @@ services:
         max-file: "5"
 
   backend-scheduler:
-    image: ${BROKER_IMAGE:-broker-backend:1.9.1}
+    image: ${BROKER_IMAGE:-broker-backend:1.9.2}
     platform: linux/amd64
     command: python -m backend.api.scheduler
     restart: unless-stopped

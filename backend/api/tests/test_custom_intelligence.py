@@ -815,7 +815,7 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
     def test_analysis_uses_json_mode_and_rejects_plain_text(self) -> None:
         requests: list[dict[str, object]] = []
         config = SimpleNamespace(
-            model="test-model",
+            model="deepseek-v4-flash",
             temperature=0.1,
             top_p=1.0,
             max_tokens=1024,
@@ -840,12 +840,103 @@ class CustomIntelligenceCoreTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service._request_analysis(snapshot, sources, {}, "request-1")
 
-        self.assertEqual(len(requests), 2)
+        self.assertEqual(len(requests), 3)
         self.assertEqual(requests[0]["response_format"], {"type": "json_object"})
+        self.assertEqual(requests[1]["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", requests[2])
+        self.assertEqual(requests[0]["max_tokens"], 131_072)
+        self.assertEqual(requests[0]["reasoning_effort"], "high")
+        self.assertEqual(requests[0]["extra_body"], {"thinking": {"type": "enabled"}})
         self.assertTrue(requests[0]["fallback_to_text"])
         self.assertNotIn("version", requests[0])
         self.assertNotIn("上一轮输出未通过", requests[0]["messages"][0]["content"])
         self.assertIn("上一轮输出未通过", requests[1]["messages"][0]["content"])
+
+    def test_analysis_token_budget_scales_with_report_length_and_keeps_thinking(self) -> None:
+        valid = json.dumps(
+            {
+                "version": 2,
+                "title": "报告",
+                "core_judgment": [
+                    {"type": "analysis", "text": "有依据的判断", "source_ids": ["source-1"]}
+                ],
+            },
+            ensure_ascii=False,
+        )
+        sources = [{"id": "source-1", "title": "来源", "url": "https://example.com"}]
+        expected = {"concise": 65_536, "standard": 131_072, "deep": 262_144}
+        for report_length, expected_budget in expected.items():
+            with self.subTest(report_length=report_length):
+                requests: list[dict[str, object]] = []
+                config = SimpleNamespace(
+                    model="deepseek-v4-flash",
+                    temperature=0.1,
+                    top_p=1.0,
+                    max_tokens=8_192,
+                    frequency_penalty=0.0,
+                    presence_penalty=0.0,
+                    use_json_object=True,
+                )
+
+                class FakeAnalysisClient:
+                    def __init__(self) -> None:
+                        self.config = config
+
+                    def _request_json(self, request_kwargs: dict[str, object], *, fallback_to_text: bool = False) -> str:
+                        requests.append(dict(request_kwargs))
+                        return valid
+
+                with patch.object(service, "_load_analysis_client", return_value=FakeAnalysisClient()):
+                    report = service._request_analysis(
+                        {"focus": "问题", "time_range": "month", "report_length": report_length},
+                        sources,
+                        {},
+                        "request-1",
+                    )
+                self.assertEqual(report["version"], 2)
+                self.assertEqual(requests[0]["max_tokens"], expected_budget)
+                self.assertEqual(requests[0]["extra_body"], {"thinking": {"type": "enabled"}})
+
+    def test_analysis_empty_json_content_uses_text_recovery_and_records_safe_attempts(self) -> None:
+        config = SimpleNamespace(
+            model="deepseek-v4-flash",
+            temperature=0.1,
+            top_p=1.0,
+            max_tokens=16_384,
+            frequency_penalty=0.0,
+            presence_penalty=0.0,
+            use_json_object=True,
+        )
+
+        class FakeAnalysisClient:
+            def __init__(self) -> None:
+                self.config = config
+                self.last_response_metadata: dict[str, object] = {}
+
+            def _request_json(self, request_kwargs: dict[str, object], *, fallback_to_text: bool = False) -> str:
+                self.last_response_metadata = {
+                    "provider_request_id": "provider-safe-id",
+                    "finish_reason": "stop",
+                    "content_length": 0,
+                }
+                return ""
+
+        attempts: list[dict[str, object]] = []
+        with patch.object(service, "_load_analysis_client", return_value=FakeAnalysisClient()):
+            with self.assertRaises(ValueError) as raised:
+                service._request_analysis(
+                    {"focus": "问题", "time_range": "month", "report_length": "standard"},
+                    [{"id": "source-1", "title": "来源", "url": "https://example.com"}],
+                    {},
+                    "request-1",
+                    attempt_diagnostics=attempts,
+                )
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual([item["mode"] for item in attempts], ["json_object", "json_object", "text_json_recovery"])
+        self.assertTrue(all(item["error_code"] == "empty_content" for item in attempts))
+        self.assertEqual(attempts[-1]["provider_request_id"], "provider-safe-id")
+        self.assertNotIn("api_key", json.dumps(attempts))
+        self.assertEqual(service._analysis_error_message(raised.exception), attempts[-1]["error_message"])
 
     def test_analysis_retries_once_after_report_v2_validation_failure(self) -> None:
         valid = json.dumps(

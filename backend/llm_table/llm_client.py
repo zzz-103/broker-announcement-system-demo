@@ -136,6 +136,7 @@ class OpenAICompatibleClient:
                 "缺少 openai 依赖，请先在当前环境中安装 openai。"
             ) from exc
         self.config = config
+        self.last_response_metadata: dict[str, Any] = {}
         timeout = httpx.Timeout(
             self.config.timeout_seconds,
             connect=min(5.0, self.config.timeout_seconds),
@@ -151,6 +152,7 @@ class OpenAICompatibleClient:
 
     def _request_json(self, request_kwargs: dict[str, Any], *, fallback_to_text: bool = False) -> Any:
         response = self.client.chat.completions.create(**request_kwargs)
+        self.last_response_metadata = self._response_metadata(response)
         content = self._extract_message_content(response)
         try:
             return parse_json_text(content)
@@ -158,6 +160,38 @@ class OpenAICompatibleClient:
             if fallback_to_text:
                 return content
             raise
+
+    @staticmethod
+    def _response_metadata(response: Any) -> dict[str, Any]:
+        """Keep only safe provider metadata for administrator diagnostics."""
+        choices = getattr(response, "choices", None) or []
+        choice = choices[0] if choices else None
+        message = getattr(choice, "message", None) if choice is not None else None
+        content = getattr(message, "content", None) if message is not None else None
+        usage = getattr(response, "usage", None)
+
+        def usage_value(name: str) -> int | None:
+            value = getattr(usage, name, None) if usage is not None else None
+            return int(value) if isinstance(value, (int, float)) else None
+
+        if isinstance(content, str):
+            content_length = len(content)
+        elif isinstance(content, list):
+            content_length = sum(
+                len(str(getattr(item, "text", "") or (item.get("text", "") if isinstance(item, dict) else "")))
+                for item in content
+            )
+        else:
+            content_length = 0
+        return {
+            "provider_request_id": str(getattr(response, "id", "") or "")[:200],
+            "provider_model": str(getattr(response, "model", "") or "")[:200],
+            "finish_reason": str(getattr(choice, "finish_reason", "") or "")[:80] if choice is not None else "",
+            "content_length": content_length,
+            "prompt_tokens": usage_value("prompt_tokens"),
+            "completion_tokens": usage_value("completion_tokens"),
+            "total_tokens": usage_value("total_tokens"),
+        }
 
     @staticmethod
     def _extract_message_content(response: Any) -> str:
